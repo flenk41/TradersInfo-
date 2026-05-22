@@ -1,10 +1,12 @@
-"""Уровни Фибоначчи и зоны входа."""
+"""Фибоначчи по последнему значимому свингу (пивоты), не min/max."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import pandas as pd
+
+from market_structure import find_pivot_highs, find_pivot_lows
 
 FIB_RATIOS = {
     "0%": 0.0,
@@ -15,8 +17,6 @@ FIB_RATIOS = {
     "78.6%": 0.786,
     "100%": 1.0,
 }
-
-GOLDEN_ZONE = (0.382, 0.618)
 
 
 @dataclass
@@ -41,22 +41,36 @@ class FibonacciAnalysis:
     optimal_short_zone: str
 
 
-def _find_swing_points(df: pd.DataFrame, lookback: int = 80) -> tuple[float, float, str]:
-    recent = df.tail(lookback)
-    swing_high = float(recent["high"].max())
-    swing_low = float(recent["low"].min())
-    price = float(recent["close"].iloc[-1])
+def _last_swing(df: pd.DataFrame) -> tuple[float, float, str, int, int]:
+    """Свинг от последнего значимого движения (пивоты + индексы)."""
+    highs = find_pivot_highs(df, window=4)
+    lows = find_pivot_lows(df, window=4)
+    price = float(df["close"].iloc[-1])
 
-    mid = (swing_high + swing_low) / 2
-    if price >= mid:
-        direction = "ВОСХОДЯЩИЙ"
+    if not highs or not lows:
+        recent = df.tail(60)
+        return float(recent["high"].max()), float(recent["low"].min()), "ВОСХОДЯЩИЙ", -60, -1
+
+    swing_high = highs[-1]
+    swing_low = lows[-1]
+
+    if len(highs) >= 2 and len(lows) >= 2:
+        if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
+            direction = "ВОСХОДЯЩИЙ"
+        elif highs[-1] < highs[-2] and lows[-1] < lows[-2]:
+            direction = "НИСХОДЯЩИЙ"
+        else:
+            direction = "ВОСХОДЯЩИЙ" if price >= (swing_high + swing_low) / 2 else "НИСХОДЯЩИЙ"
     else:
-        direction = "НИСХОДЯЩИЙ"
-    return swing_high, swing_low, direction
+        direction = "ВОСХОДЯЩИЙ" if price >= (swing_high + swing_low) / 2 else "НИСХОДЯЩИЙ"
+
+    return swing_high, swing_low, direction, -1, -1
 
 
 def _build_levels(swing_high: float, swing_low: float, direction: str) -> list[FibLevel]:
     diff = swing_high - swing_low
+    if diff <= 0:
+        return []
     levels: list[FibLevel] = []
 
     if direction == "ВОСХОДЯЩИЙ":
@@ -71,74 +85,50 @@ def _build_levels(swing_high: float, swing_low: float, direction: str) -> list[F
     return sorted(levels, key=lambda x: x.price)
 
 
-def _zone_description(
-    price: float,
-    levels: list[FibLevel],
-    direction: str,
-    in_golden: bool,
-) -> tuple[str, str]:
-    sorted_levels = sorted(levels, key=lambda x: x.price)
-
-    for i, lvl in enumerate(sorted_levels):
-        if price <= lvl.price:
-            if i == 0:
-                zone = f"Ниже {lvl.label} (${lvl.price:,.4f})"
-            else:
-                prev = sorted_levels[i - 1]
-                zone = f"Между {prev.label} и {lvl.label}"
-            break
-    else:
-        zone = f"Выше {sorted_levels[-1].label}"
-
-    if in_golden:
-        if direction == "ВОСХОДЯЩИЙ":
-            hint = "Золотая зона (38.2–61.8%) — классическая зона отката для покупки"
-        else:
-            hint = "Золотая зона (38.2–61.8%) — классическая зона отката для шорта"
-    elif price > sorted_levels[-2].price and direction == "ВОСХОДЯЩИЙ":
-        hint = "Цена у верхней границы — не гонитесь за ценой, ждите откат"
-    elif price < sorted_levels[1].price and direction == "НИСХОДЯЩИЙ":
-        hint = "Цена у нижней границы — риск продолжения падения"
-    else:
-        hint = "Цена между уровнями — дождитесь подхода к ключевому уровню"
-
-    return zone, hint
-
-
 def calculate_fibonacci(df: pd.DataFrame, price: float, lookback: int = 80) -> FibonacciAnalysis:
-    swing_high, swing_low, direction = _find_swing_points(df, lookback)
+    recent = df.tail(lookback)
+    swing_high, swing_low, direction, _, _ = _last_swing(recent)
     levels = _build_levels(swing_high, swing_low, direction)
 
     if direction == "ВОСХОДЯЩИЙ":
         fib_382 = swing_high - (swing_high - swing_low) * 0.382
         fib_618 = swing_high - (swing_high - swing_low) * 0.618
         in_golden = fib_618 <= price <= fib_382
-        optimal_long = f"${fib_618:,.4f} – ${fib_382:,.4f} (61.8% – 38.2%)"
-        optimal_short = f"${fib_382:,.4f} – ${swing_high:,.4f} (38.2% – 0%)"
+        optimal_long = f"${fib_618:,.4f} – ${fib_382:,.4f} (откат 61.8–38.2%)"
+        optimal_short = f"ниже ${fib_382:,.4f} — только контртренд"
     else:
         fib_382 = swing_low + (swing_high - swing_low) * 0.382
         fib_618 = swing_low + (swing_high - swing_low) * 0.618
         in_golden = fib_382 <= price <= fib_618
-        optimal_long = f"${swing_low:,.4f} – ${fib_382:,.4f} (0% – 38.2%)"
-        optimal_short = f"${fib_618:,.4f} – ${fib_382:,.4f} (61.8% – 38.2%)"
+        optimal_short = f"${fib_382:,.4f} – ${fib_618:,.4f} (откат 61.8–38.2%)"
+        optimal_long = f"выше ${fib_618:,.4f} — только контртренд"
 
     below = [l for l in levels if l.price < price]
     above = [l for l in levels if l.price > price]
     nearest_support = below[-1] if below else None
     nearest_resistance = above[0] if above else None
 
-    current_zone, entry_hint = _zone_description(price, levels, direction, in_golden)
+    if in_golden:
+        hint = "Золотая зона — лучшее место для входа по тренду (подтвердить MACD на 1H)"
+    elif direction == "ВОСХОДЯЩИЙ" and price > fib_382:
+        hint = "Цена выше 38.2% — не покупайте на эмоциях, ждите откат"
+    elif direction == "НИСХОДЯЩИЙ" and price < fib_618:
+        hint = "Цена ниже 61.8% — не шортите в панике, ждите откат вверх"
+    else:
+        hint = "Дождитесь зоны 50–61.8% или пробоя с объёмом"
+
+    zone = f"{'Золотая зона' if in_golden else 'Между уровнями Фибо'} · {direction}"
 
     return FibonacciAnalysis(
         swing_high=round(swing_high, 6),
         swing_low=round(swing_low, 6),
         direction=direction,
         levels=levels,
-        current_zone=current_zone,
+        current_zone=zone,
         nearest_support=nearest_support,
         nearest_resistance=nearest_resistance,
         in_golden_zone=in_golden,
-        entry_hint=entry_hint,
+        entry_hint=hint,
         optimal_long_zone=optimal_long,
         optimal_short_zone=optimal_short,
     )

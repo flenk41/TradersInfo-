@@ -99,6 +99,55 @@ def fetch_open_interest(symbol: str) -> float | None:
         return None
 
 
+def fetch_open_interest_history(symbol: str, period: str = "1h", limit: int = 48) -> list[dict]:
+    try:
+        data = _get(
+            BINANCE_FUTURES_URL,
+            "/futures/data/openInterestHist",
+            {"symbol": symbol, "period": period, "limit": min(limit, 500)},
+        )
+        return [
+            {
+                "time": int(row["timestamp"]) // 1000,
+                "sumOpenInterest": float(row["sumOpenInterest"]),
+                "sumOpenInterestValue": float(row.get("sumOpenInterestValue", 0)),
+            }
+            for row in data
+        ]
+    except requests.HTTPError:
+        return []
+
+
+def fetch_btc_change_24h() -> float | None:
+    try:
+        t = fetch_ticker_24h("BTCUSDT")
+        return float(t.get("priceChangePercent", 0))
+    except requests.HTTPError:
+        return None
+
+
+def fetch_funding_history(symbol: str, limit: int = 90) -> list[dict]:
+    """История фандинга для графика (как CoinGlass)."""
+    try:
+        history = _get(
+            BINANCE_FUTURES_URL,
+            "/fapi/v1/fundingRate",
+            {"symbol": symbol, "limit": min(limit, 1000)},
+        )
+        points = []
+        for row in sorted(history, key=lambda x: int(x["fundingTime"])):
+            rate_pct = float(row["fundingRate"]) * 100
+            points.append(
+                {
+                    "time": int(row["fundingTime"]) // 1000,
+                    "value": round(rate_pct, 4),
+                }
+            )
+        return points
+    except requests.HTTPError:
+        return []
+
+
 def validate_symbol(symbol: str) -> bool:
     try:
         _get(BINANCE_SPOT_URL, "/api/v3/ticker/price", {"symbol": symbol})

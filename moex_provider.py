@@ -1,0 +1,125 @@
+"""Данные российских акций с MOEX ISS API (без ключей)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any
+
+import pandas as pd
+import requests
+
+_MOEX = "https://iss.moex.com/iss"
+_TIMEOUT = 25
+
+_INTERVAL_MAP = {
+    "5m": 5,
+    "15m": 15,
+    "1h": 60,
+    "4h": 60,
+    "1d": 24,
+}
+
+
+def _secid(symbol: str) -> str:
+    return symbol.upper().replace(".ME", "").replace(".MC", "").strip()
+
+
+def fetch_klines_moex(symbol: str, interval: str = "1h", limit: int = 200) -> pd.DataFrame:
+    secid = _secid(symbol)
+    moex_interval = _INTERVAL_MAP.get(interval, 60)
+    days_back = 120 if interval in ("5m", "15m") else 400
+    start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+    url = (
+        f"{_MOEX}/engines/stock/markets/shares/securities/{secid}/candles.json"
+        f"?interval={moex_interval}&from={start}"
+    )
+    r = requests.get(url, timeout=_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    rows = data.get("candles", {}).get("data", [])
+    cols = data.get("candles", {}).get("columns", [])
+    if not rows:
+        raise ValueError(f"Нет данных MOEX для {secid}")
+
+    df = pd.DataFrame(rows, columns=cols)
+    df = df.rename(
+        columns={
+            "begin": "open_time",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "volume": "volume",
+        }
+    )
+    df["open_time"] = pd.to_datetime(df["open_time"])
+    df["quote_volume"] = df["close"] * df["volume"]
+    df = df.tail(limit).reset_index(drop=True)
+
+    if interval == "4h" and moex_interval == 60:
+        d = df.set_index("open_time")
+        o = d.resample("4h").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+                "quote_volume": "sum",
+            }
+        ).dropna()
+        df = o.reset_index()
+
+    return df[["open_time", "open", "high", "low", "close", "volume", "quote_volume"]]
+
+
+def fetch_ticker_moex(symbol: str) -> dict[str, Any]:
+    secid = _secid(symbol)
+    url = (
+        f"{_MOEX}/engines/stock/markets/shares/boards/TQBR/securities/{secid}.json"
+    )
+    r = requests.get(url, timeout=_TIMEOUT)
+    r.raise_for_status()
+    payload = r.json()
+    market = payload.get("marketdata", {})
+    cols = market.get("columns", [])
+    rows = market.get("data", [])
+    if not rows:
+        raise ValueError(f"Нет котировки MOEX для {secid}")
+
+    row = dict(zip(cols, rows[0]))
+
+    def _f(key: str, default: float = 0.0) -> float:
+        v = row.get(key)
+        if v is None:
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    last = _f("LAST") or _f("MARKETPRICE") or _f("LCURRENTPRICE") or _f("CLOSEPRICE")
+    if last <= 0:
+        hist = fetch_klines_moex(secid, "1d", 3)
+        last = float(hist["close"].iloc[-1]) if len(hist) else 0
+    change = _f("LASTCHANGEPRCNT") or _f("CHANGE")
+    high = _f("HIGH") or last
+    low = _f("LOW") or last
+    vol = _f("VALTODAY") or _f("VOLTODAY")
+
+    return {
+        "lastPrice": last,
+        "priceChangePercent": change,
+        "highPrice": high,
+        "lowPrice": low,
+        "quoteVolume": vol,
+    }
+
+
+def validate_moex(symbol: str) -> bool:
+    try:
+        fetch_ticker_moex(symbol)
+        return True
+    except Exception:
+        return False

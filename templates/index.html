@@ -3,221 +3,452 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Торговый помощник</title>
+  <title>Торговый терминал</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/terminal.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body>
+<body class="terminal-body">
   <div class="app">
-    <header class="header">
+    <header class="topbar">
       <div class="logo">
         <span class="logo-icon">📊</span>
         <div>
-          <h1>Торговый помощник</h1>
-          <p>Тренд · MACD · Фибо · Фандинг</p>
+          <h1>Торговый терминал</h1>
+          <p>TradingView · Риск · Анализ</p>
         </div>
       </div>
-      <div class="current-pair" id="currentPair">Выберите пару</div>
+      <div class="topbar-center">
+        <label class="search-field" for="customPair">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input type="text" id="customPair" placeholder="ETH/USDT · AAPL · EUR/USD" autocomplete="off" spellcheck="false">
+        </label>
+        <button type="button" class="btn-primary" id="btnAnalyze">Анализ</button>
+        <button type="button" class="btn-secondary btn-icon" id="btnRefresh" title="Обновить" disabled>↻</button>
+      </div>
+      <div class="topbar-actions">
+        <div class="instrument-badge" id="currentPair">—</div>
+      </div>
     </header>
 
-    <section class="panel pairs-panel">
-      <h2>Быстрый выбор</h2>
-      <div class="pairs-grid" id="pairsGrid">
-        {% for pair in pairs %}
-        <button type="button" class="btn-pair" data-pair="{{ pair }}">{{ pair.replace('/USDT', '') }}</button>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="panel search-panel">
-      <h2>Своя пара</h2>
-      <div class="search-row">
-        <input type="text" id="customPair" placeholder="Например: ETH/USDT" autocomplete="off">
-        <button type="button" class="btn-primary" id="btnAnalyze">Анализ</button>
-        <button type="button" class="btn-secondary" id="btnRefresh" title="Обновить" disabled>↻</button>
-      </div>
-    </section>
-
-    <section class="panel position-panel">
-      <h2>💼 Моя позиция</h2>
-      <div class="position-form">
-        <div class="side-toggle">
-          <button type="button" class="btn-side active" id="btnSideLong" data-side="long">ЛОНГ 📈</button>
-          <button type="button" class="btn-side" id="btnSideShort" data-side="short">ШОРТ 📉</button>
-        </div>
-        <div class="position-grid">
-          <label>
-            <span>Цена входа</span>
-            <input type="number" id="posEntry" step="any" placeholder="2130.50">
-          </label>
-          <label>
-            <span>Сумма (маржа), USDT</span>
-            <input type="number" id="posMargin" step="any" placeholder="100">
-          </label>
-          <label>
-            <span>Плечо</span>
-            <input type="number" id="posLeverage" min="1" max="125" value="10">
-          </label>
-        </div>
-        <div class="position-actions">
-          <button type="button" class="btn-secondary" id="btnUsePrice">Текущая цена</button>
-          <button type="button" class="btn-primary" id="btnCalcPosition">Рассчитать стоп / тейк</button>
-        </div>
-      </div>
-      <div class="position-result hidden" id="positionResult">
-        <div class="pos-status" id="posStatus">—</div>
-        <div class="pos-pnl-grid">
-          <div class="pos-pnl-box current">
-            <span>Сейчас</span>
-            <strong id="pnlCurrent">—</strong>
-            <small id="pnlCurrentPct">—</small>
-          </div>
-          <div class="pos-pnl-box tp">
-            <span>Тейк-профит</span>
-            <strong id="pnlTp">—</strong>
-            <small id="pnlTpPct">—</small>
-          </div>
-          <div class="pos-pnl-box sl">
-            <span>Стоп-лосс</span>
-            <strong id="pnlSl">—</strong>
-            <small id="pnlSlPct">—</small>
-          </div>
-        </div>
-        <dl class="pos-levels">
-          <div><dt>🛑 Стоп</dt><dd><span id="posStopPrice">—</span><em id="posStopReason"></em></dd></div>
-          <div><dt>🎯 Тейк</dt><dd><span id="posTpPrice">—</span><em id="posTpReason"></em></dd></div>
-          <div><dt>Вход / Текущая</dt><dd id="posPrices">—</dd></div>
-          <div><dt>Объём позиции</dt><dd id="posNotional">—</dd></div>
-          <div><dt>R:R</dt><dd id="posRR">—</dd></div>
-        </dl>
-        <p class="pos-advice" id="posAdvice">—</p>
-      </div>
-    </section>
-
-    <div class="loading hidden" id="loading">
+    <div class="loading hidden loading-overlay" id="loading">
       <div class="spinner"></div>
-      <span>Загрузка данных с Binance...</span>
+      <span>Загрузка данных...</span>
+    </div>
+    <div class="error hidden error-toast" id="error"></div>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-section">
+          <h3>Рынок</h3>
+          <div class="market-tabs" id="marketTabs">
+            <button type="button" class="btn-market active" data-market="crypto">Крипто</button>
+            <button type="button" class="btn-market" data-market="stock">Акции</button>
+            <button type="button" class="btn-market" data-market="forex">Валюта</button>
+          </div>
+        </div>
+        <div class="sidebar-section instrument-section">
+          <h3 id="instrumentListTitle">Криптовалюты</h3>
+          <div class="stock-region-tabs hidden" id="stockRegionTabs">
+            <button type="button" class="btn-region active" data-region="ru">🇷🇺 Россия</button>
+            <button type="button" class="btn-region" data-region="us">🇺🇸 США</button>
+          </div>
+          <input type="search" class="instrument-search" id="instrumentSearch" placeholder="Поиск в списке..." autocomplete="off">
+          <div class="instrument-list" id="pairsGrid"></div>
+        </div>
+      </aside>
+
+      <section class="chart-stage">
+        <div class="chart-toolbar">
+          <div class="tv-badge">
+            <strong>Свечи</strong>
+            <span id="tvSymbolLabel">—</span>
+          </div>
+          <a class="btn-tv-link" id="btnOpenTv" href="#" target="_blank" rel="noopener">TradingView ↗</a>
+          <div class="interval-group" id="tvIntervals">
+            <button type="button" class="btn-interval" data-interval="5">5m</button>
+            <button type="button" class="btn-interval" data-interval="15">15m</button>
+            <button type="button" class="btn-interval active" data-interval="60">1H</button>
+            <button type="button" class="btn-interval" data-interval="240">4H</button>
+            <button type="button" class="btn-interval" data-interval="D">1D</button>
+          </div>
+          <div class="chart-trend-bar" id="chartTrendBar">
+            <span class="chart-trend-placeholder">Анализ пары</span>
+          </div>
+        </div>
+        <div class="chart-viewport">
+          <div id="lwChartPane" class="lw-chart-pane">
+            <div id="chartContainer"></div>
+          </div>
+        </div>
+        <details class="tv-details" id="tvDetails">
+          <summary>Расширенный график TradingView</summary>
+          <div id="tradingviewContainer" class="tv-container"></div>
+        </details>
+        <div class="funding-panel" id="fundingPanel">
+          <div class="funding-panel-title">
+            <span>Funding Rate</span>
+            <small>крипто · красный = лонги платят</small>
+          </div>
+          <div id="fundingChartContainer"></div>
+        </div>
+        <div class="zones-strip" id="zonesStrip"></div>
+        <div id="zoneOverlay" class="hidden" aria-hidden="true"></div>
+      </section>
+
+      <aside class="right-panel">
+        <nav class="panel-tabs" id="panelTabs">
+          <button type="button" class="active" data-tab="overview">Обзор</button>
+          <button type="button" data-tab="risk">Риск</button>
+          <button type="button" data-tab="position">Позиция</button>
+          <button type="button" data-tab="analysis">Анализ</button>
+        </nav>
+
+        <div id="tab-overview" class="tab-panel active">
+          <section class="accuracy-panel" id="accuracyPanel">
+            <div class="accuracy-header">
+              <span>Точность анализа</span>
+              <strong class="accuracy-grade" id="accuracyGrade">—</strong>
+            </div>
+            <div class="accuracy-ring-wrap">
+              <div class="accuracy-ring" id="accuracyRing" style="--pct: 0">0%</div>
+              <div class="accuracy-meta">
+                <p id="accuracyLabel">—</p>
+                <p class="accuracy-sub" id="accuracyExplanation">Загрузите анализ</p>
+              </div>
+            </div>
+            <div class="accuracy-bars">
+              <div class="acc-bar-row"><span>Таймфреймы</span><div class="acc-bar"><div id="accBarTf"></div></div><em id="accTf">—</em></div>
+              <div class="acc-bar-row"><span>Бэктест 4H</span><div class="acc-bar"><div id="accBarBt"></div></div><em id="accBt">—</em></div>
+              <div class="acc-bar-row"><span>Индикаторы</span><div class="acc-bar"><div id="accBarInd"></div></div><em id="accInd">—</em></div>
+            </div>
+            <ul class="accuracy-factors" id="accuracyFactors"></ul>
+          </section>
+
+          <section class="verdict-banner compact" id="verdictBanner">
+            <div class="verdict-main">
+              <span class="verdict-label">Рекомендация</span>
+              <span class="verdict-action" id="bestAction">—</span>
+            </div>
+            <div class="verdict-sides">
+              <div class="verdict-side long-side">
+                <span>ЛОНГ</span>
+                <strong id="longVerdict">—</strong>
+                <small id="longScore">—</small>
+              </div>
+              <div class="verdict-side short-side">
+                <span>ШОРТ</span>
+                <strong id="shortVerdict">—</strong>
+                <small id="shortScore">—</small>
+              </div>
+            </div>
+            <p class="verdict-hints">
+              <span id="htfBias">—</span><br>
+              <span id="entryHint">—</span> · <span id="stopHint">—</span> · <span id="tpHint">—</span>
+            </p>
+            <ul class="verdict-warnings" id="warnings"></ul>
+          </section>
+
+          <article class="card card-price">
+            <h3>💰 Цена</h3>
+            <div class="price-main" id="priceMain">—</div>
+            <div class="price-change" id="priceChange">—</div>
+            <dl class="stats">
+              <div><dt>Макс 24ч</dt><dd id="high24">—</dd></div>
+              <div><dt>Мин 24ч</dt><dd id="low24">—</dd></div>
+              <div><dt>Объём</dt><dd id="volume24">—</dd></div>
+            </dl>
+          </article>
+
+          <section class="panel scalp-panel" id="scalpPanel">
+            <h3>⚡ Скальпинг</h3>
+            <p class="scalp-verdict" id="scalpVerdict">—</p>
+            <p class="scalp-vwap" id="scalpVwap">—</p>
+            <div class="scalp-signals" id="scalpSignals"></div>
+            <ul class="scalp-tips" id="scalpTips"></ul>
+          </section>
+
+          <div class="market-reasons compact">
+            <div class="reasons-col bearish-col">
+              <h4>Медвежьи факторы</h4>
+              <ul id="bearishReasons"></ul>
+            </div>
+            <div class="reasons-col bullish-col">
+              <h4>Бычьи факторы</h4>
+              <ul id="bullishReasons"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-risk" class="tab-panel">
+          <section class="panel">
+            <h2>🛡 Менеджер рисков</h2>
+            <form class="risk-form" id="riskForm" onsubmit="return false">
+              <div class="risk-grid">
+                <label>
+                  <span>Депозит (USDT)</span>
+                  <input type="number" id="riskBalance" value="1000" step="any">
+                </label>
+                <label>
+                  <span>Риск на сделку (%)</span>
+                  <input type="number" id="riskPct" value="1" step="0.1" min="0.1" max="10">
+                </label>
+                <label>
+                  <span>Дневной лимит (%)</span>
+                  <input type="number" id="riskDailyMax" value="3" step="0.5">
+                </label>
+                <label>
+                  <span>Уже потеряно сегодня (%)</span>
+                  <input type="number" id="riskDailyUsed" value="0" step="0.1">
+                </label>
+                <label>
+                  <span>Цена входа</span>
+                  <input type="number" id="riskEntry" step="any">
+                </label>
+                <label>
+                  <span>Стоп-лосс</span>
+                  <input type="number" id="riskStop" step="any">
+                </label>
+                <label>
+                  <span>Тейк (опц.)</span>
+                  <input type="number" id="riskTp" step="any">
+                </label>
+                <label>
+                  <span>Маржа (опц.)</span>
+                  <input type="number" id="riskMargin" step="any" placeholder="авто">
+                </label>
+                <label>
+                  <span>Плечо</span>
+                  <input type="number" id="riskLeverage" value="10" min="1" max="125">
+                </label>
+                <label>
+                  <span>Открытых сделок</span>
+                  <input type="number" id="riskOpenTrades" value="0" min="0">
+                </label>
+              </div>
+              <div class="side-toggle" style="margin-top:12px">
+                <button type="button" class="btn-side active" id="btnRiskLong">ЛОНГ</button>
+                <button type="button" class="btn-side" id="btnRiskShort">ШОРТ</button>
+              </div>
+              <div class="position-actions" style="margin-top:12px">
+                <button type="button" class="btn-secondary" id="btnRiskFromPosition">Из позиции</button>
+                <button type="button" class="btn-primary" id="btnCalcRisk">Рассчитать риск</button>
+              </div>
+            </form>
+            <div class="risk-result hidden" id="riskResult">
+              <div class="risk-verdict" id="riskVerdict">—</div>
+              <div class="risk-metrics" id="riskMetrics"></div>
+              <ul class="risk-warnings" id="riskWarnings"></ul>
+              <ul class="risk-rules" id="riskRules"></ul>
+              <p class="risk-tips" id="riskTips"></p>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-position" class="tab-panel">
+          <section class="panel position-panel">
+            <h2>💼 Позиция</h2>
+            <div class="position-form">
+              <div class="side-toggle">
+                <button type="button" class="btn-side active" id="btnSideLong" data-side="long">ЛОНГ 📈</button>
+                <button type="button" class="btn-side" id="btnSideShort" data-side="short">ШОРТ 📉</button>
+              </div>
+              <div class="position-grid">
+                <label>
+                  <span>Цена входа</span>
+                  <input type="number" id="posEntry" step="any">
+                </label>
+                <label>
+                  <span>Маржа USDT</span>
+                  <input type="number" id="posMargin" step="any" placeholder="100">
+                </label>
+                <label>
+                  <span>Плечо</span>
+                  <input type="number" id="posLeverage" min="1" max="125" value="10">
+                </label>
+              </div>
+              <div class="position-actions">
+                <button type="button" class="btn-secondary" id="btnUsePrice">Текущая цена</button>
+                <button type="button" class="btn-primary" id="btnCalcPosition">Рассчитать</button>
+              </div>
+            </div>
+            <div class="position-result hidden" id="positionResult">
+              <div class="pos-status" id="posStatus">—</div>
+              <div class="pos-pnl-grid">
+                <div class="pos-pnl-box current">
+                  <span>Сейчас</span>
+                  <strong id="pnlCurrent">—</strong>
+                  <small id="pnlCurrentPct">—</small>
+                </div>
+                <div class="pos-pnl-box tp">
+                  <span>Тейк</span>
+                  <strong id="pnlTp">—</strong>
+                  <small id="pnlTpPct">—</small>
+                </div>
+                <div class="pos-pnl-box sl">
+                  <span>Стоп</span>
+                  <strong id="pnlSl">—</strong>
+                  <small id="pnlSlPct">—</small>
+                </div>
+              </div>
+              <dl class="pos-levels">
+                <div><dt>Стоп</dt><dd><span id="posStopPrice">—</span><em id="posStopReason"></em></dd></div>
+                <div><dt>Тейк</dt><dd><span id="posTpPrice">—</span><em id="posTpReason"></em></dd></div>
+                <div><dt>Тейк 2</dt><dd id="posTp2">—</dd></div>
+                <div><dt>Вход / Сейчас</dt><dd id="posPrices">—</dd></div>
+                <div><dt>Объём</dt><dd id="posNotional">—</dd></div>
+                <div><dt>R:R</dt><dd id="posRR">—</dd></div>
+              </dl>
+              <p class="pos-advice" id="posAdvice">—</p>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-analysis" class="tab-panel">
+          <main class="results" id="results">
+            <section class="panel deep-panel" id="deepPanel">
+              <h2>🔬 Глубокий анализ</h2>
+              <p class="deep-summary" id="deepSummary">—</p>
+              <div class="deep-metrics">
+                <div class="deep-metric">
+                  <span>Режим</span>
+                  <strong id="deepRegime">—</strong>
+                  <small id="deepRegimeDesc">—</small>
+                </div>
+                <div class="deep-metric">
+                  <span>Риск</span>
+                  <strong id="deepRisk">—</strong>
+                  <div class="risk-bar"><div class="risk-fill" id="deepRiskBar"></div></div>
+                </div>
+                <div class="deep-metric">
+                  <span>Схождение ЛОНГ</span>
+                  <strong id="deepConfLong" class="text-green">—</strong>
+                </div>
+                <div class="deep-metric">
+                  <span>Схождение ШОРТ</span>
+                  <strong id="deepConfShort" class="text-red">—</strong>
+                </div>
+                <div class="deep-metric wide">
+                  <span>Глубина</span>
+                  <strong id="deepDepth">—</strong>
+                </div>
+              </div>
+              <div class="deep-grid">
+                <div class="deep-block">
+                  <h4>Дивергенции</h4>
+                  <ul id="deepDivergences"></ul>
+                </div>
+                <div class="deep-block">
+                  <h4>Фандинг / OI</h4>
+                  <p id="deepFunding">—</p>
+                  <p id="deepOi">—</p>
+                  <p id="deepBtc" class="deep-btc hidden"></p>
+                </div>
+                <div class="deep-block full">
+                  <h4>Индикаторы</h4>
+                  <div id="deepInsights" class="insights-grid"></div>
+                </div>
+                <div class="deep-block full">
+                  <h4>Сценарии</h4>
+                  <div id="deepScenarios" class="scenarios-grid"></div>
+                </div>
+                <div class="deep-block full">
+                  <h4>Уровни</h4>
+                  <ul id="deepWatch"></ul>
+                </div>
+              </div>
+            </section>
+
+            <section class="cards-row compact">
+              <article class="card card-trend">
+                <h3>📈 Тренд</h3>
+                <div class="trend-badge" id="overallTrend">—</div>
+                <p class="trend-summary" id="trendSummary">—</p>
+                <div class="timeframes" id="timeframes"></div>
+              </article>
+              <article class="card card-macd">
+                <h3>📉 MACD</h3>
+                <div class="macd-summary" id="macdSummary1h">—</div>
+                <p class="macd-cross" id="macdCross1h">—</p>
+                <dl class="stats">
+                  <div><dt>Линия</dt><dd id="macdLine1h">—</dd></div>
+                  <div><dt>Сигнал</dt><dd id="macdSignal1h">—</dd></div>
+                  <div><dt>Гист.</dt><dd id="macdHist1h">—</dd></div>
+                </dl>
+                <div class="macd-all" id="macdAll"></div>
+              </article>
+              <article class="card card-volatility">
+                <h3>⚡ Волатильность</h3>
+                <div class="vol-badge" id="volLevel">—</div>
+                <p id="volDesc">—</p>
+                <dl class="stats">
+                  <div><dt>ATR</dt><dd id="atr">—</dd></div>
+                  <div><dt>ATR %</dt><dd id="atrPct">—</dd></div>
+                  <div><dt>σ дн.</dt><dd id="dailyVol">—</dd></div>
+                  <div><dt>24ч</dt><dd id="range24">—</dd></div>
+                </dl>
+              </article>
+              <article class="card card-funding">
+                <h3>💸 Фандинг</h3>
+                <div class="funding-quality" id="fundingQuality">—</div>
+                <div class="funding-rate" id="fundingRate">—</div>
+                <div class="funding-verdicts">
+                  <div class="fv-row"><span>ЛОНГ</span><strong id="fundingLong">—</strong></div>
+                  <div class="fv-row"><span>ШОРТ</span><strong id="fundingShort">—</strong></div>
+                </div>
+                <p class="funding-summary" id="fundingSummary">—</p>
+                <dl class="stats">
+                  <div><dt>Mark</dt><dd id="markPrice">—</dd></div>
+                  <div><dt>Index</dt><dd id="indexPrice">—</dd></div>
+                  <div><dt>OI</dt><dd id="openInterest">—</dd></div>
+                  <div><dt>След.</dt><dd id="nextFunding">—</dd></div>
+                </dl>
+              </article>
+            </section>
+
+            <section class="panel fib-panel">
+              <h3>📐 Фибоначчи</h3>
+              <div class="fib-meta">
+                <span id="fibDirection">—</span>
+                <span id="fibZone">—</span>
+                <span class="fib-golden hidden" id="fibGolden">★ Золотая зона</span>
+              </div>
+              <p class="fib-hint" id="fibHint">—</p>
+              <div class="fib-zones">
+                <div><span class="label-long">Лонг</span><p id="fibLongZone">—</p></div>
+                <div><span class="label-short">Шорт</span><p id="fibShortZone">—</p></div>
+              </div>
+              <div class="fib-levels" id="fibLevels"></div>
+            </section>
+
+            <section class="panel levels-panel">
+              <h3>🎯 Уровни</h3>
+              <div class="levels">
+                <div><span class="label-up">Сопр.</span><div id="resistance" class="level-tags"></div></div>
+                <div><span class="label-down">Подд.</span><div id="support" class="level-tags"></div></div>
+              </div>
+            </section>
+
+            <section class="panel signals-panel">
+              <h3>🔔 Сигналы</h3>
+              <ul id="signals"></ul>
+            </section>
+          </main>
+        </div>
+      </aside>
     </div>
 
-    <div class="error hidden" id="error"></div>
-
-    <main class="results hidden" id="results">
-      <section class="verdict-banner" id="verdictBanner">
-        <div class="verdict-main">
-          <span class="verdict-label">Рекомендация</span>
-          <span class="verdict-action" id="bestAction">—</span>
-        </div>
-        <div class="verdict-sides">
-          <div class="verdict-side long-side">
-            <span>ЛОНГ</span>
-            <strong id="longVerdict">—</strong>
-            <small id="longScore">—</small>
-          </div>
-          <div class="verdict-side short-side">
-            <span>ШОРТ</span>
-            <strong id="shortVerdict">—</strong>
-            <small id="shortScore">—</small>
-          </div>
-        </div>
-        <p class="verdict-hints">
-          <span id="entryHint">—</span> · <span id="stopHint">—</span> · <span id="tpHint">—</span>
-        </p>
-        <ul class="verdict-warnings" id="warnings"></ul>
-      </section>
-
-      <section class="cards-row">
-        <article class="card card-price">
-          <h3>💰 Цена</h3>
-          <div class="price-main" id="priceMain">—</div>
-          <div class="price-change" id="priceChange">—</div>
-          <dl class="stats">
-            <div><dt>Макс 24ч</dt><dd id="high24">—</dd></div>
-            <div><dt>Мин 24ч</dt><dd id="low24">—</dd></div>
-            <div><dt>Объём 24ч</dt><dd id="volume24">—</dd></div>
-          </dl>
-        </article>
-
-        <article class="card card-trend">
-          <h3>📈 Тренд</h3>
-          <div class="trend-badge" id="overallTrend">—</div>
-          <p class="trend-summary" id="trendSummary">—</p>
-          <div class="timeframes" id="timeframes"></div>
-        </article>
-
-        <article class="card card-macd">
-          <h3>📉 MACD</h3>
-          <div class="macd-summary" id="macdSummary1h">—</div>
-          <p class="macd-cross" id="macdCross1h">—</p>
-          <dl class="stats">
-            <div><dt>Линия</dt><dd id="macdLine1h">—</dd></div>
-            <div><dt>Сигнал</dt><dd id="macdSignal1h">—</dd></div>
-            <div><dt>Гистограмма</dt><dd id="macdHist1h">—</dd></div>
-          </dl>
-          <div class="macd-all" id="macdAll"></div>
-        </article>
-
-        <article class="card card-volatility">
-          <h3>⚡ Волатильность</h3>
-          <div class="vol-badge" id="volLevel">—</div>
-          <p id="volDesc">—</p>
-          <dl class="stats">
-            <div><dt>ATR (14)</dt><dd id="atr">—</dd></div>
-            <div><dt>ATR %</dt><dd id="atrPct">—</dd></div>
-            <div><dt>Дневная σ</dt><dd id="dailyVol">—</dd></div>
-            <div><dt>Диапазон 24ч</dt><dd id="range24">—</dd></div>
-          </dl>
-        </article>
-
-        <article class="card card-funding">
-          <h3>💸 Фандинг</h3>
-          <div class="funding-quality" id="fundingQuality">—</div>
-          <div class="funding-rate" id="fundingRate">—</div>
-          <div class="funding-verdicts">
-            <div class="fv-row"><span>ЛОНГ</span><strong id="fundingLong">—</strong></div>
-            <div class="fv-row"><span>ШОРТ</span><strong id="fundingShort">—</strong></div>
-          </div>
-          <p class="funding-summary" id="fundingSummary">—</p>
-          <dl class="stats">
-            <div><dt>Mark</dt><dd id="markPrice">—</dd></div>
-            <div><dt>Index</dt><dd id="indexPrice">—</dd></div>
-            <div><dt>Open Interest</dt><dd id="openInterest">—</dd></div>
-            <div><dt>След. фандинг</dt><dd id="nextFunding">—</dd></div>
-          </dl>
-        </article>
-      </section>
-
-      <section class="panel fib-panel">
-        <h3>📐 Фибоначчи (4H)</h3>
-        <div class="fib-meta">
-          <span id="fibDirection">—</span>
-          <span id="fibZone">—</span>
-          <span class="fib-golden hidden" id="fibGolden">★ Золотая зона</span>
-        </div>
-        <p class="fib-hint" id="fibHint">—</p>
-        <div class="fib-zones">
-          <div><span class="label-long">Зона лонга</span><p id="fibLongZone">—</p></div>
-          <div><span class="label-short">Зона шорта</span><p id="fibShortZone">—</p></div>
-        </div>
-        <div class="fib-levels" id="fibLevels"></div>
-      </section>
-
-      <section class="panel levels-panel">
-        <h3>🎯 Уровни</h3>
-        <div class="levels">
-          <div><span class="label-up">Сопротивление</span><div id="resistance" class="level-tags"></div></div>
-          <div><span class="label-down">Поддержка</span><div id="support" class="level-tags"></div></div>
-        </div>
-      </section>
-
-      <section class="panel signals-panel">
-        <h3>🔔 Сигналы</h3>
-        <ul id="signals"></ul>
-      </section>
-    </main>
-
     <footer class="footer">
-      ⚠️ Не является финансовой рекомендацией · Данные: Binance
+      ⚠️ Не финансовая рекомендация · Binance / Yahoo · График TradingView
     </footer>
   </div>
+
+  <script>window.INSTRUMENT_CATALOG = {{ instrument_catalog|safe }};</script>
+  <script src="/static/tradingview.js"></script>
+  <script src="/static/chart.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

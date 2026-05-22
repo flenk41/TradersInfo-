@@ -1,15 +1,17 @@
-"""Рекомендации по входу в сделку и вердикт по фандингу."""
+"""Рекомендации по входу — логика опытного трейдера (HTF bias, confluence)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from analyzer import FundingMetrics, TimeframeAnalysis, VolatilityMetrics
+from analyzer import FundingMetrics, MarketBias, TimeframeAnalysis, VolatilityMetrics
 from fibonacci import FibonacciAnalysis
 
 VERDICT_ENTER = "ВХОДИТЬ ✅"
 VERDICT_WAIT = "ЖДАТЬ ⏳"
 VERDICT_NO = "НЕ ВХОДИТЬ ❌"
+
+TF_WEIGHT = {"1d": 3, "4h": 2, "1h": 1}
 
 
 @dataclass
@@ -43,41 +45,41 @@ def evaluate_funding(funding: FundingMetrics | None) -> FundingVerdict | None:
 
     rate = funding.rate_percent
 
-    if rate >= 0.05:
-        quality = "ПЛОХОЙ 🔴"
-        long_action = VERDICT_NO
-        short_action = VERDICT_ENTER
-        long_reason = "Фандинг слишком высокий — лонги переплачивают, рынок перегрет"
-        short_reason = "Высокий фандинг поддерживает шорты (лонги платят вам)"
-        summary = "Для ЛОНГА входить НЕЛЬЗЯ. Для ШОРТА условия благоприятны."
-    elif rate >= 0.02:
-        quality = "НЕБЛАГОПРИЯТНЫЙ 🟠"
+    if rate >= 0.03:
+        quality = "ПРОТИВ ЛОНГА 🔴"
         long_action = VERDICT_NO
         short_action = VERDICT_WAIT
-        long_reason = "Повышенный фандинг — лонги в невыгодной позиции"
-        short_reason = "Шорт возможен, но дождитесь подтверждения тренда"
-        summary = "ЛОНГ: НЕ ВХОДИТЬ. ШОРТ: осторожно, лучше подождать."
-    elif rate <= -0.05:
-        quality = "ПЛОХОЙ ДЛЯ ШОРТА 🔴"
-        long_action = VERDICT_ENTER
-        short_action = VERDICT_NO
-        long_reason = "Отрицательный фандинг — шорты переплачивают, возможен squeeze вверх"
-        short_reason = "Шортить опасно — рынок перегрет шортами"
-        summary = "Для ЛОНГА можно входить. Для ШОРТА входить НЕЛЬЗЯ."
-    elif rate <= -0.02:
-        quality = "НЕБЛАГОПРИЯТНЫЙ ДЛЯ ШОРТА 🟠"
+        long_reason = "Перегрев лонгов — не покупаем в толпу"
+        short_reason = "Фандинг помогает шорту, но нужен тренд"
+        summary = "ЛОНГ: НЕ ВХОДИТЬ. ШОРТ: только по тренду."
+    elif rate <= -0.03:
+        quality = "ПРОТИВ ШОРТА 🔴"
         long_action = VERDICT_WAIT
         short_action = VERDICT_NO
-        long_reason = "Фандинг поддерживает лонги — хорошо, но проверьте тренд"
-        short_reason = "Отрицательный фандинг — шорт невыгоден"
-        summary = "ЛОНГ: ждать подтверждения. ШОРТ: НЕ ВХОДИТЬ."
+        long_reason = "Шорты переплачивают — возможен вынос вверх"
+        short_reason = "Не шортим в перегретые лои"
+        summary = "ШОРТ: НЕ ВХОДИТЬ. ЛОНГ: только по тренду."
+    elif rate >= 0.01:
+        quality = "СЛАБО ПРОТИВ ЛОНГА 🟠"
+        long_action = VERDICT_WAIT
+        short_action = VERDICT_WAIT
+        long_reason = "Фандинг слегка против лонга"
+        short_reason = "Нейтрально для шорта"
+        summary = "Фандинг не главный — смотрим график."
+    elif rate <= -0.01:
+        quality = "СЛАБО ПРОТИВ ШОРТА 🟠"
+        long_action = VERDICT_WAIT
+        short_action = VERDICT_WAIT
+        long_reason = "Нейтрально для лонга"
+        short_reason = "Фандинг слегка против шорта"
+        summary = "Фандинг не главный — смотрим график."
     else:
         quality = "НЕЙТРАЛЬНЫЙ 🟢"
         long_action = VERDICT_WAIT
         short_action = VERDICT_WAIT
-        long_reason = "Фандинг в норме — не мешает лонгу"
-        short_reason = "Фандинг в норме — не мешает шорту"
-        summary = "Фандинг нейтральный — решение по тренду и Фибоначчи."
+        long_reason = "Фандинг не мешает"
+        short_reason = "Фандинг не мешает"
+        summary = "Фандинг OK — решение за структурой и ТФ."
 
     return FundingVerdict(
         quality=quality,
@@ -89,125 +91,144 @@ def evaluate_funding(funding: FundingMetrics | None) -> FundingVerdict | None:
     )
 
 
-def _score_trend(tf_analyses: list[TimeframeAnalysis], side: str) -> tuple[int, list[str]]:
-    score = 0
-    notes: list[str] = []
+def _get_tf(tf_analyses: list[TimeframeAnalysis], name: str) -> TimeframeAnalysis | None:
+    return next((a for a in tf_analyses if a.timeframe == name), None)
+
+
+def _score_side(
+    side: str,
+    tf_analyses: list[TimeframeAnalysis],
+    bias: MarketBias | None,
+    fib: FibonacciAnalysis | None,
+    funding_verdict: FundingVerdict | None,
+    volatility: VolatilityMetrics | None,
+) -> tuple[int, list[str], list[str]]:
+    score = 35
+    reasons: list[str] = []
+    warnings: list[str] = []
+
+    is_long = side == "long"
+    tf_1d = _get_tf(tf_analyses, "1d")
+    tf_4h = _get_tf(tf_analyses, "4h")
+    tf_1h = _get_tf(tf_analyses, "1h")
+
+    if bias:
+        if (is_long and bias.direction == "long") or (not is_long and bias.direction == "short"):
+            score += 22
+            reasons.append(f"HTF bias: {bias.direction} (+)")
+        elif bias.direction == "neutral":
+            score -= 15
+            warnings.append("Нет HTF bias — профи здесь не входят")
+        else:
+            score -= 28
+            warnings.append("Сделка ПРОТИВ старшего ТФ — высокий риск")
+
     for a in tf_analyses:
-        if side == "long":
+        w = TF_WEIGHT.get(a.timeframe, 1) * 5
+        if is_long:
             if "БЫЧИЙ" in a.trend:
-                score += 12
-                notes.append(f"{a.timeframe}: бычий тренд (+)")
+                score += w
             elif "МЕДВЕЖИЙ" in a.trend:
-                score -= 10
-                notes.append(f"{a.timeframe}: медвежий (−)")
+                score -= w + 3
+            if "БЫЧ" in a.market_structure:
+                score += 4
+            elif "МЕДВ" in a.market_structure:
+                score -= 6
         else:
             if "МЕДВЕЖИЙ" in a.trend:
-                score += 12
-                notes.append(f"{a.timeframe}: медвежий тренд (+)")
+                score += w
             elif "БЫЧИЙ" in a.trend:
-                score -= 10
-                notes.append(f"{a.timeframe}: бычий (−)")
-    return score, notes
+                score -= w + 3
+            if "МЕДВ" in a.market_structure:
+                score += 4
+            elif "БЫЧ" in a.market_structure:
+                score -= 6
 
+        if a.adx < 18:
+            score -= 8 if a.timeframe in ("1d", "4h") else 4
+            if a.timeframe == "1d":
+                warnings.append(f"1D флэт ADX {a.adx} — только скальп или пропуск")
 
-def _score_rsi(rsi: float, side: str) -> tuple[int, str | None]:
-    if side == "long":
-        if 40 <= rsi <= 60:
-            return 15, None
-        if 30 <= rsi < 40:
-            return 8, "RSI низкий — возможен отскок, но тренд слабый"
-        if rsi < 30:
-            return 5, "RSI перепродан — рискованный лонг без подтверждения"
-        if rsi > 70:
-            return -25, "RSI перекуплен — лонг опасен"
-        if rsi > 60:
-            return -8, "RSI высокий — лучше дождаться отката"
-    else:
-        if 40 <= rsi <= 60:
-            return 15, None
-        if 60 < rsi <= 70:
-            return 8, "RSI высокий — возможен откат вниз"
-        if rsi > 70:
-            return 5, "RSI перекуплен — шорт рискован без подтверждения"
-        if rsi < 30:
-            return -25, "RSI перепродан — шорт опасен"
-        if rsi < 40:
-            return -8, "RSI низкий — лучше дождаться отскока"
-    return 0, None
-
-
-def _score_macd(tf_analyses: list[TimeframeAnalysis], side: str) -> tuple[int, list[str]]:
-    score = 0
-    notes: list[str] = []
-    for a in tf_analyses:
-        weight = 14 if a.timeframe == "1h" else 8 if a.timeframe == "4h" else 5
-        if side == "long":
-            if "Бычье" in a.macd_cross:
-                score += weight + 6
-                notes.append(f"MACD {a.timeframe}: бычье пересечение (+)")
-            elif "БЫЧИЙ" in a.macd_trend:
-                score += weight
-            elif "Медвежье" in a.macd_cross:
-                score -= weight + 4
-                notes.append(f"MACD {a.timeframe}: медвежье пересечение (−)")
-            elif "МЕДВЕЖИЙ" in a.macd_trend:
-                score -= weight
+    if tf_1h:
+        rsi = tf_1h.rsi
+        if is_long:
+            if 45 <= rsi <= 58:
+                score += 14
+                reasons.append("RSI 1H: здоровый откат для лонга")
+            elif 35 <= rsi < 45:
+                score += 8
+            elif rsi > 68:
+                score -= 22
+                warnings.append("RSI перекуплен — не гонимся за ценой")
+            elif rsi < 28:
+                score -= 5
+                warnings.append("Перепродан — нужен разворотный паттерн")
         else:
-            if "Медвежье" in a.macd_cross:
-                score += weight + 6
-                notes.append(f"MACD {a.timeframe}: медвежье пересечение (+)")
-            elif "МЕДВЕЖИЙ" in a.macd_trend:
-                score += weight
-            elif "Бычье" in a.macd_cross:
-                score -= weight + 4
-                notes.append(f"MACD {a.timeframe}: бычье пересечение (−)")
-            elif "БЫЧИЙ" in a.macd_trend:
-                score -= weight
-    return score, notes[:3]
+            if 42 <= rsi <= 55:
+                score += 14
+                reasons.append("RSI 1H: откат для шорта")
+            elif 55 < rsi <= 65:
+                score += 8
+            elif rsi < 32:
+                score -= 22
+                warnings.append("RSI перепродан — не шортим дно")
+            elif rsi > 72:
+                score -= 5
 
+        if is_long and "Бычье" in tf_1h.macd_cross and bias and bias.direction == "long":
+            score += 18
+            reasons.append("MACD 1H: триггер лонга по тренду")
+        elif not is_long and "Медвежье" in tf_1h.macd_cross and bias and bias.direction == "short":
+            score += 18
+            reasons.append("MACD 1H: триггер шорта по тренду")
+        elif "пересечение" in tf_1h.macd_cross.lower():
+            score -= 10
 
-def _score_fib(fib: FibonacciAnalysis | None, side: str) -> tuple[int, list[str]]:
-    if not fib:
-        return 0, []
-    notes: list[str] = []
-    score = 0
-
-    if fib.in_golden_zone:
-        if side == "long" and fib.direction == "ВОСХОДЯЩИЙ":
-            score += 25
-            notes.append("Фибо: золотая зона для лонга (+)")
-        elif side == "short" and fib.direction == "НИСХОДЯЩИЙ":
-            score += 25
-            notes.append("Фибо: золотая зона для шорта (+)")
+        if tf_1h.volume_confirms:
+            score += 10
+            reasons.append(tf_1h.volume_note)
         else:
-            score += 5
-            notes.append("Фибо: золотая зона, но направление свинга другое")
-    elif side == "long" and fib.direction == "ВОСХОДЯЩИЙ":
-        score += 5
-    elif side == "short" and fib.direction == "НИСХОДЯЩИЙ":
-        score += 5
-    else:
+            score -= 6
+
+    if tf_4h and is_long and "БЫЧ" in tf_4h.macd_trend:
+        score += 6
+    if tf_4h and not is_long and "МЕДВ" in tf_4h.macd_trend:
+        score += 6
+
+    if fib:
+        if is_long and fib.direction == "ВОСХОДЯЩИЙ" and fib.in_golden_zone:
+            score += 20
+            reasons.append("Фибо: золотая зона лонга")
+        elif not is_long and fib.direction == "НИСХОДЯЩИЙ" and fib.in_golden_zone:
+            score += 20
+            reasons.append("Фибо: золотая зона шорта")
+        elif is_long and fib.direction == "ВОСХОДЯЩИЙ":
+            score += 4
+        elif not is_long and fib.direction == "НИСХОДЯЩИЙ":
+            score += 4
+        else:
+            score -= 12
+            warnings.append("Фибо не совпадает с направлением сделки")
+
+    if funding_verdict:
+        action = funding_verdict.long_action if is_long else funding_verdict.short_action
+        if action == VERDICT_NO:
+            score -= 35
+            warnings.append(funding_verdict.long_reason if is_long else funding_verdict.short_reason)
+
+    if volatility and volatility.level.startswith("ВЫСОКАЯ"):
         score -= 8
-        notes.append("Фибо: цена не в оптимальной зоне входа")
+        warnings.append("Высокая волатильность — риск 0.5–1% депозита")
 
-    return score, notes
-
-
-def _score_funding_side(funding_verdict: FundingVerdict | None, side: str) -> tuple[int, str | None]:
-    if not funding_verdict:
-        return 0, None
-    action = funding_verdict.long_action if side == "long" else funding_verdict.short_action
-    if action == VERDICT_ENTER:
-        return 20, None
-    if action == VERDICT_NO:
-        return -30, funding_verdict.long_reason if side == "long" else funding_verdict.short_reason
-    return 0, None
+    return max(0, min(100, score)), reasons, warnings
 
 
-def _verdict_from_score(score: int) -> str:
-    if score >= 65:
+def _verdict_from_score(score: int, has_blocker: bool) -> str:
+    if has_blocker:
+        return VERDICT_NO
+    if score >= 72:
         return VERDICT_ENTER
-    if score >= 40:
+    if score >= 52:
         return VERDICT_WAIT
     return VERDICT_NO
 
@@ -219,101 +240,67 @@ def build_trade_recommendation(
     funding_verdict: FundingVerdict | None,
     price: float,
     overall_trend: str,
+    bias: MarketBias | None = None,
 ) -> TradeRecommendation:
-    rsi_1h = tf_analyses[0].rsi if tf_analyses else 50.0
-    reasons: list[str] = []
-    warnings: list[str] = []
+    long_score, long_reasons, long_warn = _score_side(
+        "long", tf_analyses, bias, fib, funding_verdict, volatility
+    )
+    short_score, short_reasons, short_warn = _score_side(
+        "short", tf_analyses, bias, fib, funding_verdict, volatility
+    )
 
-    long_score = 50
-    short_score = 50
+    long_block = any("ПРОТИВ старшего" in w for w in long_warn) or (
+        funding_verdict and funding_verdict.long_action == VERDICT_NO
+    )
+    short_block = any("ПРОТИВ старшего" in w for w in short_warn) or (
+        funding_verdict and funding_verdict.short_action == VERDICT_NO
+    )
 
-    t_long, notes = _score_trend(tf_analyses, "long")
-    long_score += t_long
-    reasons.extend(notes[:3])
+    long_verdict = _verdict_from_score(long_score, long_block)
+    short_verdict = _verdict_from_score(short_score, short_block)
 
-    t_short, notes = _score_trend(tf_analyses, "short")
-    short_score += t_short
-
-    r_long, warn = _score_rsi(rsi_1h, "long")
-    long_score += r_long
-    if warn:
-        warnings.append(warn)
-
-    r_short, warn = _score_rsi(rsi_1h, "short")
-    short_score += r_short
-
-    m_long, macd_notes = _score_macd(tf_analyses, "long")
-    long_score += m_long
-    reasons.extend(macd_notes)
-
-    m_short, _ = _score_macd(tf_analyses, "short")
-    short_score += m_short
-
-    f_long, fib_notes = _score_fib(fib, "long")
-    long_score += f_long
-    reasons.extend(fib_notes)
-
-    f_short, _ = _score_fib(fib, "short")
-    short_score += f_short
-
-    fl, wr = _score_funding_side(funding_verdict, "long")
-    long_score += fl
-    if wr:
-        warnings.append(wr)
-
-    fs, wr = _score_funding_side(funding_verdict, "short")
-    short_score += fs
-    if wr and fs < 0:
-        warnings.append(wr)
-
-    if volatility and volatility.level.startswith("ВЫСОКАЯ"):
-        long_score -= 10
-        short_score -= 10
-        warnings.append("Высокая волатильность — уменьшите размер позиции")
-
-    if "СМЕШАННЫЙ" in overall_trend:
-        long_score -= 12
-        short_score -= 12
-        warnings.append("Смешанный тренд — дождитесь ясности на старших ТФ")
-
-    long_score = max(0, min(100, long_score))
-    short_score = max(0, min(100, short_score))
-
-    long_verdict = _verdict_from_score(long_score)
-    short_verdict = _verdict_from_score(short_score)
+    if bias and bias.direction == "neutral":
+        if long_verdict == VERDICT_ENTER:
+            long_verdict = VERDICT_WAIT
+        if short_verdict == VERDICT_ENTER:
+            short_verdict = VERDICT_WAIT
+        long_warn.append("Нет HTF bias — вход только после подтверждения")
+        short_warn.append("Нет HTF bias — вход только после подтверждения")
 
     if long_score >= short_score:
         best_action = f"ЛОНГ: {long_verdict}"
-        confidence = "высокая" if long_score >= 70 else "средняя" if long_score >= 50 else "низкая"
+        confidence = "высокая" if long_score >= 78 else "средняя" if long_score >= 60 else "низкая"
     else:
         best_action = f"ШОРТ: {short_verdict}"
-        confidence = "высокая" if short_score >= 70 else "средняя" if short_score >= 50 else "низкая"
+        confidence = "высокая" if short_score >= 78 else "средняя" if short_score >= 60 else "низкая"
 
     if fib:
-        entry_hint = fib.optimal_long_zone if long_score >= short_score else fib.optimal_short_zone
-        entry_price_hint = f"Зона входа: {entry_hint}"
-        if fib.nearest_support:
-            sl = fib.nearest_support.price * 0.995
-            stop_loss_hint = f"Стоп-лосс ниже ${sl:,.4f} ({fib.nearest_support.label})"
+        if long_score >= short_score:
+            entry_price_hint = f"Зона лонга: {fib.optimal_long_zone}"
+            if fib.nearest_support:
+                sl = fib.nearest_support.price * 0.997
+                stop_loss_hint = f"Стоп под {fib.nearest_support.label}: ${sl:,.4f}"
+            else:
+                stop_loss_hint = "Стоп: 1.5×ATR ниже входа"
+            if fib.nearest_resistance:
+                take_profit_hint = f"TP1: ${fib.nearest_resistance.price:,.4f} · дальше трейлинг"
+            else:
+                take_profit_hint = "TP: минимум R:R 1:2.5 от стопа"
         else:
-            stop_loss_hint = f"Стоп-лосс ниже ${price * 0.98:,.4f} (~2%)"
-        if fib.nearest_resistance:
-            tp = fib.nearest_resistance.price
-            take_profit_hint = f"Тейк-профит у ${tp:,.4f} ({fib.nearest_resistance.label})"
-        else:
-            take_profit_hint = f"Тейк-профит у ${price * 1.03:,.4f} (~3%)"
+            entry_price_hint = f"Зона шорта: {fib.optimal_short_zone}"
+            if fib.nearest_resistance:
+                sl = fib.nearest_resistance.price * 1.003
+                stop_loss_hint = f"Стоп над {fib.nearest_resistance.label}: ${sl:,.4f}"
+            else:
+                stop_loss_hint = "Стоп: 1.5×ATR над входом"
+            if fib.nearest_support:
+                take_profit_hint = f"TP1: ${fib.nearest_support.price:,.4f}"
+            else:
+                take_profit_hint = "TP: минимум R:R 1:2.5"
     else:
-        entry_price_hint = "Дождитесь подхода к уровню поддержки/сопротивления"
-        stop_loss_hint = f"Стоп-лосс: ~2% от ${price:,.4f}"
-        take_profit_hint = f"Тейк-профит: ~3% от ${price:,.4f}"
-
-    if funding_verdict:
-        if funding_verdict.long_action == VERDICT_NO and long_verdict in (VERDICT_ENTER, VERDICT_WAIT):
-            long_verdict = VERDICT_NO
-            warnings.append("Фандинг плохой для лонга — НЕ ВХОДИТЬ")
-        if funding_verdict.short_action == VERDICT_NO and short_verdict in (VERDICT_ENTER, VERDICT_WAIT):
-            short_verdict = VERDICT_NO
-            warnings.append("Фандинг плохой для шорта — НЕ ВХОДИТЬ")
+        entry_price_hint = "Вход на откате к EMA50 / уровню"
+        stop_loss_hint = "Стоп за последний свинг + буфер ATR"
+        take_profit_hint = "Частичная фиксация на 1:2, остаток на 1:3"
 
     return TradeRecommendation(
         long_verdict=long_verdict,
@@ -325,6 +312,6 @@ def build_trade_recommendation(
         entry_price_hint=entry_price_hint,
         stop_loss_hint=stop_loss_hint,
         take_profit_hint=take_profit_hint,
-        reasons=reasons[:5],
-        warnings=warnings[:4],
+        reasons=(long_reasons if long_score >= short_score else short_reasons)[:5],
+        warnings=(long_warn if long_score >= short_score else short_warn)[:5],
     )

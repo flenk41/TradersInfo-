@@ -1,6 +1,39 @@
 let activePair = null;
+let activeMarket = "crypto";
 let lastMarketPrice = null;
 let activeSide = "long";
+let activeRiskSide = "long";
+let lastAnalysisData = null;
+let lastPosition = null;
+let tvReady = false;
+let lwReady = false;
+let tvInterval = "60";
+
+const CATALOG = window.INSTRUMENT_CATALOG || { crypto: [], stock: { regions: [] }, forex: [] };
+let activeStockRegion = "ru";
+let instrumentSearchQuery = "";
+
+const PLACEHOLDERS = {
+  crypto: "ETH/USDT, BTC/USDT",
+  stock: "SBER.ME, GAZP.ME, AAPL",
+  forex: "EUR/USD, GBP/USD",
+};
+
+const FOREX_ICONS = {
+  "EUR/USD": "💶",
+  "GBP/USD": "💷",
+  "USD/JPY": "💴",
+  "USD/CHF": "🇨🇭",
+  "AUD/USD": "🇦🇺",
+  "EUR/GBP": "💱",
+  "USD/CNH": "🇨🇳",
+};
+
+const LIST_TITLES = {
+  crypto: "Криптовалюты",
+  stock: "Акции",
+  forex: "Валюта",
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,19 +59,391 @@ function verdictClass(verdict) {
 
 function setLoading(on) {
   $("loading").classList.toggle("hidden", !on);
-  $("results").classList.toggle("hidden", on);
   if (on) $("error").classList.add("hidden");
 }
 
 function showError(msg) {
   $("error").textContent = msg;
   $("error").classList.remove("hidden");
-  $("results").classList.add("hidden");
+  setTimeout(() => $("error")?.classList.add("hidden"), 6000);
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".panel-tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === tabId);
+  });
+  document.querySelectorAll(".tab-panel").forEach((p) => {
+    p.classList.toggle("active", p.id === `tab-${tabId}`);
+  });
+}
+
+function initTradingViewLazy() {
+  const el = $("tradingviewContainer");
+  if (!el || !window.TradingViewWidget || tvReady) return;
+  TradingViewWidget.init(el);
+  tvReady = true;
+}
+
+function updateTvLink(symbol) {
+  const a = $("btnOpenTv");
+  if (!a || !symbol) return;
+  const url = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
+  a.href = url;
+}
+
+function initLightweightChartOnce() {
+  if (lwReady) return;
+  const main = $("chartContainer");
+  const funding = $("fundingChartContainer");
+  const overlay = $("zoneOverlay");
+  if (!main || !funding || !window.LightweightCharts) return;
+  TradingChart.init(main, funding, overlay);
+  TradingChart.setEntryPicker((price) => {
+    $("posEntry").value = price.toFixed(price >= 1 ? 4 : 6);
+    if (activePair) calculatePosition(true);
+  });
+  lwReady = true;
+}
+
+async function loadChartsForPair(pair, marketType) {
+  initLightweightChartOnce();
+  const panel = $("fundingPanel");
+  if (marketType === "crypto") {
+    panel?.classList.remove("hidden");
+    await TradingChart.loadPair(pair, activeMarket);
+  } else {
+    panel?.classList.add("hidden");
+    if (TradingChart.clearFunding) TradingChart.clearFunding();
+    else if (lwReady) {
+      const res = await fetch(
+        `/api/klines?pair=${encodeURIComponent(pair)}&interval=1h&limit=200&market=${encodeURIComponent(activeMarket)}`
+      );
+      const json = await res.json();
+      if (json.ok) TradingChart.setCandles(json.candles);
+    }
+  }
+}
+
+function updateChartTrend(data) {
+  if (!data) return;
+  TradingChart.applyAnalysis(data);
+  renderZonesStrip(data);
+}
+
+function renderAccuracy(acc) {
+  const panel = $("accuracyPanel");
+  if (!panel) return;
+  if (!acc) {
+    $("accuracyGrade").textContent = "—";
+    $("accuracyRing").textContent = "—";
+    $("accuracyRing").style.setProperty("--pct", 0);
+    return;
+  }
+
+  $("accuracyGrade").textContent = `Класс ${acc.confidence_grade}`;
+  const ring = $("accuracyRing");
+  ring.textContent = `${acc.overall_pct}%`;
+  ring.style.setProperty("--pct", acc.overall_pct);
+  $("accuracyLabel").textContent = acc.reliability_label;
+  $("accuracyExplanation").textContent = acc.explanation;
+
+  const setBar = (id, pct, labelId, text) => {
+    const bar = $(id);
+    if (bar) bar.style.width = `${Math.min(100, pct)}%`;
+    const lbl = $(labelId);
+    if (lbl) lbl.textContent = text;
+  };
+  setBar("accBarTf", acc.timeframe_alignment_pct, "accTf", `${acc.timeframe_alignment_pct}%`);
+  setBar(
+    "accBarBt",
+    acc.backtest_hit_rate,
+    "accBt",
+    acc.backtest_samples > 0 ? `${acc.backtest_hit_rate}%` : "мало данных"
+  );
+  setBar("accBarInd", acc.indicator_agreement_pct, "accInd", `${acc.indicator_agreement_pct}%`);
+
+  const ul = $("accuracyFactors");
+  ul.innerHTML = "";
+  (acc.factors || []).forEach((f) => {
+    const li = document.createElement("li");
+    li.textContent = f;
+    ul.appendChild(li);
+  });
+}
+
+function renderZonesStrip(data) {
+  const strip = $("zonesStrip");
+  if (!strip || !data) return;
+  strip.innerHTML = "";
+  const add = (zones, cls) => {
+    (zones || []).forEach((z) => {
+      const chip = document.createElement("div");
+      chip.className = `zone-chip ${cls}`;
+      chip.textContent = `${z.label}: $${formatPrice(z.price)}`;
+      chip.title = `$${formatPrice(z.low)} – $${formatPrice(z.high)}`;
+      strip.appendChild(chip);
+    });
+  };
+  add(data.long_entry_zones, "long");
+  add(data.short_entry_zones, "short");
+  if (!strip.children.length) {
+    strip.innerHTML = '<span class="zone-chip">Зоны входа появятся после анализа</span>';
+  }
+}
+
+function syncRiskFromPosition(p) {
+  if (!p) return;
+  $("riskEntry").value = p.entry_price;
+  $("riskStop").value = p.stop_loss;
+  $("riskTp").value = p.take_profit || "";
+  $("riskMargin").value = p.margin_usdt;
+  $("riskLeverage").value = p.leverage;
+  activeRiskSide = p.side;
+  $("btnRiskLong").classList.toggle("active", p.side === "long");
+  $("btnRiskShort").classList.toggle("active", p.side === "short");
+}
+
+function renderRisk(r) {
+  const box = $("riskResult");
+  if (!box || !r) return;
+  box.classList.remove("hidden", "ok", "warn", "danger");
+  box.classList.add(r.status);
+
+  $("riskVerdict").textContent = r.verdict;
+  const metrics = $("riskMetrics");
+  metrics.innerHTML = `
+    <div class="risk-metric"><span>Риск сделки</span><strong>$${r.actual_risk_usdt} (${r.actual_risk_pct}%)</strong></div>
+    <div class="risk-metric"><span>Лимит</span><strong>$${r.risk_budget_usdt}</strong></div>
+    <div class="risk-metric"><span>Маржа (реком.)</span><strong>$${r.recommended_margin_usdt}</strong></div>
+    <div class="risk-metric"><span>Плечо (макс.)</span><strong>x${r.max_safe_leverage}</strong></div>
+    <div class="risk-metric"><span>Стоп</span><strong>${r.stop_distance_pct}%</strong></div>
+    <div class="risk-metric"><span>R:R</span><strong>1:${r.risk_reward || "—"}</strong></div>
+    <div class="risk-metric"><span>Убыток по стопу</span><strong>$${r.max_loss_at_stop_usdt}</strong></div>
+    <div class="risk-metric"><span>День (остаток)</span><strong>$${r.daily_budget_left_usdt}</strong></div>
+  `;
+
+  const wEl = $("riskWarnings");
+  wEl.innerHTML = "";
+  (r.warnings || []).forEach((w) => {
+    const li = document.createElement("li");
+    li.textContent = w;
+    wEl.appendChild(li);
+  });
+
+  const rules = $("riskRules");
+  rules.innerHTML = "";
+  (r.rules_checklist || []).forEach((t) => {
+    const li = document.createElement("li");
+    li.textContent = t;
+    rules.appendChild(li);
+  });
+
+  const tips = $("riskTips");
+  tips.textContent = (r.tips || []).join(" · ");
+
+  if (r.recommended_margin_usdt && !$("posMargin").value) {
+    $("posMargin").value = r.recommended_margin_usdt;
+  }
+  if (r.recommended_leverage) {
+    $("posLeverage").value = r.recommended_leverage;
+  }
+}
+
+async function calculateRisk() {
+  if (!activePair) {
+    showError("Сначала выберите инструмент и нажмите «Анализ»");
+    return;
+  }
+  const entry = parseFloat($("riskEntry").value);
+  const stop = parseFloat($("riskStop").value);
+  const balance = parseFloat($("riskBalance").value);
+  if (!entry || !stop || !balance) {
+    showError("Заполните депозит, вход и стоп");
+    return;
+  }
+
+  const body = {
+    pair: activePair,
+    market: activeMarket,
+    balance,
+    entry,
+    stop,
+    risk_pct: parseFloat($("riskPct").value) || 1,
+    max_daily_pct: parseFloat($("riskDailyMax").value) || 3,
+    daily_loss_used_pct: parseFloat($("riskDailyUsed").value) || 0,
+    open_trades: parseInt($("riskOpenTrades").value, 10) || 0,
+    leverage: parseInt($("riskLeverage").value, 10) || 10,
+    side: activeRiskSide,
+  };
+  const margin = parseFloat($("riskMargin").value);
+  const tp = parseFloat($("riskTp").value);
+  if (margin > 0) body.margin = margin;
+  if (tp > 0) body.take_profit = tp;
+
+  setLoading(true);
+  try {
+    const res = await fetch("/api/risk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    setLoading(false);
+    if (!json.ok) {
+      showError(json.error || "Ошибка расчёта риска");
+      return;
+    }
+    renderRisk(json.risk);
+    switchTab("risk");
+  } catch (_) {
+    setLoading(false);
+    showError("Не удалось рассчитать риск");
+  }
 }
 
 function setActiveButton(pair) {
-  document.querySelectorAll(".btn-pair").forEach((btn) => {
+  document.querySelectorAll(".instrument-item").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.pair === pair);
+  });
+}
+
+function instrumentFallbackLabel(item) {
+  if (item.subtitle) return item.subtitle.slice(0, 3).toUpperCase();
+  const id = item.id || "";
+  if (id.includes("/")) return id.split("/")[0].slice(0, 3);
+  return id.replace(".ME", "").slice(0, 3);
+}
+
+function instrumentIconHtml(item) {
+  const fb = instrumentFallbackLabel(item);
+  const regionClass = item.region === "ru" ? "ru" : item.region === "us" ? "us" : "";
+  if (activeMarket === "forex" && FOREX_ICONS[item.id]) {
+    return `<span class="inst-emoji">${FOREX_ICONS[item.id]}</span>`;
+  }
+  if (item.icon_url) {
+    return `<span class="inst-fallback ${regionClass}">${fb}</span>
+      <img class="inst-icon" src="${item.icon_url}" alt="" loading="lazy"
+        onerror="this.style.display='none'" />`;
+  }
+  return `<span class="inst-fallback ${regionClass}">${fb}</span>`;
+}
+
+function getCatalogItems(market) {
+  if (market === "crypto") return CATALOG.crypto || [];
+  if (market === "forex") return CATALOG.forex || [];
+  if (market === "stock") {
+    const regions = CATALOG.stock?.regions || [];
+    const reg = regions.find((r) => r.id === activeStockRegion) || regions[0];
+    return reg?.items || [];
+  }
+  return [];
+}
+
+function getFirstInstrumentId(market) {
+  const items = getCatalogItems(market);
+  return items[0]?.id || null;
+}
+
+function renderPairsGrid(market) {
+  const grid = $("pairsGrid");
+  const title = $("instrumentListTitle");
+  const regionTabs = $("stockRegionTabs");
+  if (!grid) return;
+
+  if (title) title.textContent = LIST_TITLES[market] || "Инструменты";
+  regionTabs?.classList.toggle("hidden", market !== "stock");
+
+  const q = instrumentSearchQuery.trim().toLowerCase();
+  const items = getCatalogItems(market).filter((item) => {
+    if (!q) return true;
+    const hay = `${item.id} ${item.name} ${item.subtitle || ""}`.toLowerCase();
+    return hay.includes(q);
+  });
+
+  grid.innerHTML = "";
+  if (!items.length) {
+    grid.innerHTML = '<p class="instrument-empty">Ничего не найдено</p>';
+    return;
+  }
+
+  items.forEach((item) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "instrument-item";
+    btn.dataset.pair = item.id;
+    btn.innerHTML = `
+      <span class="inst-icon-wrap">${instrumentIconHtml(item)}</span>
+      <span class="inst-text">
+        <strong>${item.name}</strong>
+        <small>${item.id}${item.subtitle && item.subtitle !== item.id ? " · " + item.subtitle : ""}</small>
+      </span>
+    `;
+    btn.addEventListener("click", () => {
+      $("customPair").value = item.id;
+      analyze(item.id);
+    });
+    grid.appendChild(btn);
+  });
+
+  if (activePair) setActiveButton(activePair);
+}
+
+function normalizePairInput(pair, market) {
+  let p = (pair || "").trim().toUpperCase();
+  if (!p) return p;
+  if (market === "crypto") {
+    if (!p.includes("/")) {
+      p = p.replace("USDT", "") + "/USDT";
+    }
+    return p;
+  }
+  if (market === "stock") {
+    const items = getCatalogItems("stock");
+    const allRu = (CATALOG.stock?.regions || []).flatMap((r) => r.items || []);
+    const hit = [...items, ...allRu].find(
+      (i) => i.id.toUpperCase() === p || i.id.replace(".ME", "") === p
+    );
+    if (hit) return hit.id;
+    if (activeStockRegion === "ru" && !p.includes(".")) return `${p}.ME`;
+    return p;
+  }
+  return p;
+}
+
+function renderScalping(scalp) {
+  const panel = $("scalpPanel");
+  if (!panel) return;
+  if (!scalp) {
+    $("scalpVerdict").textContent = "—";
+    $("scalpVwap").textContent = "—";
+    $("scalpSignals").innerHTML = "";
+    $("scalpTips").innerHTML = "";
+    return;
+  }
+  $("scalpVerdict").textContent = scalp.verdict || "—";
+  $("scalpVwap").textContent = scalp.price_vs_vwap || (scalp.vwap ? "VWAP: $" + formatPrice(scalp.vwap) : "—");
+
+  const sigEl = $("scalpSignals");
+  sigEl.innerHTML = "";
+  (scalp.signals || []).forEach((s) => {
+    const card = document.createElement("div");
+    card.className = "scalp-signal " + (s.direction === "long" ? "scalp-long" : "scalp-short");
+    card.innerHTML = `
+      <strong>${s.timeframe.toUpperCase()} · ${s.direction === "long" ? "ЛОНГ" : "ШОРТ"} (${s.score})</strong>
+      <span>Зона: ${s.entry_zone}</span>
+      <span>${s.stop_hint}</span>
+      <span>${s.target_hint}</span>
+      <small>${s.note || ""}</small>
+    `;
+    sigEl.appendChild(card);
+  });
+
+  const tipsEl = $("scalpTips");
+  tipsEl.innerHTML = "";
+  (scalp.tips || []).forEach((t) => {
+    const li = document.createElement("li");
+    li.textContent = t;
+    tipsEl.appendChild(li);
   });
 }
 
@@ -65,9 +470,9 @@ function renderTimeframes(timeframes) {
     div.className = "tf-item";
     const sma = tf.sma200 ? "$" + formatPrice(tf.sma200) : "—";
     div.innerHTML = `
-      <strong>[${tf.timeframe.toUpperCase()}] ${tf.trend} (${tf.trend_strength})</strong>
+      <strong>[${tf.timeframe.toUpperCase()}] ${tf.trend}</strong>
+      <span>${tf.market_structure} · ADX ${tf.adx}</span>
       <span>RSI ${tf.rsi} · MACD ${tf.macd_trend} · ${tf.macd_cross}</span>
-      <span>EMA20 $${formatPrice(tf.ema20)} · EMA50 $${formatPrice(tf.ema50)} · SMA200 ${sma}</span>
     `;
     el.appendChild(div);
   });
@@ -108,9 +513,12 @@ function renderMacd(timeframes) {
   });
 }
 
-function renderTrade(trade) {
+function renderTrade(trade, bias) {
   if (!trade) return;
   $("bestAction").textContent = trade.best_action;
+  if (bias) {
+    $("htfBias").textContent = "Bias: " + bias.summary;
+  }
   $("longVerdict").textContent = trade.long_verdict;
   $("shortVerdict").textContent = trade.short_verdict;
   $("longVerdict").className = verdictClass(trade.long_verdict);
@@ -127,6 +535,75 @@ function renderTrade(trade) {
     const li = document.createElement("li");
     li.textContent = "⚠ " + w;
     wEl.appendChild(li);
+  });
+}
+
+function renderDeep(deep) {
+  const panel = $("deepPanel");
+  if (!deep || !panel) return;
+
+  $("deepSummary").textContent = deep.executive_summary || "—";
+  $("deepRegime").textContent = deep.market_regime || "—";
+  $("deepRegimeDesc").textContent = deep.regime_description || "";
+  $("deepRisk").textContent = `${deep.risk_label} (${deep.risk_score}/100)`;
+  const bar = $("deepRiskBar");
+  if (bar) bar.style.width = `${deep.risk_score}%`;
+  $("deepConfLong").textContent = deep.confluence_long + "%";
+  $("deepConfShort").textContent = deep.confluence_short + "%";
+  $("deepDepth").textContent = deep.depth_score + "/100";
+
+  const divEl = $("deepDivergences");
+  divEl.innerHTML = "";
+  (deep.divergences || []).forEach((d) => {
+    const li = document.createElement("li");
+    li.textContent = d;
+    divEl.appendChild(li);
+  });
+
+  $("deepFunding").textContent = deep.funding_trend || "—";
+  $("deepOi").textContent = deep.oi_trend || "—";
+  const btcEl = $("deepBtc");
+  if (deep.btc_context) {
+    btcEl.textContent = deep.btc_context;
+    btcEl.classList.remove("hidden");
+  } else if (btcEl) {
+    btcEl.classList.add("hidden");
+  }
+
+  const insEl = $("deepInsights");
+  insEl.innerHTML = "";
+  (deep.insights || []).forEach((i) => {
+    const card = document.createElement("div");
+    card.className = "insight-card";
+    card.innerHTML = `
+      <strong>${i.name}</strong>
+      <span class="ins-value">${i.value}</span>
+      <span class="ins-signal">${i.signal}</span>
+      ${i.detail ? `<small>${i.detail}</small>` : ""}
+    `;
+    insEl.appendChild(card);
+  });
+
+  const scEl = $("deepScenarios");
+  scEl.innerHTML = "";
+  (deep.scenarios || []).forEach((s) => {
+    const card = document.createElement("div");
+    card.className = "scenario-card";
+    card.innerHTML = `
+      <h5>${s.title} <em>${s.probability}</em></h5>
+      <p><b>Триггер:</b> ${s.trigger}</p>
+      <p><b>Цель:</b> ${s.target}</p>
+      <p><b>Действие:</b> ${s.action}</p>
+    `;
+    scEl.appendChild(card);
+  });
+
+  const watchEl = $("deepWatch");
+  watchEl.innerHTML = "";
+  (deep.watch_levels || []).forEach((w) => {
+    const li = document.createElement("li");
+    li.textContent = w;
+    watchEl.appendChild(li);
   });
 }
 
@@ -175,7 +652,8 @@ function render(data) {
   $("low24").textContent = "$" + formatPrice(data.low_24h);
   $("volume24").textContent = "$" + formatVolume(data.volume_24h);
 
-  renderTrade(data.trade);
+  renderTrade(data.trade, data.bias);
+  renderDeep(data.deep);
 
   $("overallTrend").textContent = data.overall_trend;
   $("trendSummary").textContent = data.trend_summary;
@@ -224,9 +702,14 @@ function render(data) {
   renderLevels("resistance", data.resistance_levels);
   renderLevels("support", data.support_levels);
   renderSignals(data.signals);
+  renderScalping(data.scalp);
+  renderAccuracy(data.accuracy);
 
-  $("results").classList.remove("hidden");
+  const label = data.display_name || data.symbol;
+  $("currentPair").textContent = label + (data.market_type ? " · " + data.market_type : "");
+
   lastMarketPrice = data.price;
+  if ($("riskEntry") && ! $("riskEntry").value) $("riskEntry").value = data.price;
 }
 
 function renderPosition(p) {
@@ -248,15 +731,27 @@ function renderPosition(p) {
   $("posStopReason").textContent = p.stop_reason;
   $("posTpPrice").textContent = "$" + formatPrice(p.take_profit) + " (+" + p.tp_distance_pct + "%)";
   $("posTpReason").textContent = p.tp_reason;
+  $("posTp2").textContent = p.take_profit_2 ? "$" + formatPrice(p.take_profit_2) : "—";
   $("posPrices").textContent =
     "$" + formatPrice(p.entry_price) + " → $" + formatPrice(p.current_price);
   $("posNotional").textContent =
     p.position_notional_usdt.toFixed(2) + " USDT · x" + p.leverage + " · " + p.quantity + " шт.";
   $("posRR").textContent = "1:" + p.risk_reward;
   $("posAdvice").textContent = p.advice;
+  lastPosition = p;
+  syncRiskFromPosition(p);
 }
 
-async function calculatePosition() {
+function applyPositionPreview(preview, side) {
+  if (!preview) return;
+  const p = side === "short" ? preview.short : preview.long;
+  if (!p) return;
+  if (!$("riskStop").value) $("riskStop").value = p.stop_loss;
+  if (!$("riskTp").value) $("riskTp").value = p.take_profit;
+  syncRiskFromPosition(p);
+}
+
+async function calculatePosition(silent) {
   if (!activePair) {
     showError("Сначала выберите пару и нажмите «Анализ»");
     return;
@@ -266,21 +761,22 @@ async function calculatePosition() {
   const leverage = parseInt($("posLeverage").value, 10);
 
   if (!entry || entry <= 0) {
-    showError("Укажите цену входа");
+    if (!silent) showError("Укажите цену входа (или кликните по графику)");
     return;
   }
   if (!margin || margin <= 0) {
-    showError("Укажите сумму в USDT");
+    if (!silent) showError("Укажите сумму в USDT");
     return;
   }
 
-  setLoading(true);
+  if (!silent) setLoading(true);
   try {
     const res = await fetch("/api/position", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pair: activePair,
+        market: activeMarket,
         entry,
         margin,
         leverage: leverage || 1,
@@ -288,38 +784,35 @@ async function calculatePosition() {
       }),
     });
     const json = await res.json();
-    setLoading(false);
+    if (!silent) setLoading(false);
     if (!json.ok) {
-      showError(json.error || "Ошибка расчёта");
+      if (!silent) showError(json.error || "Ошибка расчёта");
       return;
     }
     $("error").classList.add("hidden");
     renderPosition(json.position);
     if (json.market_price) lastMarketPrice = json.market_price;
   } catch (e) {
-    setLoading(false);
-    showError("Не удалось рассчитать позицию");
+    if (!silent) setLoading(false);
+    if (!silent) showError("Не удалось рассчитать позицию");
   }
 }
 
-async function analyze(pair) {
+async function analyze(pair, forceRefresh = false) {
   if (!pair || !pair.trim()) return;
 
-  pair = pair.trim().toUpperCase();
-  if (!pair.includes("/")) {
-    const base = pair.replace("USDT", "");
-    pair = base + "/USDT";
-  }
-
+  pair = normalizePairInput(pair, activeMarket);
   activePair = pair;
-  $("currentPair").textContent = pair;
   $("customPair").value = pair;
   $("btnRefresh").disabled = false;
   setActiveButton(pair);
   setLoading(true);
 
   try {
-    const res = await fetch("/api/analyze?pair=" + encodeURIComponent(pair));
+    let url =
+      "/api/analyze?pair=" + encodeURIComponent(pair) + "&market=" + encodeURIComponent(activeMarket);
+    if (forceRefresh) url += "&refresh=1";
+    const res = await fetch(url);
     const json = await res.json();
     setLoading(false);
 
@@ -328,18 +821,63 @@ async function analyze(pair) {
       return;
     }
     render(json.data);
+    lastAnalysisData = {
+      ...json.data,
+      position_preview: json.position_preview,
+      tv_symbol: json.data.tv_symbol || json.tv_symbol,
+    };
+
+    const tvSym = json.data.tv_symbol || json.tv_symbol || "BINANCE:ETHUSDT";
+    const tvLabel = $("tvSymbolLabel");
+    if (tvLabel) tvLabel.textContent = json.data.display_name || pair;
+    updateTvLink(tvSym);
+
+    await loadChartsForPair(pair, json.data.market_type);
+    setTimeout(() => TradingChart.resize?.(), 120);
+    updateChartTrend(json.data);
+
+    if (!$("posEntry").value && json.data.price) {
+      $("posEntry").value = json.data.price;
+    }
+    if ($("riskEntry") && json.data.price) $("riskEntry").value = json.data.price;
+    applyPositionPreview(json.position_preview, activeSide);
   } catch (e) {
     setLoading(false);
     showError("Не удалось подключиться к серверу");
   }
 }
 
-document.querySelectorAll(".btn-pair").forEach((btn) => {
-  btn.addEventListener("click", () => analyze(btn.dataset.pair));
+document.querySelectorAll(".btn-market").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activeMarket = btn.dataset.market;
+    document.querySelectorAll(".btn-market").forEach((b) => b.classList.toggle("active", b === btn));
+    instrumentSearchQuery = "";
+    if ($("instrumentSearch")) $("instrumentSearch").value = "";
+    renderPairsGrid(activeMarket);
+    const ph = PLACEHOLDERS[activeMarket];
+    if (ph && $("customPair")) $("customPair").placeholder = ph;
+    const first = getFirstInstrumentId(activeMarket);
+    if (first) analyze(first);
+  });
+});
+
+document.querySelectorAll(".btn-region").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activeStockRegion = btn.dataset.region;
+    document.querySelectorAll(".btn-region").forEach((b) => b.classList.toggle("active", b === btn));
+    renderPairsGrid("stock");
+    const first = getFirstInstrumentId("stock");
+    if (first) analyze(first);
+  });
+});
+
+$("instrumentSearch")?.addEventListener("input", (e) => {
+  instrumentSearchQuery = e.target.value;
+  renderPairsGrid(activeMarket);
 });
 
 $("btnAnalyze").addEventListener("click", () => analyze($("customPair").value));
-$("btnRefresh").addEventListener("click", () => activePair && analyze(activePair));
+$("btnRefresh").addEventListener("click", () => activePair && analyze(activePair, true));
 
 $("customPair").addEventListener("keydown", (e) => {
   if (e.key === "Enter") analyze($("customPair").value);
@@ -349,18 +887,82 @@ document.getElementById("btnSideLong").addEventListener("click", () => {
   activeSide = "long";
   document.getElementById("btnSideLong").classList.add("active");
   document.getElementById("btnSideShort").classList.remove("active");
+  if (lastAnalysisData?.position_preview) applyPositionPreview(lastAnalysisData.position_preview, "long");
+  if ($("posEntry").value) calculatePosition(true);
 });
 document.getElementById("btnSideShort").addEventListener("click", () => {
   activeSide = "short";
   document.getElementById("btnSideShort").classList.add("active");
   document.getElementById("btnSideLong").classList.remove("active");
+  if (lastAnalysisData?.position_preview) applyPositionPreview(lastAnalysisData.position_preview, "short");
+  if ($("posEntry").value) calculatePosition(true);
 });
 
 $("btnUsePrice").addEventListener("click", () => {
-  if (lastMarketPrice) $("posEntry").value = lastMarketPrice;
-  else showError("Сначала загрузите анализ пары");
+  if (lastMarketPrice) {
+    $("posEntry").value = lastMarketPrice;
+    calculatePosition(true);
+  } else showError("Сначала загрузите анализ пары");
 });
 
-$("btnCalcPosition").addEventListener("click", calculatePosition);
+$("btnCalcPosition").addEventListener("click", () => calculatePosition(false));
 
-analyze("ETH/USDT");
+$("btnCalcRisk")?.addEventListener("click", () => calculateRisk());
+$("btnRiskFromPosition")?.addEventListener("click", () => {
+  if (lastPosition) {
+    syncRiskFromPosition(lastPosition);
+    calculateRisk();
+  } else calculatePosition(false);
+});
+
+$("btnRiskLong")?.addEventListener("click", () => {
+  activeRiskSide = "long";
+  $("btnRiskLong").classList.add("active");
+  $("btnRiskShort").classList.remove("active");
+});
+$("btnRiskShort")?.addEventListener("click", () => {
+  activeRiskSide = "short";
+  $("btnRiskShort").classList.add("active");
+  $("btnRiskLong").classList.remove("active");
+});
+
+document.querySelectorAll(".panel-tabs button").forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+document.querySelectorAll(".btn-interval").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".btn-interval").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    tvInterval = btn.dataset.interval;
+    if (tvReady) TradingViewWidget.setInterval(tvInterval);
+    const lwMap = { "5": "5m", "15": "15m", "60": "1h", "240": "4h", D: "1d" };
+    const lwTf = lwMap[tvInterval];
+    if (lwReady && activePair && lwTf) {
+      fetch(
+        `/api/klines?pair=${encodeURIComponent(activePair)}&interval=${lwTf}&limit=200&market=${encodeURIComponent(activeMarket)}`
+      )
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.ok) TradingChart.setCandles(j.candles);
+        });
+    }
+  });
+});
+
+$("tvDetails")?.addEventListener("toggle", () => {
+  if (!$("tvDetails")?.open || !lastAnalysisData) return;
+  initTradingViewLazy();
+  const sym =
+    lastAnalysisData.tv_symbol ||
+    (activePair && activeMarket === "crypto" ? `BINANCE:${activePair.replace("/", "")}` : null);
+  if (sym) TradingViewWidget.setSymbol(sym, tvInterval);
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  initLightweightChartOnce();
+  $("fundingPanel")?.classList.add("hidden");
+  renderPairsGrid("crypto");
+  switchTab("overview");
+  analyze("ETH/USDT");
+});

@@ -46,19 +46,18 @@ def format_analysis(analysis: MarketAnalysis) -> str:
     lines.append("📈 ТРЕНД")
     lines.append(f"   Общий:       {analysis.overall_trend}")
     lines.append(f"   {analysis.trend_summary}")
+    if analysis.bias:
+        lines.append(f"   HTF Bias:    {analysis.bias.direction.upper()} — {analysis.bias.summary}")
+        lines.append(f"   Правило:     {analysis.bias.trade_rule}")
     lines.append("")
     for tf in analysis.timeframes:
         lines.append(f"   [{tf.timeframe.upper():>3}] {tf.trend} ({tf.trend_strength})")
+        lines.append(f"         Структура: {tf.market_structure} | ADX {tf.adx} ({tf.adx_label})")
         sma = f"${format_price(tf.sma200)}" if tf.sma200 else "—"
         lines.append(
-            f"         RSI: {tf.rsi} | EMA20: ${format_price(tf.ema20)} | "
-            f"EMA50: ${format_price(tf.ema50)} | SMA200: {sma}"
+            f"         RSI {tf.rsi} | MACD {tf.macd_trend} | {tf.macd_cross}"
         )
-        lines.append(
-            f"         MACD: {tf.macd_trend} | линия {tf.macd:+.4f} | "
-            f"сигнал {tf.macd_signal:+.4f} | гист. {tf.macd_histogram:+.4f}"
-        )
-        lines.append(f"         {tf.macd_cross}")
+        lines.append(f"         {tf.volume_note}")
     lines.append("")
     lines.append(_line())
 
@@ -75,6 +74,17 @@ def format_analysis(analysis: MarketAnalysis) -> str:
         if t.warnings:
             for w in t.warnings:
                 lines.append(f"   ⚠ {w}")
+        lines.append("")
+        lines.append(_line())
+
+    if analysis.accuracy:
+        acc = analysis.accuracy
+        lines.append("📊 ТОЧНОСТЬ АНАЛИЗА")
+        lines.append(f"   Сводная:     {acc.overall_pct}% (класс {acc.confidence_grade})")
+        lines.append(f"   Надёжность:  {acc.reliability_label}")
+        lines.append(f"   ТФ согласие: {acc.timeframe_alignment_pct}%")
+        lines.append(f"   Бэктест 4H:  {acc.backtest_hit_rate}% ({acc.backtest_samples} сэмплов)")
+        lines.append(f"   {acc.explanation}")
         lines.append("")
         lines.append(_line())
 
@@ -151,6 +161,24 @@ def format_analysis(analysis: MarketAnalysis) -> str:
             lines.append(f"   • {signal}")
         lines.append("")
 
+    if analysis.deep:
+        d = analysis.deep
+        lines.append(_line())
+        lines.append("🔬 ГЛУБОКИЙ АНАЛИЗ")
+        lines.append(f"   {d.executive_summary}")
+        lines.append(f"   Режим: {d.market_regime} — {d.regime_description}")
+        lines.append(f"   Риск: {d.risk_label} ({d.risk_score}/100)")
+        lines.append(f"   Схождение: лонг {d.confluence_long}% · шорт {d.confluence_short}%")
+        if d.btc_context:
+            lines.append(f"   BTC: {d.btc_context}")
+        lines.append(f"   {d.funding_trend}")
+        lines.append(f"   {d.oi_trend}")
+        for div in d.divergences:
+            lines.append(f"   • {div}")
+        for sc in d.scenarios:
+            lines.append(f"   [{sc.title} {sc.probability}] {sc.trigger} → {sc.target}")
+        lines.append("")
+
     lines.append(_line("═"))
     lines.append("  ⚠️  Не является финансовой рекомендацией")
     lines.append(_line("═"))
@@ -181,7 +209,11 @@ def format_position(p) -> str:
     lines.append(f"   {p.tp_reason}")
     lines.append(f"   Прибыль:     +{p.pnl_tp_usdt:.2f} USDT (+{p.pnl_tp_pct:.2f}% от маржи)")
     lines.append("")
-    lines.append(f"   R:R         1:{p.risk_reward}")
+    lines.append(f"   R:R         1:{p.risk_reward} (мин. 1:2.5)")
+    if p.take_profit_2:
+        lines.append(f"   TP2:         ${format_price(p.take_profit_2)}")
+    if not p.aligned_with_market:
+        lines.append("   ⚠ Позиция ПРОТИВ старшего тренда")
     lines.append(f"   {p.advice}")
     lines.append("")
     lines.append(_line("═"))

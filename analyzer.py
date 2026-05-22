@@ -8,6 +8,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from market_structure import (
+    adx_label,
+    calculate_adx,
+    detect_structure,
+    find_key_levels,
+    get_htf_bias,
+    volume_confirms_move,
+)
+
 
 @dataclass
 class TimeframeAnalysis:
@@ -25,6 +34,19 @@ class TimeframeAnalysis:
     macd_histogram: float
     macd_trend: str
     macd_cross: str
+    market_structure: str = ""
+    structure_hint: str = ""
+    adx: float = 0.0
+    adx_label: str = ""
+    volume_confirms: bool = False
+    volume_note: str = ""
+
+
+@dataclass
+class MarketBias:
+    direction: str
+    summary: str
+    trade_rule: str
 
 
 @dataclass
@@ -64,6 +86,7 @@ class MarketAnalysis:
     volume_24h: float
     overall_trend: str
     trend_summary: str
+    bias: MarketBias | None = None
     timeframes: list[TimeframeAnalysis] = field(default_factory=list)
     volatility: VolatilityMetrics | None = None
     funding: FundingMetrics | None = None
@@ -72,6 +95,17 @@ class MarketAnalysis:
     support_levels: list[float] = field(default_factory=list)
     resistance_levels: list[float] = field(default_factory=list)
     signals: list[str] = field(default_factory=list)
+    bullish_reasons: list[str] = field(default_factory=list)
+    bearish_reasons: list[str] = field(default_factory=list)
+    support_zones: list[dict] = field(default_factory=list)
+    resistance_zones: list[dict] = field(default_factory=list)
+    long_entry_zones: list[dict] = field(default_factory=list)
+    short_entry_zones: list[dict] = field(default_factory=list)
+    market_type: str = "crypto"
+    display_name: str = ""
+    scalp: Any = None
+    deep: Any = None
+    accuracy: Any = None
 
 
 def _ema(series: pd.Series, period: int) -> pd.Series:
@@ -103,6 +137,7 @@ def _calculate_macd(
     signal_val = float(signal_line.iloc[-1])
     hist_val = float(histogram.iloc[-1])
     prev_hist = float(histogram.iloc[-2]) if len(histogram) > 1 else hist_val
+    prev2_hist = float(histogram.iloc[-3]) if len(histogram) > 2 else prev_hist
 
     if prev_hist <= 0 < hist_val:
         cross = "Бычье пересечение 🟢"
@@ -117,10 +152,10 @@ def _calculate_macd(
         trend = "МЕДВЕЖИЙ 📉"
     elif hist_val > 0:
         trend = "Слабо бычий"
-    elif hist_val < 0:
-        trend = "Слабо медвежий"
     else:
-        trend = "Нейтральный"
+        trend = "Слабо медвежий"
+
+    momentum = "растёт" if hist_val > prev_hist > prev2_hist else "слабеет" if hist_val < prev_hist else "стабилен"
 
     return {
         "macd": macd_val,
@@ -128,6 +163,7 @@ def _calculate_macd(
         "histogram": hist_val,
         "trend": trend,
         "cross": cross,
+        "momentum": momentum,
     }
 
 
@@ -141,49 +177,55 @@ def _atr(df: pd.DataFrame, period: int = 14) -> float:
     return float(tr.rolling(period).mean().iloc[-1])
 
 
-def _detect_trend(price: float, ema20: float, ema50: float, sma200: float | None, rsi: float) -> tuple[str, str]:
+def _detect_trend_pro(
+    price: float,
+    ema20: float,
+    ema50: float,
+    sma200: float | None,
+    structure: str,
+    adx: float,
+    macd_trend: str,
+) -> tuple[str, str]:
     bullish = 0
     bearish = 0
 
-    if price > ema20:
+    if "БЫЧ" in structure:
+        bullish += 2
+    elif "МЕДВ" in structure:
+        bearish += 2
+
+    if price > ema20 > ema50:
+        bullish += 2
+    elif price < ema20 < ema50:
+        bearish += 2
+    elif price > ema50:
         bullish += 1
-    else:
+    elif price < ema50:
         bearish += 1
-    if price > ema50:
-        bullish += 1
-    else:
-        bearish += 1
-    if sma200 is not None:
+
+    if sma200:
         if price > sma200:
             bullish += 1
         else:
             bearish += 1
-    if ema20 > ema50:
+
+    if "БЫЧ" in macd_trend:
         bullish += 1
-    else:
-        bearish += 1
-    if rsi > 55:
-        bullish += 1
-    elif rsi < 45:
+    elif "МЕДВ" in macd_trend:
         bearish += 1
 
-    if bullish >= 4:
-        trend = "БЫЧИЙ 📈"
-        strength = "Сильный"
-    elif bullish == 3:
-        trend = "БЫЧИЙ 📈"
-        strength = "Умеренный"
-    elif bearish >= 4:
-        trend = "МЕДВЕЖИЙ 📉"
-        strength = "Сильный"
-    elif bearish == 3:
-        trend = "МЕДВЕЖИЙ 📉"
-        strength = "Умеренный"
-    else:
-        trend = "БОКОВОЙ ↔️"
-        strength = "Неопределённый"
+    if adx < 18:
+        return "БОКОВОЙ ↔️", "Флэт (ADX низкий) — не торгуем пробои"
 
-    return trend, strength
+    if bullish >= 4 and bearish <= 1:
+        return "БЫЧИЙ 📈", "Сильный" if adx >= 25 else "Умеренный"
+    if bearish >= 4 and bullish <= 1:
+        return "МЕДВЕЖИЙ 📉", "Сильный" if adx >= 25 else "Умеренный"
+    if bullish >= 3:
+        return "БЫЧИЙ 📈", "Умеренный"
+    if bearish >= 3:
+        return "МЕДВЕЖИЙ 📉", "Умеренный"
+    return "БОКОВОЙ ↔️", "Смешанные сигналы"
 
 
 def analyze_timeframe(df: pd.DataFrame, timeframe: str) -> TimeframeAnalysis:
@@ -198,7 +240,15 @@ def analyze_timeframe(df: pd.DataFrame, timeframe: str) -> TimeframeAnalysis:
     rsi = _rsi(close)
     macd_data = _calculate_macd(close)
 
-    trend, strength = _detect_trend(price, ema20, ema50, sma200, rsi)
+    structure, struct_hint = detect_structure(df)
+    adx = calculate_adx(df)
+    adx_lbl = adx_label(adx)
+
+    trend, strength = _detect_trend_pro(
+        price, ema20, ema50, sma200, structure, adx, str(macd_data["trend"])
+    )
+
+    vol_ok, vol_note = volume_confirms_move(df, "БЫЧ" in trend)
 
     return TimeframeAnalysis(
         timeframe=timeframe,
@@ -215,6 +265,12 @@ def analyze_timeframe(df: pd.DataFrame, timeframe: str) -> TimeframeAnalysis:
         macd_histogram=round(float(macd_data["histogram"]), 6),
         macd_trend=str(macd_data["trend"]),
         macd_cross=str(macd_data["cross"]),
+        market_structure=structure,
+        structure_hint=struct_hint,
+        adx=adx,
+        adx_label=adx_lbl,
+        volume_confirms=vol_ok,
+        volume_note=vol_note,
     )
 
 
@@ -231,11 +287,11 @@ def calculate_volatility(df: pd.DataFrame, ticker: dict[str, Any]) -> Volatility
     range_24h = ((high_24h - low_24h) / price) * 100 if price else 0.0
 
     if atr_percent >= 3 or range_24h >= 8:
-        level, desc = "ВЫСОКАЯ 🔥", "Рынок очень активен, повышенный риск"
+        level, desc = "ВЫСОКАЯ 🔥", "Риск выше нормы — режьте плечо в 2 раза"
     elif atr_percent >= 1.5 or range_24h >= 4:
-        level, desc = "СРЕДНЯЯ ⚡", "Нормальная активность для крипторынка"
+        level, desc = "СРЕДНЯЯ ⚡", "Нормальный риск — стоп за структурой"
     else:
-        level, desc = "НИЗКАЯ 😴", "Спокойный рынок, низкая активность"
+        level, desc = "НИЗКАЯ 😴", "Тихий рынок — сделки могут застрять в диапазоне"
 
     return VolatilityMetrics(
         atr_14=round(atr, 4),
@@ -277,79 +333,94 @@ def analyze_funding(data: dict[str, Any] | None, open_interest: float | None) ->
 
 
 def find_support_resistance(df: pd.DataFrame, price: float) -> tuple[list[float], list[float]]:
-    recent = df.tail(50)
-    lows = recent["low"].nsmallest(3).tolist()
-    highs = recent["high"].nlargest(3).tolist()
+    return find_key_levels(df, price)
 
-    support = sorted({round(v, 4) for v in lows if v < price}, reverse=True)[:3]
-    resistance = sorted({round(v, 4) for v in highs if v > price})[:3]
-    return support, resistance
+
+def determine_overall_trend(tf_analyses: list[TimeframeAnalysis]) -> tuple[str, str]:
+    weights = {"1d": 3, "4h": 2, "1h": 1}
+    score = 0.0
+    total = 0.0
+    for a in tf_analyses:
+        w = weights.get(a.timeframe, 1)
+        total += w
+        if "БЫЧИЙ" in a.trend:
+            score += w
+        elif "МЕДВЕЖИЙ" in a.trend:
+            score -= w
+
+    if total == 0:
+        return "СМЕШАННЫЙ ↔️", "Нет данных"
+
+    norm = score / total
+    if norm >= 0.55:
+        return "БЫЧИЙ 📈", "Старшие ТФ доминируют вверх — приоритет лонгам на откате"
+    if norm <= -0.55:
+        return "МЕДВЕЖИЙ 📉", "Старшие ТФ доминируют вниз — приоритет шортам на откате"
+    return "СМЕШАННЫЙ ↔️", "Нет согласия ТФ — 80% сделок здесь пропускаем"
+
+
+def build_market_bias(tf_analyses: list[TimeframeAnalysis]) -> MarketBias:
+    tf_map = {a.timeframe: a.trend for a in tf_analyses}
+    direction, summary = get_htf_bias(tf_map)
+
+    if direction == "long":
+        rule = "Покупаем только откаты к поддержке/Фибо 50–61.8%, не покупаем на хаях"
+    elif direction == "short":
+        rule = "Продаём только откаты к сопротивлению/Фибо, не шортим на лоях"
+    else:
+        rule = "Cash is a position — ждём совпадения 1D+4H+1H и MACD"
+
+    return MarketBias(direction=direction, summary=summary, trade_rule=rule)
 
 
 def build_signals(
     tf_analyses: list[TimeframeAnalysis],
     volatility: VolatilityMetrics,
     funding: FundingMetrics | None,
-    rsi_1h: float,
+    bias: MarketBias | None,
 ) -> list[str]:
     signals: list[str] = []
 
-    trends = [a.trend for a in tf_analyses]
-    if all("БЫЧИЙ" in t for t in trends):
-        signals.append("Все таймфреймы в бычьем тренде — сильный восходящий импульс")
-    elif all("МЕДВЕЖИЙ" in t for t in trends):
-        signals.append("Все таймфреймы в медвежьем тренде — давление продавцов")
-    elif any("БЫЧИЙ" in t for t in trends) and any("МЕДВЕЖИЙ" in t for t in trends):
-        signals.append("Конфликт таймфреймов — возможна коррекция или разворот")
+    if bias:
+        signals.append(f"Bias: {bias.summary}")
+        signals.append(f"Правило: {bias.trade_rule}")
 
-    tf_1h = next((a for a in tf_analyses if a.timeframe == "1h"), tf_analyses[0] if tf_analyses else None)
+    tf_1d = next((a for a in tf_analyses if a.timeframe == "1d"), None)
+    tf_4h = next((a for a in tf_analyses if a.timeframe == "4h"), None)
+    tf_1h = next((a for a in tf_analyses if a.timeframe == "1h"), None)
+
+    if tf_1d and tf_1d.adx < 18:
+        signals.append(f"1D ADX {tf_1d.adx} — флэт, не торгуем пробои")
+
+    for tf in (tf_1d, tf_4h, tf_1h):
+        if not tf:
+            continue
+        if tf.market_structure:
+            signals.append(f"{tf.timeframe.upper()}: {tf.market_structure}")
+
     if tf_1h:
-        if "Бычье" in tf_1h.macd_cross:
-            signals.append(f"MACD 1H: бычье пересечение — сигнал на покупку")
-        elif "Медвежье" in tf_1h.macd_cross:
-            signals.append(f"MACD 1H: медвежье пересечение — сигнал на продажу")
-        elif "БЫЧИЙ" in tf_1h.macd_trend:
-            signals.append(f"MACD 1H: бычий (гист. {tf_1h.macd_histogram:+.4f})")
-        elif "МЕДВЕЖИЙ" in tf_1h.macd_trend:
-            signals.append(f"MACD 1H: медвежий (гист. {tf_1h.macd_histogram:+.4f})")
+        if "Бычье" in tf_1h.macd_cross and bias and bias.direction == "long":
+            signals.append("MACD 1H: бычий кросс в направлении bias — триггер входа")
+        elif "Медвежье" in tf_1h.macd_cross and bias and bias.direction == "short":
+            signals.append("MACD 1H: медвежий кросс в направлении bias — триггер входа")
+        elif "пересечение" in tf_1h.macd_cross:
+            signals.append(f"MACD 1H: {tf_1h.macd_cross} — против bias, не входим")
 
-        macd_bull = sum(1 for a in tf_analyses if "БЫЧИЙ" in a.macd_trend or "бычий" in a.macd_trend.lower())
-        macd_bear = sum(1 for a in tf_analyses if "МЕДВЕЖИЙ" in a.macd_trend or "медвежий" in a.macd_trend.lower())
-        if macd_bull == len(tf_analyses):
-            signals.append("MACD бычий на всех ТФ — импульс вверх")
-        elif macd_bear == len(tf_analyses):
-            signals.append("MACD медвежий на всех ТФ — импульс вниз")
+        if tf_1h.rsi >= 70:
+            signals.append(f"RSI 1H {tf_1h.rsi} — перекуплен, лонг только после отката")
+        elif tf_1h.rsi <= 30:
+            signals.append(f"RSI 1H {tf_1h.rsi} — перепродан, шорт только после отката")
 
-    if rsi_1h >= 70:
-        signals.append(f"RSI перекуплен ({rsi_1h}) — риск отката вниз")
-    elif rsi_1h <= 30:
-        signals.append(f"RSI перепродан ({rsi_1h}) — возможен отскок вверх")
+        if not tf_1h.volume_confirms:
+            signals.append(f"Объём 1H: {tf_1h.volume_note}")
 
     if volatility.level.startswith("ВЫСОКАЯ"):
-        signals.append("Высокая волатильность — используйте стоп-лоссы и уменьшайте плечо")
+        signals.append("Высокая волатильность — риск 1% на сделку, не 2%")
 
     if funding:
-        if funding.rate_percent > 0.05:
-            signals.append("Высокий положительный фандинг — ЛОНГ: НЕ ВХОДИТЬ")
-        elif funding.rate_percent < -0.05:
-            signals.append("Высокий отрицательный фандинг — ШОРТ: НЕ ВХОДИТЬ")
+        if funding.rate_percent > 0.03:
+            signals.append("Фандинг против лонга — лонги только по исключению")
+        elif funding.rate_percent < -0.03:
+            signals.append("Фандинг против шорта — шорты только по исключению")
 
     return signals
-
-
-def determine_overall_trend(tf_analyses: list[TimeframeAnalysis]) -> tuple[str, str]:
-    scores = []
-    for a in tf_analyses:
-        if "БЫЧИЙ" in a.trend:
-            scores.append(1)
-        elif "МЕДВЕЖИЙ" in a.trend:
-            scores.append(-1)
-        else:
-            scores.append(0)
-
-    avg = sum(scores) / len(scores) if scores else 0
-    if avg >= 0.6:
-        return "БЫЧИЙ 📈", "Преобладает восходящий тренд на большинстве таймфреймов"
-    if avg <= -0.6:
-        return "МЕДВЕЖИЙ 📉", "Преобладает нисходящий тренд на большинстве таймфреймов"
-    return "СМЕШАННЫЙ ↔️", "Тренды на разных таймфреймах расходятся — ждите подтверждения"
