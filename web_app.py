@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import webbrowser
 from threading import Timer
@@ -28,12 +29,29 @@ from serialization import analysis_to_dict, position_to_dict, risk_to_dict
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def _asset_version() -> str:
+    """Версия статики по времени изменения файлов — для сброса кэша браузера."""
+    try:
+        names = ("app.js", "chart.js", "style.css", "terminal.css", "tradingview.js")
+        latest = max(
+            os.path.getmtime(os.path.join(_STATIC_DIR, n))
+            for n in names
+            if os.path.exists(os.path.join(_STATIC_DIR, n))
+        )
+        return str(int(latest))
+    except Exception:
+        return "1"
+
 
 @app.route("/")
 def index():
     return render_template(
         "index.html",
         instrument_catalog=json.dumps(catalog_for_frontend(), ensure_ascii=False),
+        asset_version=_asset_version(),
     )
 
 

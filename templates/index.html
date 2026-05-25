@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Торговый терминал</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/terminal.css">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/terminal.css?v={{ asset_version }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -42,7 +42,7 @@
           </svg>
           <span>Telegram</span>
         </a>
-        <a class="btn-support" href="https://t.me/KirillUMP" target="_blank" rel="noopener" title="Поддержать автора">❤️ Поддержать</a>
+        <a class="btn-support" href="https://dalink.to/flenk4" target="_blank" rel="noopener" title="Поддержать автора">❤️ Поддержать</a>
       </div>
     </header>
 
@@ -81,6 +81,10 @@
           </div>
           <a class="btn-tv-link" id="btnOpenTv" href="#" target="_blank" rel="noopener">TradingView ↗</a>
           <span class="chart-timer" id="chartTimer" title="Обновление графика в реальном времени">↻ —</span>
+          <div class="entry-dropdown" id="entryDropdown">
+            <button type="button" class="btn-entrypoints active" id="btnEntryPoints" title="Настройка точек входа">◎ Точки входа ▾</button>
+            <div class="entry-menu hidden" id="entryMenu"></div>
+          </div>
           <div class="interval-group" id="tvIntervals">
             <button type="button" class="btn-interval" data-interval="5">5m</button>
             <button type="button" class="btn-interval" data-interval="15">15m</button>
@@ -155,6 +159,7 @@
               <div class="acc-bar-row"><span>Индикаторы</span><div class="acc-bar"><div id="accBarInd"></div></div><em id="accInd">—</em></div>
             </div>
             <ul class="accuracy-factors" id="accuracyFactors"></ul>
+            <div class="accuracy-checks" id="accuracyChecks"></div>
           </section>
 
           <section class="verdict-banner compact pro-only" id="verdictBanner">
@@ -519,8 +524,8 @@
   </div>
 
   <script>window.INSTRUMENT_CATALOG = {{ instrument_catalog|safe }};</script>
-  <script src="/static/tradingview.js"></script>
-  <script src="/static/chart.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/tradingview.js?v={{ asset_version }}"></script>
+  <script src="/static/chart.js?v={{ asset_version }}"></script>
+  <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

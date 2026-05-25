@@ -1553,6 +1553,65 @@ body {
   font-style: italic;
 }
 
+/* Методы подтверждения (точность) */
+.accuracy-checks {
+  margin-top: 12px;
+}
+.checks-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.checks-title span {
+  background: var(--surface2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 0.78rem;
+}
+.checks-list {
+  display: grid;
+  gap: 6px;
+}
+.chk {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  grid-template-areas: "ico name delta" "ico detail detail";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--surface3);
+  border-left: 3px solid var(--border2);
+}
+.chk-good { border-left-color: var(--green); }
+.chk-bad { border-left-color: var(--red); }
+.chk-neutral { border-left-color: var(--muted2); }
+.chk-ico {
+  grid-area: ico;
+  font-weight: 800;
+  text-align: center;
+}
+.chk-good .chk-ico { color: var(--green); }
+.chk-bad .chk-ico { color: var(--red); }
+.chk-neutral .chk-ico { color: var(--muted2); }
+.chk-name { grid-area: name; font-size: 0.86rem; color: var(--text); }
+.chk-delta {
+  grid-area: delta;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.chk-good .chk-delta { color: var(--green); }
+.chk-bad .chk-delta { color: var(--red); }
+.chk-neutral .chk-delta { color: var(--muted2); }
+.chk-detail { grid-area: detail; font-size: 0.74rem; color: var(--muted); }
+
 /* Journal tab */
 .journal-header {
   display: flex;

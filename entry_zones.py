@@ -29,11 +29,16 @@ def build_entry_zones(
     if not price or price <= 0:
         price = 1.0
     band = max(0.0008, (atr / price) * 0.35)
+    # Риск от точки входа: 1.5×ATR (с полом), тейк по R:R 1:2.
+    risk = max(atr * 1.5, price * 0.004)
+    rr = 2.0
 
     def add_long(center: float, label: str, strength: int = 2):
         if center <= 0:
             return
         z = _zone(center, band, label, "long_entry", strength)
+        z["stop"] = round(center - risk, 6)
+        z["take"] = round(center + risk * rr, 6)
         if not any(abs(z["price"] - x["price"]) / price < band for x in long_zones):
             long_zones.append(z)
 
@@ -41,6 +46,8 @@ def build_entry_zones(
         if center <= 0:
             return
         z = _zone(center, band, label, "short_entry", strength)
+        z["stop"] = round(center + risk, 6)
+        z["take"] = round(center - risk * rr, 6)
         if not any(abs(z["price"] - x["price"]) / price < band for x in short_zones):
             short_zones.append(z)
 

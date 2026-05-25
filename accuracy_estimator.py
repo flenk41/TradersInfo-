@@ -22,6 +22,7 @@ class AccuracyMetrics:
     recommended_side: str
     explanation: str
     factors: list[str] = field(default_factory=list)
+    checks: list[dict] = field(default_factory=list)
 
 
 def _trend_direction(trend: str) -> str:
@@ -88,6 +89,102 @@ def _quick_backtest_4h(df: pd.DataFrame) -> tuple[float, int]:
     return round(hits / total * 100, 1), total
 
 
+def _avg_adx(timeframes: list[TimeframeAnalysis]) -> float:
+    vals = [tf.adx for tf in timeframes if getattr(tf, "adx", 0)]
+    return round(sum(vals) / len(vals), 1) if vals else 0.0
+
+
+def _confirmation_checks(analysis: MarketAnalysis, rec_side: str) -> tuple[list[dict], float]:
+    """Независимые методы подтверждения. Каждый даёт вклад (delta) в точность."""
+    checks: list[dict] = []
+    tfs = analysis.timeframes or []
+    tf_1h = next((t for t in tfs if t.timeframe == "1h"), None)
+    tf_4h = next((t for t in tfs if t.timeframe == "4h"), None)
+    directional = rec_side in ("long", "short")
+
+    def add(name, status, delta, detail=""):
+        checks.append({"name": name, "status": status, "delta": delta, "detail": detail})
+
+    # 1) Подтверждение объёмом
+    if directional:
+        vol_ok = any(getattr(t, "volume_confirms", False) for t in (tf_1h, tf_4h) if t)
+        if vol_ok:
+            note = (tf_1h.volume_note if tf_1h and tf_1h.volume_confirms else (tf_4h.volume_note if tf_4h else ""))
+            add("Объём подтверждает движение", "good", 3, note)
+        else:
+            add("Объём не подтверждает", "bad", -2, "Движение без поддержки объёма")
+
+    # 2) Сила тренда (ADX)
+    if directional:
+        adx = _avg_adx(tfs)
+        if adx >= 25:
+            add(f"Сильный тренд (ADX {adx})", "good", 4, "Тренд устойчив — пробои надёжнее")
+        elif adx and adx < 18:
+            add(f"Флэт (ADX {adx})", "bad", -4, "Боковик — направленные сделки ненадёжны")
+        elif adx:
+            add(f"Умеренный тренд (ADX {adx})", "neutral", 0, "")
+
+    # 3) RSI — не на экстремуме
+    if tf_1h and directional:
+        r = tf_1h.rsi
+        if rec_side == "long":
+            if r >= 72:
+                add(f"RSI 1H перегрет ({r})", "bad", -3, "Покупка у вершины — риск отката")
+            elif r <= 68:
+                add(f"RSI 1H в норме ({r})", "good", 2, "Есть запас по импульсу")
+        else:
+            if r <= 28:
+                add(f"RSI 1H перепродан ({r})", "bad", -3, "Шорт у дна — риск отскока")
+            elif r >= 32:
+                add(f"RSI 1H в норме ({r})", "good", 2, "Есть запас по импульсу")
+
+    # 4) Дивергенции (из глубокого анализа)
+    deep = analysis.deep
+    if deep and getattr(deep, "divergences", None) and directional:
+        text = " ".join(deep.divergences).lower()
+        bull = "быч" in text or "вверх" in text
+        bear = "медвеж" in text or "вниз" in text
+        first = deep.divergences[0]
+        if rec_side == "long" and bull and not bear:
+            add("Бычья дивергенция за вход", "good", 3, first)
+        elif rec_side == "short" and bear and not bull:
+            add("Медвежья дивергенция за вход", "good", 3, first)
+        elif (rec_side == "long" and bear) or (rec_side == "short" and bull):
+            add("Дивергенция против входа", "bad", -4, first)
+
+    # 5) Режим волатильности
+    vol = analysis.volatility
+    if vol:
+        lvl = (getattr(vol, "level", "") or "").upper()
+        if "ВЫСОК" in lvl:
+            add("Высокая волатильность", "bad", -3, "Больше шума — стоп шире, сигналы менее точны")
+        elif "НИЗК" in lvl:
+            add("Низкая волатильность", "neutral", 0, "Спокойный рынок")
+
+    # 6) Запас хода до ближайшего уровня
+    price = analysis.price
+    if rec_side == "long" and analysis.resistance_levels:
+        above = [r for r in analysis.resistance_levels if r > price]
+        if above:
+            room = (min(above) - price) / price * 100
+            if room >= 2:
+                add(f"Есть ход до сопротивления (+{room:.1f}%)", "good", 2, "Достаточно места для тейка")
+            else:
+                add(f"Сопротивление близко (+{room:.1f}%)", "bad", -2, "Мало места для тейка")
+    elif rec_side == "short" and analysis.support_levels:
+        below = [s for s in analysis.support_levels if s < price]
+        if below:
+            room = (price - max(below)) / price * 100
+            if room >= 2:
+                add(f"Есть ход до поддержки (-{room:.1f}%)", "good", 2, "Достаточно места для тейка")
+            else:
+                add(f"Поддержка близко (-{room:.1f}%)", "bad", -2, "Мало места для тейка")
+
+    total = sum(c["delta"] for c in checks)
+    total = round(max(-12.0, min(12.0, float(total))), 1)
+    return checks, total
+
+
 def build_accuracy_metrics(
     analysis: MarketAnalysis,
     klines_4h: pd.DataFrame | None = None,
@@ -132,7 +229,9 @@ def build_accuracy_metrics(
             news_adj = -net * 6
         news_adj = round(max(-6.0, min(6.0, news_adj)), 1)
 
-    overall = round(overall + news_adj, 1)
+    checks, conf_adj = _confirmation_checks(analysis, rec_side)
+
+    overall = round(overall + news_adj + conf_adj, 1)
     overall = max(35.0, min(92.0, overall))
 
     if overall >= 78 and spread >= 25:
@@ -163,8 +262,10 @@ def build_accuracy_metrics(
             f"Новостной фон ({news['window_days']}д): {news['good']}↑ / {news['bad']}↓ — {news['label']}{adj_txt}"
         )
 
+    passed = sum(1 for c in checks if c["status"] == "good")
     expl = (
         f"Сводная точность {overall}% — {label}. "
+        f"Подтверждающих методов: {passed}/{len(checks)}. "
         f"Это не гарантия прибыли: оценка согласованности индикаторов и недавней истории 4H."
     )
 
@@ -179,4 +280,5 @@ def build_accuracy_metrics(
         recommended_side=rec_side,
         explanation=expl,
         factors=factors,
+        checks=checks,
     )

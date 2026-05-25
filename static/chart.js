@@ -8,6 +8,9 @@ const TradingChart = (() => {
   let volumeSeries = null;
   let fundingSeries = null;
   let priceLineRefs = {};
+  let entryZoneLines = [];
+  let entryConfig = {}; // { L1:{entry,stop,take}, S2:{...} }
+  let lastEntryZones = { long: [], short: [] };
   let onPricePick = null;
   let lastCandles = [];
   let mainContainer = null;
@@ -26,6 +29,8 @@ const TradingChart = (() => {
     tp: "#22c55e",
     tp2: "#86efac",
     current: "#eab308",
+    longEntry: "#2dd4bf",
+    shortEntry: "#a855f7",
     supportFill: "rgba(34, 197, 94, 0.22)",
     supportBorder: "rgba(34, 197, 94, 0.75)",
     resistFill: "rgba(239, 68, 68, 0.22)",
@@ -76,6 +81,20 @@ const TradingChart = (() => {
       borderDownColor: "#ef4444",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+      // Масштаб цены строим ТОЛЬКО по свечам, игнорируя ценовые линии (входы/стоп/тейк),
+      // иначе линия с чужого масштаба растягивает шкалу и сплющивает свечи.
+      autoscaleInfoProvider: (original) => {
+        if (!lastCandles.length) return original();
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const c of lastCandles) {
+          if (c.low < lo) lo = c.low;
+          if (c.high > hi) hi = c.high;
+        }
+        if (!isFinite(lo) || !isFinite(hi) || hi <= 0) return original();
+        const pad = (hi - lo) * 0.08 || hi * 0.01;
+        return { priceRange: { minValue: lo - pad, maxValue: hi + pad } };
+      },
     });
 
     volumeSeries = mainChart.addHistogramSeries({
@@ -195,6 +214,10 @@ const TradingChart = (() => {
     candleSeries.setData(candles);
     if (volumeSeries) volumeSeries.setData(candles.map(_volBar));
     mainChart.timeScale().fitContent();
+    // принудительно пересчитываем ценовую шкалу под новые свечи
+    try {
+      mainChart.priceScale("right").applyOptions({ autoScale: true });
+    } catch (_) {}
     setTimeout(updateZoneBoxes, 50);
   }
 
@@ -324,6 +347,14 @@ const TradingChart = (() => {
   async function loadPair(pair, market, interval) {
     const m = market || "crypto";
     const tf = interval || "1h";
+    // При смене инструмента убираем старые ценовые линии: иначе линии входа/уровни
+    // с другого ценового масштаба (напр. BTC 76000 vs EUR 1.16) растягивают автошкалу
+    // и новые свечи сплющиваются в невидимую полоску.
+    const pairChanged = live.pair !== pair;
+    if (pairChanged) {
+      clearEntryZones();
+      removeLines();
+    }
     live = { pair, market: m, interval: tf };
     const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=200&market=${encodeURIComponent(m)}`;
     const kRes = await fetch(`/api/klines?${base}`);
@@ -413,11 +444,73 @@ const TradingChart = (() => {
     } catch (_) {}
   }
 
+  function clearEntryZones() {
+    if (!candleSeries) return;
+    entryZoneLines.forEach((l) => {
+      try {
+        candleSeries.removePriceLine(l);
+      } catch (_) {}
+    });
+    entryZoneLines = [];
+  }
+
+  function _addEntryLine(price, color, style, title, labelVisible, width) {
+    if (!price || price <= 0) return;
+    entryZoneLines.push(
+      candleSeries.createPriceLine({
+        price,
+        color,
+        lineWidth: width || 2,
+        lineStyle: style,
+        axisLabelVisible: !!labelVisible,
+        title: title || "",
+      })
+    );
+  }
+
+  function _cfg(id) {
+    return entryConfig[id] || { entry: true, stop: false, take: false };
+  }
+
+  function drawEntryZones() {
+    clearEntryZones();
+    if (!candleSeries) return;
+    const dash = LightweightCharts.LineStyle.Dashed;
+    const dot = LightweightCharts.LineStyle.Dotted;
+    const longs = (lastEntryZones.long || []).slice(0, 3);
+    const shorts = (lastEntryZones.short || []).slice(0, 3);
+
+    longs.forEach((z, i) => {
+      const c = _cfg("L" + (i + 1));
+      if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
+      if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
+      if (c.entry) _addEntryLine(z.price, COLORS.longEntry, dash, "▲ ЛОНГ " + (i + 1), true, 2);
+    });
+
+    shorts.forEach((z, i) => {
+      const c = _cfg("S" + (i + 1));
+      if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
+      if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
+      if (c.entry) _addEntryLine(z.price, COLORS.shortEntry, dash, "▼ ШОРТ " + (i + 1), true, 2);
+    });
+  }
+
+  function setEntryZones(longZones, shortZones) {
+    lastEntryZones = { long: longZones || [], short: shortZones || [] };
+    drawEntryZones();
+  }
+
+  function setEntryConfig(config) {
+    entryConfig = config || {};
+    drawEntryZones();
+  }
+
   function applyAnalysis(data) {
     if (!data) return;
     setTrendBar(data);
     if (document.getElementById("bullishReasons")) renderReasons(data);
     setZones();
+    setEntryZones(data.long_entry_zones, data.short_entry_zones);
   }
 
   function setEntryPicker(callback) {
@@ -467,5 +560,7 @@ const TradingChart = (() => {
     stopLive,
     setCurrency,
     setTheme,
+    setEntryZones,
+    setEntryConfig,
   };
 })();

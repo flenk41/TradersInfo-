@@ -529,6 +529,7 @@ async function loadChartsForPair(pair, marketType) {
 function updateChartTrend(data) {
   if (!data) return;
   TradingChart.applyAnalysis(data);
+  buildEntryMenu(data.long_entry_zones, data.short_entry_zones);
   renderZonesStrip(data);
 }
 
@@ -571,6 +572,33 @@ function renderAccuracy(acc) {
     li.textContent = f;
     ul.appendChild(li);
   });
+
+  renderAccuracyChecks(acc.checks || []);
+}
+
+const CHECK_ICON = { good: "✓", bad: "✗", neutral: "•" };
+
+function renderAccuracyChecks(checks) {
+  const wrap = $("accuracyChecks");
+  if (!wrap) return;
+  if (!checks.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  const passed = checks.filter((c) => c.status === "good").length;
+  let html = `<div class="checks-title">Методы подтверждения <span>${passed}/${checks.length}</span></div>`;
+  html += '<div class="checks-list">';
+  checks.forEach((c) => {
+    const delta = c.delta ? `<span class="chk-delta">${c.delta > 0 ? "+" : ""}${c.delta}</span>` : "";
+    html += `<div class="chk chk-${c.status}">
+      <span class="chk-ico">${CHECK_ICON[c.status] || "•"}</span>
+      <span class="chk-name">${c.name}</span>
+      ${delta}
+      ${c.detail ? `<span class="chk-detail">${c.detail}</span>` : ""}
+    </div>`;
+  });
+  html += "</div>";
+  wrap.innerHTML = html;
 }
 
 function renderZonesStrip(data) {
@@ -1349,6 +1377,74 @@ document.querySelectorAll("#newsRange button").forEach((btn) => {
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
 $("btnJournalAdd")?.addEventListener("click", () => saveSignal());
 $("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
+
+let entryConfig = {};
+
+function applyEntryConfig() {
+  if (TradingChart.setEntryConfig) TradingChart.setEntryConfig(entryConfig);
+  const anyOn = Object.values(entryConfig).some((c) => c.entry || c.stop || c.take);
+  $("btnEntryPoints")?.classList.toggle("active", anyOn);
+}
+
+function buildEntryMenu(longs, shorts) {
+  const menu = $("entryMenu");
+  if (!menu) return;
+  const rows = [];
+  (longs || []).slice(0, 3).forEach((z, i) => rows.push({ id: "L" + (i + 1), label: "ЛОНГ " + (i + 1), cls: "long" }));
+  (shorts || []).slice(0, 3).forEach((z, i) => rows.push({ id: "S" + (i + 1), label: "ШОРТ " + (i + 1), cls: "short" }));
+
+  // сохраняем прежние настройки для тех же id, новым — дефолт (вход вкл)
+  const next = {};
+  rows.forEach((r) => {
+    next[r.id] = entryConfig[r.id] || { entry: true, stop: false, take: false };
+  });
+  entryConfig = next;
+
+  if (!rows.length) {
+    menu.innerHTML = '<div class="em-empty">Нет зон входа</div>';
+    return;
+  }
+
+  let html = '<div class="em-head"><span>Зона</span><span>Вход</span><span>Стоп</span><span>Тейк</span></div>';
+  html +=
+    '<div class="em-row em-all"><span class="em-label">Все</span>' +
+    '<input type="checkbox" data-act="entry"><input type="checkbox" data-act="stop"><input type="checkbox" data-act="take"></div>';
+  rows.forEach((r) => {
+    const c = entryConfig[r.id];
+    html +=
+      `<div class="em-row"><span class="em-label em-${r.cls}">${r.label}</span>` +
+      `<input type="checkbox" data-id="${r.id}" data-k="entry" ${c.entry ? "checked" : ""}>` +
+      `<input type="checkbox" data-id="${r.id}" data-k="stop" ${c.stop ? "checked" : ""}>` +
+      `<input type="checkbox" data-id="${r.id}" data-k="take" ${c.take ? "checked" : ""}></div>`;
+  });
+  menu.innerHTML = html;
+
+  menu.querySelectorAll("input[data-id]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      entryConfig[cb.dataset.id][cb.dataset.k] = cb.checked;
+      applyEntryConfig();
+    });
+  });
+  menu.querySelectorAll("input[data-act]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const k = cb.dataset.act;
+      Object.keys(entryConfig).forEach((id) => (entryConfig[id][k] = cb.checked));
+      menu.querySelectorAll(`input[data-k="${k}"]`).forEach((x) => (x.checked = cb.checked));
+      applyEntryConfig();
+    });
+  });
+
+  applyEntryConfig();
+}
+
+$("btnEntryPoints")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("entryMenu")?.classList.toggle("hidden");
+});
+document.addEventListener("click", (e) => {
+  const dd = $("entryDropdown");
+  if (dd && !dd.contains(e.target)) $("entryMenu")?.classList.add("hidden");
+});
 
 $("themeToggle")?.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
