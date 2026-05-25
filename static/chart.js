@@ -5,6 +5,7 @@ const TradingChart = (() => {
   let mainChart = null;
   let fundingChart = null;
   let candleSeries = null;
+  let volumeSeries = null;
   let fundingSeries = null;
   let priceLineRefs = {};
   let onPricePick = null;
@@ -12,6 +13,12 @@ const TradingChart = (() => {
   let mainContainer = null;
   let zoneOverlay = null;
   let resizeObserver = null;
+  let liveTimer = null;
+  let curSymbol = "$";
+  let live = { pair: null, market: "crypto", interval: "1h" };
+  const LIVE_MS = 8000;
+  const VOL_UP = "rgba(34, 197, 94, 0.5)";
+  const VOL_DOWN = "rgba(239, 68, 68, 0.5)";
 
   const COLORS = {
     entry: "#3b82f6",
@@ -69,6 +76,14 @@ const TradingChart = (() => {
       borderDownColor: "#ef4444",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+    });
+
+    volumeSeries = mainChart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "vol",
+    });
+    mainChart.priceScale("vol").applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
     });
 
     fundingSeries = fundingChart.addHistogramSeries({
@@ -151,7 +166,7 @@ const TradingChart = (() => {
       box.style.width = `${width}px`;
       box.style.top = `${top}px`;
       box.style.height = `${height}px`;
-      box.title = `${zone.label}: $${zone.price}`;
+      box.title = `${zone.label}: ${curSymbol}${zone.price}`;
 
       const label = document.createElement("span");
       label.className = "zone-label";
@@ -166,10 +181,19 @@ const TradingChart = (() => {
     zoneData.resistance.forEach((z) => drawZone(z, "resistance"));
   }
 
+  function _volBar(c) {
+    return {
+      time: c.time,
+      value: c.volume || 0,
+      color: c.close >= c.open ? VOL_UP : VOL_DOWN,
+    };
+  }
+
   function setCandles(candles) {
     if (!candleSeries || !candles?.length) return;
     lastCandles = candles;
     candleSeries.setData(candles);
+    if (volumeSeries) volumeSeries.setData(candles.map(_volBar));
     mainChart.timeScale().fitContent();
     setTimeout(updateZoneBoxes, 50);
   }
@@ -297,23 +321,96 @@ const TradingChart = (() => {
     if (wrap) wrap.classList.toggle("hidden", !visible);
   }
 
-  async function loadPair(pair, market) {
+  async function loadPair(pair, market, interval) {
     const m = market || "crypto";
-    const base = `pair=${encodeURIComponent(pair)}&interval=1h&limit=200&market=${encodeURIComponent(m)}`;
+    const tf = interval || "1h";
+    live = { pair, market: m, interval: tf };
+    const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=200&market=${encodeURIComponent(m)}`;
     const kRes = await fetch(`/api/klines?${base}`);
     const kJson = await kRes.json();
     if (kJson.ok) setCandles(kJson.candles);
 
     if (m === "crypto") {
       setFundingVisible(true);
-      const fRes = await fetch(`/api/funding-history?${base.replace("interval=1h&", "")}&limit=90`);
+      const fRes = await fetch(
+        `/api/funding-history?pair=${encodeURIComponent(pair)}&market=${m}&limit=90`
+      );
       const fJson = await fRes.json();
       if (fJson.ok) setFundingHistory(fJson.points);
     } else {
       setFundingVisible(false);
       if (fundingSeries) fundingSeries.setData([]);
     }
+    startLive();
     return kJson.ok;
+  }
+
+  let liveCountdown = 0;
+
+  function updateTimerDisplay() {
+    const el = document.getElementById("chartTimer");
+    if (!el) return;
+    if (!live.pair) {
+      el.textContent = "↻ —";
+      return;
+    }
+    if (document.hidden) {
+      el.textContent = "↻ пауза";
+      return;
+    }
+    el.textContent = `↻ ${Math.max(0, liveCountdown)}с`;
+  }
+
+  function startLive() {
+    stopLive();
+    liveCountdown = LIVE_MS / 1000;
+    updateTimerDisplay();
+    liveTimer = setInterval(() => {
+      if (document.hidden) {
+        updateTimerDisplay();
+        return;
+      }
+      liveCountdown -= 1;
+      if (liveCountdown <= 0) {
+        pollLive();
+        liveCountdown = LIVE_MS / 1000;
+      }
+      updateTimerDisplay();
+    }, 1000);
+  }
+
+  function stopLive() {
+    if (liveTimer) {
+      clearInterval(liveTimer);
+      liveTimer = null;
+    }
+    updateTimerDisplay();
+  }
+
+  async function pollLive() {
+    if (!live.pair || !candleSeries || document.hidden) return;
+    try {
+      const base = `pair=${encodeURIComponent(live.pair)}&interval=${live.interval}&limit=3&market=${encodeURIComponent(live.market)}`;
+      const res = await fetch(`/api/klines?${base}`);
+      const json = await res.json();
+      if (!json.ok || !json.candles?.length) return;
+      // lightweight-charts .update() кидает ошибку для свечей СТАРШЕ последней,
+      // поэтому обновляем только текущую (или более новую) свечу.
+      const lastTime = lastCandles.length ? lastCandles[lastCandles.length - 1].time : 0;
+      json.candles.forEach((c) => {
+        if (c.time < lastTime) return;
+        candleSeries.update(c);
+        if (volumeSeries) volumeSeries.update(_volBar(c));
+      });
+      const latest = json.candles[json.candles.length - 1];
+      if (lastCandles.length) {
+        if (latest.time === lastTime) {
+          lastCandles[lastCandles.length - 1] = latest;
+        } else if (latest.time > lastTime) {
+          lastCandles.push(latest);
+        }
+      }
+    } catch (_) {}
   }
 
   function applyAnalysis(data) {
@@ -325,6 +422,34 @@ const TradingChart = (() => {
 
   function setEntryPicker(callback) {
     onPricePick = callback;
+  }
+
+  function setCurrency(symbol) {
+    curSymbol = symbol || "$";
+  }
+
+  const CHART_THEMES = {
+    dark: { bg: "#0b0f14", text: "#8b9cb3", grid: "#1a2330", border: "#243044" },
+    light: { bg: "#ffffff", text: "#5e6b80", grid: "#e7ecf4", border: "#d7deea" },
+  };
+  let curTheme = "dark";
+
+  function setTheme(theme) {
+    curTheme = CHART_THEMES[theme] ? theme : "dark";
+    const t = CHART_THEMES[curTheme];
+    const layout = { background: { color: t.bg }, textColor: t.text };
+    const grid = { vertLines: { color: t.grid }, horzLines: { color: t.grid } };
+    if (mainChart) {
+      mainChart.applyOptions({
+        layout,
+        grid,
+        rightPriceScale: { borderColor: t.border },
+        timeScale: { borderColor: t.border },
+      });
+    }
+    if (fundingChart) {
+      fundingChart.applyOptions({ layout, grid, rightPriceScale: { borderColor: t.border } });
+    }
   }
 
   return {
@@ -339,5 +464,8 @@ const TradingChart = (() => {
     setFundingHistory,
     resize,
     clearFunding,
+    stopLive,
+    setCurrency,
+    setTheme,
   };
 })();

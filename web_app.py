@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import json
+import time
 import webbrowser
 from threading import Timer
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 from flask import Flask, jsonify, render_template, request
 
@@ -154,6 +162,7 @@ def api_klines():
         df = fetch_klines(pair, interval=interval, limit=limit, market=m)
         candles = []
         for _, row in df.iterrows():
+            vol = row["volume"]
             candles.append(
                 {
                     "time": int(row["open_time"].timestamp()),
@@ -161,6 +170,7 @@ def api_klines():
                     "high": float(row["high"]),
                     "low": float(row["low"]),
                     "close": float(row["close"]),
+                    "volume": float(vol) if vol == vol else 0.0,
                 }
             )
         return jsonify(
@@ -276,6 +286,128 @@ def api_funding_history():
         return jsonify({"ok": True, "points": points, "symbol": symbol, "market": m})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+_NEWS_SPANS = {"day": 86400, "week": 7 * 86400, "month": 30 * 86400}
+
+
+@app.route("/api/news")
+def api_news():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    rng = request.args.get("range", "week").strip().lower()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        from news_provider import build_query, fetch_news
+
+        m = detect_market(pair, market)
+        query = build_query(pair, m)
+        items = get_cached(
+            f"news:{m}:{pair.upper()}",
+            lambda: fetch_news(query, 60),
+            ttl=300,
+        )
+        span = _NEWS_SPANS.get(rng, _NEWS_SPANS["week"])
+        now = time.time()
+        filt = [n for n in items if n["timestamp"] and (now - n["timestamp"]) <= span]
+        counts = {
+            "good": sum(1 for n in filt if n["sentiment"] == "good"),
+            "bad": sum(1 for n in filt if n["sentiment"] == "bad"),
+            "total": len(filt),
+        }
+        return jsonify({"ok": True, "items": filt[:40], "query": query, "range": rng, "counts": counts})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить новости: {e}"}), 500
+
+
+@app.route("/api/news-ai")
+def api_news_ai():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    rng = request.args.get("range", "week").strip().lower()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+
+    from ai_news import AINewsError, analyze_news, is_configured
+
+    if not is_configured():
+        return jsonify(
+            {
+                "ok": False,
+                "need_key": True,
+                "error": "AI-анализ не настроен: добавьте OPENAI_API_KEY в файл .env и перезапустите сервер.",
+            }
+        ), 200
+
+    try:
+        from instruments_catalog import get_instrument
+        from news_provider import build_query, fetch_news
+
+        m = detect_market(pair, market)
+        items = get_cached(
+            f"news:{m}:{pair.upper()}",
+            lambda: fetch_news(build_query(pair, m), 60),
+            ttl=300,
+        )
+        span = _NEWS_SPANS.get(rng, _NEWS_SPANS["week"])
+        now = time.time()
+        filt = [n for n in items if n["timestamp"] and (now - n["timestamp"]) <= span]
+        if not filt:
+            return jsonify({"ok": False, "error": "Нет новостей за период для анализа"}), 200
+
+        inst = get_instrument(pair, m)
+        name = inst.name if inst else pair
+        result = get_cached(
+            f"newsai:{m}:{pair.upper()}:{rng}",
+            lambda: analyze_news(name, m, filt),
+            ttl=600,
+        )
+        return jsonify({"ok": True, "ai": result, "range": rng})
+    except AINewsError as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка AI-анализа: {e}"}), 500
+
+
+@app.route("/api/journal", methods=["GET"])
+def api_journal():
+    import signal_journal
+
+    try:
+        data = signal_journal.get_journal(fetch_klines)
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка журнала: {e}"}), 500
+
+
+@app.route("/api/journal/add", methods=["POST"])
+def api_journal_add():
+    import signal_journal
+
+    data = request.get_json(silent=True) or {}
+    try:
+        record = signal_journal.add_signal(data)
+        return jsonify({"ok": True, "signal": record})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось записать сигнал: {e}"}), 500
+
+
+@app.route("/api/journal/delete", methods=["POST"])
+def api_journal_delete():
+    import signal_journal
+
+    data = request.get_json(silent=True) or {}
+    sid = (data.get("id") or "").strip()
+    if data.get("all"):
+        signal_journal.clear_all()
+        return jsonify({"ok": True})
+    if not sid:
+        return jsonify({"ok": False, "error": "Укажите id сигнала"}), 400
+    ok = signal_journal.delete_signal(sid)
+    return jsonify({"ok": ok})
 
 
 def run_server(host: str = "127.0.0.1", port: int = 5000, open_browser: bool = True) -> None:

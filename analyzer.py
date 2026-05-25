@@ -106,6 +106,7 @@ class MarketAnalysis:
     scalp: Any = None
     deep: Any = None
     accuracy: Any = None
+    news: dict | None = None
 
 
 def _ema(series: pd.Series, period: int) -> pd.Series:
@@ -114,8 +115,8 @@ def _ema(series: pd.Series, period: int) -> pd.Series:
 
 def _rsi(series: pd.Series, period: int = 14) -> float:
     delta = series.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    gain = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     value = 100 - (100 / (1 + rs))
     return float(value.iloc[-1]) if not np.isnan(value.iloc[-1]) else 50.0
@@ -174,7 +175,7 @@ def _atr(df: pd.DataFrame, period: int = 14) -> float:
         [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    return float(tr.rolling(period).mean().iloc[-1])
+    return float(tr.ewm(alpha=1 / period, adjust=False).mean().iloc[-1])
 
 
 def _detect_trend_pro(

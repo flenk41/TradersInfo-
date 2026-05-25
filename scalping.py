@@ -43,8 +43,8 @@ def _vwap(df: pd.DataFrame) -> float:
 
 def _rsi(close: pd.Series, period: int = 7) -> float:
     delta = close.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    gain = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     v = 100 - (100 / (1 + rs))
     return float(v.iloc[-1]) if not np.isnan(v.iloc[-1]) else 50.0

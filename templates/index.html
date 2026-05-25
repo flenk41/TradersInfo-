@@ -30,7 +30,19 @@
         <button type="button" class="btn-secondary btn-icon" id="btnRefresh" title="Обновить" disabled>↻</button>
       </div>
       <div class="topbar-actions">
+        <div class="mode-toggle" id="modeToggle" title="Уровень детализации">
+          <button type="button" data-mode="simple" class="active">Простой</button>
+          <button type="button" data-mode="pro">Про</button>
+        </div>
+        <button type="button" class="btn-icon theme-toggle" id="themeToggle" title="Светлая / тёмная тема" aria-label="Тема">🌙</button>
         <div class="instrument-badge" id="currentPair">—</div>
+        <a class="btn-telegram" href="https://t.me/KirillUMP" target="_blank" rel="noopener" title="Telegram-канал @KirillUMP" aria-label="Telegram">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/>
+          </svg>
+          <span>Telegram</span>
+        </a>
+        <a class="btn-support" href="https://t.me/KirillUMP" target="_blank" rel="noopener" title="Поддержать автора">❤️ Поддержать</a>
       </div>
     </header>
 
@@ -68,6 +80,7 @@
             <span id="tvSymbolLabel">—</span>
           </div>
           <a class="btn-tv-link" id="btnOpenTv" href="#" target="_blank" rel="noopener">TradingView ↗</a>
+          <span class="chart-timer" id="chartTimer" title="Обновление графика в реальном времени">↻ —</span>
           <div class="interval-group" id="tvIntervals">
             <button type="button" class="btn-interval" data-interval="5">5m</button>
             <button type="button" class="btn-interval" data-interval="15">15m</button>
@@ -88,7 +101,7 @@
           <summary>Расширенный график TradingView</summary>
           <div id="tradingviewContainer" class="tv-container"></div>
         </details>
-        <div class="funding-panel" id="fundingPanel">
+        <div class="funding-panel pro-only" id="fundingPanel">
           <div class="funding-panel-title">
             <span>Funding Rate</span>
             <small>крипто · красный = лонги платят</small>
@@ -104,11 +117,27 @@
           <button type="button" class="active" data-tab="overview">Обзор</button>
           <button type="button" data-tab="risk">Риск</button>
           <button type="button" data-tab="position">Позиция</button>
-          <button type="button" data-tab="analysis">Анализ</button>
+          <button type="button" data-tab="analysis" class="pro-only">Анализ</button>
+          <button type="button" data-tab="news">Новости</button>
+          <button type="button" data-tab="journal">Журнал</button>
         </nav>
 
         <div id="tab-overview" class="tab-panel active">
-          <section class="accuracy-panel" id="accuracyPanel">
+          <section class="verdict-card" id="verdictCard">
+            <div class="verdict-main">
+              <span class="verdict-badge" id="verdictBadge">—</span>
+              <div class="verdict-text">
+                <strong id="verdictTitle">Выберите инструмент</strong>
+                <p id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
+              </div>
+              <div class="verdict-conf">
+                <span class="vc-num" id="verdictConf">—</span>
+                <span class="vc-label">точность</span>
+              </div>
+            </div>
+            <div class="verdict-levels" id="verdictLevels"></div>
+          </section>
+          <section class="accuracy-panel pro-only" id="accuracyPanel">
             <div class="accuracy-header">
               <span>Точность анализа</span>
               <strong class="accuracy-grade" id="accuracyGrade">—</strong>
@@ -128,7 +157,7 @@
             <ul class="accuracy-factors" id="accuracyFactors"></ul>
           </section>
 
-          <section class="verdict-banner compact" id="verdictBanner">
+          <section class="verdict-banner compact pro-only" id="verdictBanner">
             <div class="verdict-main">
               <span class="verdict-label">Рекомендация</span>
               <span class="verdict-action" id="bestAction">—</span>
@@ -163,7 +192,7 @@
             </dl>
           </article>
 
-          <section class="panel scalp-panel" id="scalpPanel">
+          <section class="panel scalp-panel pro-only" id="scalpPanel">
             <h3>⚡ Скальпинг</h3>
             <p class="scalp-verdict" id="scalpVerdict">—</p>
             <p class="scalp-vwap" id="scalpVwap">—</p>
@@ -303,6 +332,10 @@
                 <div><dt>R:R</dt><dd id="posRR">—</dd></div>
               </dl>
               <p class="pos-advice" id="posAdvice">—</p>
+              <div class="pos-method" id="posMethodWrap">
+                <span class="pos-method-title">Методика SL/TP</span>
+                <p id="posMethodology">—</p>
+              </div>
             </div>
           </section>
         </div>
@@ -437,6 +470,45 @@
               <ul id="signals"></ul>
             </section>
           </main>
+        </div>
+
+        <div id="tab-news" class="tab-panel">
+          <section class="panel news-panel">
+            <div class="news-header">
+              <h2>📰 Новости</h2>
+              <div class="news-range" id="newsRange">
+                <button type="button" data-range="day">День</button>
+                <button type="button" class="active" data-range="week">Неделя</button>
+                <button type="button" data-range="month">Месяц</button>
+              </div>
+            </div>
+            <div class="news-counts" id="newsCounts"></div>
+            <div class="news-ai-bar">
+              <button type="button" class="btn-secondary" id="btnNewsAi">🤖 AI-разбор</button>
+              <small>Сводка по новостям с подтверждающими ссылками</small>
+            </div>
+            <div class="news-ai-result hidden" id="newsAiResult"></div>
+            <div class="news-list" id="newsList">
+              <p class="news-empty">Выберите инструмент и откройте вкладку — новости загрузятся автоматически.</p>
+            </div>
+          </section>
+        </div>
+
+        <div id="tab-journal" class="tab-panel">
+          <section class="panel journal-panel">
+            <div class="journal-header">
+              <h2>📒 Журнал сигналов</h2>
+              <div class="journal-actions">
+                <button type="button" class="btn-primary" id="btnJournalAdd">+ Записать сигнал</button>
+                <button type="button" class="btn-secondary" id="btnJournalRefresh" title="Пересчитать исходы">↻</button>
+              </div>
+            </div>
+            <p class="journal-note">Фиксируем сигнал и автоматически проверяем по истории цены, что сработало первым — тейк или стоп. Так копится реальный винрейт вместо эвристики.</p>
+            <div class="journal-stats" id="journalStats"></div>
+            <div class="journal-list" id="journalList">
+              <p class="news-empty">Пока нет записей. Откройте инструмент, нажмите «Анализ» и «Записать сигнал».</p>
+            </div>
+          </section>
         </div>
       </aside>
     </div>

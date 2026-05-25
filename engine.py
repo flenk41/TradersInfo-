@@ -221,6 +221,20 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     signals.insert(3, f"Режим: {deep.market_regime} · Риск {deep.risk_label} ({deep.risk_score}/100)")
 
     partial.deep = deep
+
+    try:
+        from data_cache import get_cached
+        from news_provider import build_query, fetch_news, sentiment_counts
+
+        news_items = get_cached(
+            f"news:{m}:{pair.upper()}",
+            lambda: fetch_news(build_query(pair, m), 60),
+            ttl=300,
+        )
+        partial.news = sentiment_counts(news_items)
+    except Exception:
+        partial.news = None
+
     partial.accuracy = build_accuracy_metrics(partial, klines_4h)
     if partial.accuracy:
         signals.insert(

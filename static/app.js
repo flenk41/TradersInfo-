@@ -8,6 +8,8 @@ let lastPosition = null;
 let tvReady = false;
 let lwReady = false;
 let tvInterval = "60";
+let activeCurrency = "$";
+let activeNewsRange = "week";
 
 const CATALOG = window.INSTRUMENT_CATALOG || { crypto: [], stock: { regions: [] }, forex: [] };
 let activeStockRegion = "ru";
@@ -27,6 +29,20 @@ const FOREX_ICONS = {
   "AUD/USD": "🇦🇺",
   "EUR/GBP": "💱",
   "USD/CNH": "🇨🇳",
+  "NZD/USD": "🇳🇿",
+  "USD/CAD": "🇨🇦",
+  "EUR/JPY": "💶",
+  "GBP/JPY": "💷",
+  "AUD/JPY": "🇦🇺",
+  "EUR/CHF": "🇨🇭",
+  "GBP/CHF": "🇨🇭",
+  "EUR/AUD": "🇦🇺",
+  "NZD/JPY": "🇳🇿",
+  "CAD/JPY": "🇨🇦",
+  "USD/TRY": "🇹🇷",
+  "USD/MXN": "🇲🇽",
+  "USD/SGD": "🇸🇬",
+  "USD/ZAR": "🇿🇦",
 };
 
 const LIST_TITLES = {
@@ -48,6 +64,402 @@ function formatVolume(v) {
   if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
   if (v >= 1e3) return (v / 1e3).toFixed(2) + "K";
   return v.toFixed(2);
+}
+
+const QUOTE_SYMBOLS = {
+  USD: "$", USDT: "$", RUB: "₽", EUR: "€", GBP: "£", JPY: "¥",
+  CHF: "₣", CAD: "C$", AUD: "A$", NZD: "NZ$", CNH: "¥",
+  TRY: "₺", MXN: "Mex$", SGD: "S$", ZAR: "R",
+};
+
+function currencyFor(data) {
+  const sym = (data.symbol || "").toUpperCase();
+  if (data.market_type === "stock") return sym.endsWith(".ME") ? "₽" : "$";
+  if (data.market_type === "forex") {
+    const disp = (data.display_name || "").toUpperCase();
+    const quote = disp.includes("/") ? disp.split("/")[1].trim() : "USD";
+    return QUOTE_SYMBOLS[quote] || quote + " ";
+  }
+  return "$";
+}
+
+function money(v) {
+  return activeCurrency + formatPrice(v);
+}
+
+function moneyVol(v) {
+  return activeCurrency + formatVolume(v);
+}
+
+// ---- Тема и режим (Простой/Про) ----
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const btn = $("themeToggle");
+  if (btn) btn.textContent = theme === "light" ? "☀️" : "🌙";
+  if (TradingChart.setTheme) TradingChart.setTheme(theme);
+  try { localStorage.setItem("ui_theme", theme); } catch (e) {}
+}
+
+function applyMode(mode) {
+  document.body.classList.toggle("mode-simple", mode === "simple");
+  document.body.classList.toggle("mode-pro", mode !== "simple");
+  document.querySelectorAll("#modeToggle button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === mode)
+  );
+  if (mode === "simple") {
+    const active = document.querySelector(".panel-tabs button.active");
+    if (active && active.classList.contains("pro-only")) switchTab("overview");
+  }
+  try { localStorage.setItem("ui_mode", mode); } catch (e) {}
+}
+
+function renderVerdict(d) {
+  const badge = $("verdictBadge");
+  if (!badge) return;
+  const side = d.accuracy && d.accuracy.recommended_side;
+  const acc = d.accuracy && d.accuracy.overall_pct;
+  let cls, label, ttl;
+  if (side === "long") { cls = "buy"; label = "ПОКУПАТЬ"; ttl = "Сигнал на покупку (лонг)"; }
+  else if (side === "short") { cls = "sell"; label = "ПРОДАВАТЬ"; ttl = "Сигнал на продажу (шорт)"; }
+  else { cls = "wait"; label = "ЖДАТЬ"; ttl = "Чёткого сигнала нет — лучше подождать"; }
+
+  badge.className = "verdict-badge " + cls;
+  badge.textContent = label;
+  $("verdictTitle").textContent = ttl;
+  $("verdictReason").textContent = d.trend_summary || (d.bias && d.bias.summary) || "—";
+  $("verdictConf").textContent = acc != null ? acc + "%" : "—";
+
+  const levels = $("verdictLevels");
+  const preview = d.position_preview && d.position_preview[side];
+  if ((side === "long" || side === "short") && preview) {
+    levels.classList.remove("hidden");
+    levels.innerHTML =
+      `<div class="vl entry"><span>Вход</span><strong>${money(preview.entry_price)}</strong></div>` +
+      `<div class="vl stop"><span>Стоп</span><strong>${money(preview.stop_loss)}</strong></div>` +
+      `<div class="vl tp"><span>Тейк</span><strong>${money(preview.take_profit)}</strong></div>` +
+      `<div class="vl"><span>R:R</span><strong>1:${preview.risk_reward}</strong></div>`;
+  } else {
+    levels.classList.add("hidden");
+    levels.innerHTML = "";
+  }
+}
+
+const NEWS_LABEL = { good: "Позитив", bad: "Негатив", neutral: "Нейтрально" };
+
+function newsTimeAgo(ts) {
+  if (!ts) return "";
+  const diff = Date.now() / 1000 - ts;
+  const h = Math.floor(diff / 3600);
+  if (h < 1) return "только что";
+  if (h < 24) return h + " ч назад";
+  return Math.floor(h / 24) + " дн назад";
+}
+
+function renderNews(data) {
+  const list = $("newsList");
+  const counts = $("newsCounts");
+  if (!list) return;
+  if (!data.items || !data.items.length) {
+    if (counts) counts.innerHTML = "";
+    list.innerHTML = '<p class="news-empty">Нет новостей за выбранный период.</p>';
+    return;
+  }
+  if (counts) {
+    counts.innerHTML =
+      `<span class="news-count good">▲ Хорошие: ${data.counts.good}</span>` +
+      `<span class="news-count bad">▼ Плохие: ${data.counts.bad}</span>` +
+      `<span class="news-count total">Всего: ${data.counts.total}</span>`;
+  }
+  list.innerHTML = "";
+  data.items.forEach((n) => {
+    const a = document.createElement("a");
+    a.className = `news-item news-${n.sentiment}`;
+    a.href = n.link;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+
+    const badge = document.createElement("span");
+    badge.className = `news-badge news-${n.sentiment}`;
+    badge.textContent = NEWS_LABEL[n.sentiment] || "";
+
+    const title = document.createElement("span");
+    title.className = "news-title";
+    title.textContent = n.title;
+
+    const meta = document.createElement("span");
+    meta.className = "news-meta";
+    meta.textContent = `${n.source}${n.source ? " · " : ""}${newsTimeAgo(n.timestamp)}`;
+
+    a.append(badge, title, meta);
+    list.appendChild(a);
+  });
+}
+
+const AI_OVERALL = {
+  bullish: { label: "БЫЧИЙ 📈", cls: "good" },
+  bearish: { label: "МЕДВЕЖИЙ 📉", cls: "bad" },
+  neutral: { label: "НЕЙТРАЛЬНЫЙ", cls: "neutral" },
+};
+
+function renderAiPoints(parent, points, cls) {
+  points.forEach((p) => {
+    const li = document.createElement("li");
+    li.className = `ai-point ${cls}`;
+    const txt = document.createElement("span");
+    txt.className = "ai-point-text";
+    txt.textContent = p.point;
+    li.appendChild(txt);
+    if (p.sources && p.sources.length) {
+      const refs = document.createElement("span");
+      refs.className = "ai-refs";
+      p.sources.forEach((s, i) => {
+        const a = document.createElement("a");
+        a.href = s.link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "ai-ref";
+        a.textContent = `[${i + 1}] ${s.source || "источник"}`;
+        a.title = s.title;
+        refs.appendChild(a);
+      });
+      li.appendChild(refs);
+    }
+    parent.appendChild(li);
+  });
+}
+
+function renderNewsAi(ai) {
+  const box = $("newsAiResult");
+  if (!box) return;
+  box.classList.remove("hidden");
+  box.innerHTML = "";
+
+  const o = AI_OVERALL[ai.overall] || AI_OVERALL.neutral;
+  const head = document.createElement("div");
+  head.className = "ai-head";
+  head.innerHTML =
+    `<span class="ai-overall ${o.cls}">${o.label}</span>` +
+    `<span class="ai-conf">Уверенность: ${ai.confidence || 0}%</span>` +
+    `<span class="ai-model">${ai.model || "AI"} · ${ai.analyzed_count || 0} новостей</span>`;
+  box.appendChild(head);
+
+  const summary = document.createElement("p");
+  summary.className = "ai-summary";
+  summary.textContent = ai.summary || "";
+  box.appendChild(summary);
+
+  if (ai.bullish && ai.bullish.length) {
+    const h = document.createElement("div");
+    h.className = "ai-section-title good";
+    h.textContent = "Позитивные факторы";
+    const ul = document.createElement("ul");
+    ul.className = "ai-points";
+    renderAiPoints(ul, ai.bullish, "good");
+    box.append(h, ul);
+  }
+  if (ai.bearish && ai.bearish.length) {
+    const h = document.createElement("div");
+    h.className = "ai-section-title bad";
+    h.textContent = "Негативные факторы";
+    const ul = document.createElement("ul");
+    ul.className = "ai-points";
+    renderAiPoints(ul, ai.bearish, "bad");
+    box.append(h, ul);
+  }
+
+  const note = document.createElement("p");
+  note.className = "ai-note";
+  note.textContent = "AI-сводка по новостям, не финансовая рекомендация. Ссылки ведут на исходные публикации.";
+  box.appendChild(note);
+}
+
+let aiLoading = false;
+async function loadNewsAi() {
+  const box = $("newsAiResult");
+  if (!box) return;
+  if (!activePair) {
+    box.classList.remove("hidden");
+    box.innerHTML = '<p class="news-empty">Сначала выберите инструмент и нажмите «Анализ».</p>';
+    return;
+  }
+  if (aiLoading) return;
+  aiLoading = true;
+  box.classList.remove("hidden");
+  box.innerHTML = '<p class="news-empty">🤖 Анализирую новости…</p>';
+  try {
+    const url = `/api/news-ai?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&range=${activeNewsRange}`;
+    const json = await (await fetch(url)).json();
+    if (json.ok) renderNewsAi(json.ai);
+    else box.innerHTML = `<p class="news-empty">${json.error || "AI-анализ недоступен"}</p>`;
+  } catch (e) {
+    box.innerHTML = '<p class="news-empty">Не удалось выполнить AI-анализ.</p>';
+  } finally {
+    aiLoading = false;
+  }
+}
+
+const JOURNAL_STATUS = {
+  open: { label: "Открыт", cls: "open" },
+  tp: { label: "TP ✓", cls: "good" },
+  sl: { label: "SL ✗", cls: "bad" },
+  expired: { label: "Истёк", cls: "neutral" },
+};
+
+function sigCurrency(sig) {
+  if (sig.market === "stock") return (sig.pair || "").toUpperCase().endsWith(".ME") ? "₽" : "$";
+  if (sig.market === "forex") {
+    const q = (sig.pair || "").toUpperCase().split("/")[1] || "USD";
+    return QUOTE_SYMBOLS[q] || q + " ";
+  }
+  return "$";
+}
+
+function fmtDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) +
+    " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderJournal(data) {
+  const statsEl = $("journalStats");
+  const list = $("journalList");
+  if (!statsEl || !list) return;
+  const s = data.stats || {};
+  statsEl.innerHTML =
+    `<div class="jstat"><span>Сделок закрыто</span><strong>${s.closed || 0}</strong></div>` +
+    `<div class="jstat"><span>Винрейт</span><strong class="${(s.win_rate || 0) >= 50 ? "good" : "bad"}">${s.win_rate || 0}%</strong></div>` +
+    `<div class="jstat"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${s.avg_r || 0}</strong></div>` +
+    `<div class="jstat"><span>Профит-фактор</span><strong>${s.profit_factor || 0}</strong></div>` +
+    `<div class="jstat"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
+    `<div class="jstat"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
+
+  const sigs = data.signals || [];
+  if (!sigs.length) {
+    list.innerHTML = '<p class="news-empty">Пока нет записей. Откройте инструмент, нажмите «Анализ» и «Записать сигнал».</p>';
+    return;
+  }
+  list.innerHTML = "";
+  sigs.forEach((sig) => {
+    const st = JOURNAL_STATUS[sig.status] || JOURNAL_STATUS.open;
+    const cur = sigCurrency(sig);
+    const fmt = (v) => (v == null ? "—" : cur + formatPrice(v));
+    const item = document.createElement("div");
+    item.className = `journal-item j-${st.cls}`;
+    const rTxt = sig.r_multiple == null ? "" : `<span class="j-r ${sig.r_multiple >= 0 ? "good" : "bad"}">${sig.r_multiple > 0 ? "+" : ""}${sig.r_multiple}R</span>`;
+
+    const head = document.createElement("div");
+    head.className = "journal-item-head";
+    head.innerHTML =
+      `<span class="j-badge j-${st.cls}">${st.label}</span>` +
+      `<span class="j-pair">${sig.display || sig.pair} · ${sig.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉"}</span>` +
+      rTxt +
+      `<button class="j-del" data-id="${sig.id}" title="Удалить">✕</button>`;
+
+    const body = document.createElement("div");
+    body.className = "journal-item-body";
+    body.innerHTML =
+      `<span>Вход ${fmt(sig.entry)}</span>` +
+      `<span class="j-sl">Стоп ${fmt(sig.stop)}</span>` +
+      `<span class="j-tp">Тейк ${fmt(sig.take_profit)}</span>` +
+      `<span>R:R 1:${sig.rr}</span>` +
+      (sig.accuracy_pct != null ? `<span>Точн. ${sig.accuracy_pct}%</span>` : "") +
+      `<span class="j-date">${fmtDate(sig.created_ts)}</span>`;
+
+    item.append(head, body);
+    list.appendChild(item);
+  });
+
+  list.querySelectorAll(".j-del").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await fetch("/api/journal/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: btn.dataset.id }),
+      });
+      loadJournal();
+    });
+  });
+}
+
+let journalLoading = false;
+async function loadJournal() {
+  const list = $("journalList");
+  if (!list) return;
+  if (journalLoading) return;
+  journalLoading = true;
+  try {
+    const json = await (await fetch("/api/journal")).json();
+    if (json.ok) renderJournal(json);
+  } catch (e) {
+    /* keep previous */
+  } finally {
+    journalLoading = false;
+  }
+}
+
+async function saveSignal() {
+  if (!lastAnalysisData || !activePair) {
+    showError("Сначала выберите инструмент и нажмите «Анализ»");
+    return;
+  }
+  let side = lastAnalysisData.accuracy?.recommended_side;
+  if (side !== "long" && side !== "short") side = activeSide;
+  const preview = lastAnalysisData.position_preview?.[side];
+  if (!preview) {
+    showError("Нет рассчитанных уровней для записи");
+    return;
+  }
+  const payload = {
+    pair: activePair,
+    market: activeMarket,
+    display: lastAnalysisData.display_name || activePair,
+    side,
+    entry: preview.entry_price,
+    stop: preview.stop_loss,
+    take_profit: preview.take_profit,
+    take_profit_2: preview.take_profit_2,
+    rr: preview.risk_reward,
+    accuracy_pct: lastAnalysisData.accuracy?.overall_pct,
+  };
+  try {
+    const json = await (await fetch("/api/journal/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })).json();
+    if (json.ok) {
+      switchTab("journal");
+      loadJournal();
+    } else {
+      showError(json.error || "Не удалось записать сигнал");
+    }
+  } catch (e) {
+    showError("Не удалось записать сигнал");
+  }
+}
+
+let newsLoading = false;
+async function loadNews() {
+  const list = $("newsList");
+  if (!list) return;
+  if (!activePair) {
+    list.innerHTML = '<p class="news-empty">Сначала выберите инструмент и нажмите «Анализ».</p>';
+    return;
+  }
+  if (newsLoading) return;
+  newsLoading = true;
+  list.innerHTML = '<p class="news-empty">Загрузка новостей…</p>';
+  try {
+    const url = `/api/news?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&range=${activeNewsRange}`;
+    const json = await (await fetch(url)).json();
+    if (json.ok) renderNews(json);
+    else list.innerHTML = `<p class="news-empty">${json.error || "Ошибка загрузки новостей"}</p>`;
+  } catch (e) {
+    list.innerHTML = '<p class="news-empty">Не удалось загрузить новости.</p>';
+  } finally {
+    newsLoading = false;
+  }
 }
 
 function verdictClass(verdict) {
@@ -75,6 +487,8 @@ function switchTab(tabId) {
   document.querySelectorAll(".tab-panel").forEach((p) => {
     p.classList.toggle("active", p.id === `tab-${tabId}`);
   });
+  if (tabId === "news") loadNews();
+  if (tabId === "journal") loadJournal();
 }
 
 function initTradingViewLazy() {
@@ -107,21 +521,9 @@ function initLightweightChartOnce() {
 
 async function loadChartsForPair(pair, marketType) {
   initLightweightChartOnce();
-  const panel = $("fundingPanel");
-  if (marketType === "crypto") {
-    panel?.classList.remove("hidden");
-    await TradingChart.loadPair(pair, activeMarket);
-  } else {
-    panel?.classList.add("hidden");
-    if (TradingChart.clearFunding) TradingChart.clearFunding();
-    else if (lwReady) {
-      const res = await fetch(
-        `/api/klines?pair=${encodeURIComponent(pair)}&interval=1h&limit=200&market=${encodeURIComponent(activeMarket)}`
-      );
-      const json = await res.json();
-      if (json.ok) TradingChart.setCandles(json.candles);
-    }
-  }
+  const lwMap = { "5": "5m", "15": "15m", "60": "1h", "240": "4h", D: "1d" };
+  const tf = lwMap[tvInterval] || "1h";
+  await TradingChart.loadPair(pair, activeMarket, tf);
 }
 
 function updateChartTrend(data) {
@@ -179,8 +581,8 @@ function renderZonesStrip(data) {
     (zones || []).forEach((z) => {
       const chip = document.createElement("div");
       chip.className = `zone-chip ${cls}`;
-      chip.textContent = `${z.label}: $${formatPrice(z.price)}`;
-      chip.title = `$${formatPrice(z.low)} – $${formatPrice(z.high)}`;
+      chip.textContent = `${z.label}: ${money(z.price)}`;
+      chip.title = `${money(z.low)} – ${money(z.high)}`;
       strip.appendChild(chip);
     });
   };
@@ -421,7 +823,7 @@ function renderScalping(scalp) {
     return;
   }
   $("scalpVerdict").textContent = scalp.verdict || "—";
-  $("scalpVwap").textContent = scalp.price_vs_vwap || (scalp.vwap ? "VWAP: $" + formatPrice(scalp.vwap) : "—");
+  $("scalpVwap").textContent = scalp.price_vs_vwap || (scalp.vwap ? "VWAP: " + money(scalp.vwap) : "—");
 
   const sigEl = $("scalpSignals");
   sigEl.innerHTML = "";
@@ -457,7 +859,7 @@ function renderLevels(containerId, levels) {
   levels.forEach((l) => {
     const tag = document.createElement("span");
     tag.className = "tag";
-    tag.textContent = "$" + formatPrice(l);
+    tag.textContent = money(l);
     el.appendChild(tag);
   });
 }
@@ -468,7 +870,7 @@ function renderTimeframes(timeframes) {
   timeframes.forEach((tf) => {
     const div = document.createElement("div");
     div.className = "tf-item";
-    const sma = tf.sma200 ? "$" + formatPrice(tf.sma200) : "—";
+    const sma = tf.sma200 ? money(tf.sma200) : "—";
     div.innerHTML = `
       <strong>[${tf.timeframe.toUpperCase()}] ${tf.trend}</strong>
       <span>${tf.market_structure} · ADX ${tf.adx}</span>
@@ -622,7 +1024,7 @@ function renderFibonacci(fib, price) {
     const row = document.createElement("div");
     const near = Math.abs(lvl.price - price) / price < 0.008;
     row.className = "fib-level-row" + (near ? " active" : "");
-    row.innerHTML = `<span class="fib-label">${lvl.label}</span><span>$${formatPrice(lvl.price)}</span>`;
+    row.innerHTML = `<span class="fib-label">${lvl.label}</span><span>${money(lvl.price)}</span>`;
     el.appendChild(row);
   });
 }
@@ -642,15 +1044,17 @@ function renderSignals(signals) {
 }
 
 function render(data) {
+  activeCurrency = currencyFor(data);
+  if (TradingChart.setCurrency) TradingChart.setCurrency(activeCurrency);
   const changeEl = $("priceChange");
   const sign = data.change_24h_pct >= 0 ? "+" : "";
-  $("priceMain").textContent = "$" + formatPrice(data.price);
+  $("priceMain").textContent = money(data.price);
   changeEl.textContent = sign + data.change_24h_pct.toFixed(2) + "% за 24ч";
   changeEl.className = "price-change " + (data.change_24h_pct >= 0 ? "up" : "down");
 
-  $("high24").textContent = "$" + formatPrice(data.high_24h);
-  $("low24").textContent = "$" + formatPrice(data.low_24h);
-  $("volume24").textContent = "$" + formatVolume(data.volume_24h);
+  $("high24").textContent = money(data.high_24h);
+  $("low24").textContent = money(data.low_24h);
+  $("volume24").textContent = moneyVol(data.volume_24h);
 
   renderTrade(data.trade, data.bias);
   renderDeep(data.deep);
@@ -664,7 +1068,7 @@ function render(data) {
     const v = data.volatility;
     $("volLevel").textContent = v.level;
     $("volDesc").textContent = v.description;
-    $("atr").textContent = "$" + formatPrice(v.atr_14);
+    $("atr").textContent = money(v.atr_14);
     $("atrPct").textContent = v.atr_percent + "%";
     $("dailyVol").textContent = v.daily_volatility_pct + "%";
     $("range24").textContent = v.range_24h_pct + "%";
@@ -682,8 +1086,8 @@ function render(data) {
     $("fundingShort").textContent = f.short_action || "—";
     $("fundingShort").className = verdictClass(f.short_action);
     $("fundingSummary").textContent = f.summary || f.sentiment || "—";
-    $("markPrice").textContent = "$" + formatPrice(f.mark_price);
-    $("indexPrice").textContent = "$" + formatPrice(f.index_price);
+    $("markPrice").textContent = money(f.mark_price);
+    $("indexPrice").textContent = money(f.index_price);
     $("openInterest").textContent = f.open_interest != null ? formatVolume(f.open_interest) : "—";
     $("nextFunding").textContent = String(f.next_funding_time).replace("T", " ").slice(0, 19);
   } else {
@@ -727,17 +1131,17 @@ function renderPosition(p) {
   $("pnlSl").textContent = p.pnl_sl_usdt.toFixed(2) + " USDT";
   $("pnlSlPct").textContent = p.pnl_sl_pct.toFixed(2) + "%";
 
-  $("posStopPrice").textContent = "$" + formatPrice(p.stop_loss) + " (−" + p.sl_distance_pct + "%)";
+  $("posStopPrice").textContent = money(p.stop_loss) + " (−" + p.sl_distance_pct + "%)";
   $("posStopReason").textContent = p.stop_reason;
-  $("posTpPrice").textContent = "$" + formatPrice(p.take_profit) + " (+" + p.tp_distance_pct + "%)";
+  $("posTpPrice").textContent = money(p.take_profit) + " (+" + p.tp_distance_pct + "%)";
   $("posTpReason").textContent = p.tp_reason;
-  $("posTp2").textContent = p.take_profit_2 ? "$" + formatPrice(p.take_profit_2) : "—";
-  $("posPrices").textContent =
-    "$" + formatPrice(p.entry_price) + " → $" + formatPrice(p.current_price);
+  $("posTp2").textContent = p.take_profit_2 ? money(p.take_profit_2) : "—";
+  $("posPrices").textContent = money(p.entry_price) + " → " + money(p.current_price);
   $("posNotional").textContent =
     p.position_notional_usdt.toFixed(2) + " USDT · x" + p.leverage + " · " + p.quantity + " шт.";
   $("posRR").textContent = "1:" + p.risk_reward;
   $("posAdvice").textContent = p.advice;
+  if ($("posMethodology")) $("posMethodology").textContent = p.methodology || "—";
   lastPosition = p;
   syncRiskFromPosition(p);
 }
@@ -826,6 +1230,7 @@ async function analyze(pair, forceRefresh = false) {
       position_preview: json.position_preview,
       tv_symbol: json.data.tv_symbol || json.tv_symbol,
     };
+    renderVerdict(lastAnalysisData);
 
     const tvSym = json.data.tv_symbol || json.tv_symbol || "BINANCE:ETHUSDT";
     const tvLabel = $("tvSymbolLabel");
@@ -841,6 +1246,8 @@ async function analyze(pair, forceRefresh = false) {
     }
     if ($("riskEntry") && json.data.price) $("riskEntry").value = json.data.price;
     applyPositionPreview(json.position_preview, activeSide);
+    $("newsAiResult")?.classList.add("hidden");
+    if ($("tab-news")?.classList.contains("active")) loadNews();
   } catch (e) {
     setLoading(false);
     showError("Не удалось подключиться к серверу");
@@ -930,6 +1337,27 @@ document.querySelectorAll(".panel-tabs button").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
+document.querySelectorAll("#newsRange button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activeNewsRange = btn.dataset.range;
+    document.querySelectorAll("#newsRange button").forEach((b) => b.classList.toggle("active", b === btn));
+    $("newsAiResult")?.classList.add("hidden");
+    loadNews();
+  });
+});
+
+$("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
+$("btnJournalAdd")?.addEventListener("click", () => saveSignal());
+$("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
+
+$("themeToggle")?.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  applyTheme(next);
+});
+document.querySelectorAll("#modeToggle button").forEach((b) => {
+  b.addEventListener("click", () => applyMode(b.dataset.mode));
+});
+
 document.querySelectorAll(".btn-interval").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".btn-interval").forEach((b) => b.classList.remove("active"));
@@ -939,13 +1367,7 @@ document.querySelectorAll(".btn-interval").forEach((btn) => {
     const lwMap = { "5": "5m", "15": "15m", "60": "1h", "240": "4h", D: "1d" };
     const lwTf = lwMap[tvInterval];
     if (lwReady && activePair && lwTf) {
-      fetch(
-        `/api/klines?pair=${encodeURIComponent(activePair)}&interval=${lwTf}&limit=200&market=${encodeURIComponent(activeMarket)}`
-      )
-        .then((r) => r.json())
-        .then((j) => {
-          if (j.ok) TradingChart.setCandles(j.candles);
-        });
+      TradingChart.loadPair(activePair, activeMarket, lwTf);
     }
   });
 });
@@ -961,6 +1383,14 @@ $("tvDetails")?.addEventListener("toggle", () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   initLightweightChartOnce();
+  let savedTheme = "dark";
+  let savedMode = "simple";
+  try {
+    savedTheme = localStorage.getItem("ui_theme") || "dark";
+    savedMode = localStorage.getItem("ui_mode") || "simple";
+  } catch (e) {}
+  applyTheme(savedTheme);
+  applyMode(savedMode);
   $("fundingPanel")?.classList.add("hidden");
   renderPairsGrid("crypto");
   switchTab("overview");

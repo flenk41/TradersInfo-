@@ -12,23 +12,40 @@ _MOEX = "https://iss.moex.com/iss"
 _TIMEOUT = 25
 
 _INTERVAL_MAP = {
-    "5m": 5,
-    "15m": 15,
+    "5m": 10,
+    "15m": 10,
     "1h": 60,
     "4h": 60,
     "1d": 24,
 }
+
+# Свечей примерно за один календарный день (с учётом выходных) по интервалам MOEX.
+_PER_CAL_DAY = {1: 400.0, 10: 90.0, 60: 14.0, 24: 0.72}
 
 
 def _secid(symbol: str) -> str:
     return symbol.upper().replace(".ME", "").replace(".MC", "").strip()
 
 
+def _moex_from(moex_interval: int, base_limit: int) -> str:
+    """Дата начала окна под нужное число свечей.
+
+    ISS отдаёт максимум 500 свечей с начала диапазона (самые старые). Слишком
+    широкое окно вернёт прошлогодние свечи, поэтому окно считаем от limit и
+    держим итог заведомо ниже страницы в 500 строк.
+    """
+    per = _PER_CAL_DAY.get(moex_interval, 14.0)
+    days = max(3, int(base_limit / per * 1.6) + 3)
+    max_days = max(3, int(480 / per))
+    days = min(days, max_days)
+    return (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
 def fetch_klines_moex(symbol: str, interval: str = "1h", limit: int = 200) -> pd.DataFrame:
     secid = _secid(symbol)
     moex_interval = _INTERVAL_MAP.get(interval, 60)
-    days_back = 120 if interval in ("5m", "15m") else 400
-    start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    base_limit = limit * 4 if interval == "4h" else limit
+    start = _moex_from(moex_interval, base_limit)
 
     url = (
         f"{_MOEX}/engines/stock/markets/shares/securities/{secid}/candles.json"

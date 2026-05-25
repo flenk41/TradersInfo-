@@ -57,8 +57,8 @@ def _quick_backtest_4h(df: pd.DataFrame) -> tuple[float, int]:
     ema20 = close.ewm(span=20, adjust=False).mean()
     ema50 = close.ewm(span=50, adjust=False).mean()
     delta = close.diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
     rs = gain / loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
 
@@ -118,10 +118,21 @@ def build_accuracy_metrics(
 
     indicator_agreement = round((tf_align + conf + best_score) / 3, 1)
 
-    overall = round(
-        bt_rate * 0.35 + tf_align * 0.25 + best_score * 0.25 + min(spread * 2, 30) * 0.15,
-        1,
+    overall = (
+        bt_rate * 0.35 + tf_align * 0.25 + best_score * 0.25 + min(spread * 2, 30) * 0.15
     )
+
+    news = getattr(analysis, "news", None)
+    news_adj = 0.0
+    if news and news.get("total", 0) >= 3:
+        net = news.get("net", 0.0)
+        if rec_side == "long":
+            news_adj = net * 6
+        elif rec_side == "short":
+            news_adj = -net * 6
+        news_adj = round(max(-6.0, min(6.0, news_adj)), 1)
+
+    overall = round(overall + news_adj, 1)
     overall = max(35.0, min(92.0, overall))
 
     if overall >= 78 and spread >= 25:
@@ -144,6 +155,13 @@ def build_accuracy_metrics(
     ]
     if deep:
         factors.append(f"Схождение {rec_side.upper()}: {conf}%")
+    if news and news.get("total"):
+        adj_txt = ""
+        if news_adj:
+            adj_txt = f" ({'+' if news_adj > 0 else ''}{news_adj} к точности)"
+        factors.append(
+            f"Новостной фон ({news['window_days']}д): {news['good']}↑ / {news['bad']}↓ — {news['label']}{adj_txt}"
+        )
 
     expl = (
         f"Сводная точность {overall}% — {label}. "

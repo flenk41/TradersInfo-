@@ -22,3 +22,5 @@ htmlcov/
 .pytest_cache/
 *.zip
 assets/
+signals.json
+signals.json.tmp
