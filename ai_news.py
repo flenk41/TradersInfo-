@@ -34,11 +34,25 @@ def _fmt_date(ts: int) -> str:
         return ""
 
 
-def _build_prompt(name: str, market: str, items: list[dict]) -> str:
+def _build_prompt(name: str, market: str, items: list[dict], lang: str = "ru") -> str:
     lines = []
     for i, n in enumerate(items, 1):
         lines.append(f'{i}. [{_fmt_date(n.get("timestamp", 0))}] {n.get("title", "")} — {n.get("source", "")}')
     news_block = "\n".join(lines)
+    if lang == "en":
+        return (
+            f"You are a financial analyst. Based ONLY on the news list below for the instrument "
+            f"{name} ({market}), assess the market sentiment. Do not invent facts or add links — "
+            f"reference only the news item numbers from the list.\n\n"
+            f"News:\n{news_block}\n\n"
+            "Return STRICT JSON with the schema:\n"
+            '{"overall":"bullish|bearish|neutral","confidence":0-100,'
+            '"summary":"2-3 sentences overall conclusion",'
+            '"bullish":[{"point":"short factor","refs":[news numbers]}],'
+            '"bearish":[{"point":"short factor","refs":[news numbers]}]}\n'
+            "Every point MUST contain refs — numbers of supporting news. "
+            "If there are no factors, return an empty array. Answer in English."
+        )
     return (
         f"Ты — финансовый аналитик. На основе ТОЛЬКО списка новостей ниже по инструменту "
         f"{name} ({market}) оцени рыночный настрой. Не выдумывай факты и не добавляй ссылок — "
@@ -54,7 +68,7 @@ def _build_prompt(name: str, market: str, items: list[dict]) -> str:
     )
 
 
-def analyze_news(name: str, market: str, items: list[dict], max_items: int = 30) -> dict:
+def analyze_news(name: str, market: str, items: list[dict], max_items: int = 30, lang: str = "ru") -> dict:
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         raise AINewsError("Не задан OPENAI_API_KEY — добавьте ключ в .env")
@@ -71,7 +85,7 @@ def analyze_news(name: str, market: str, items: list[dict], max_items: int = 30)
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             json={
                 "model": model,
-                "messages": [{"role": "user", "content": _build_prompt(name, market, used)}],
+                "messages": [{"role": "user", "content": _build_prompt(name, market, used, lang)}],
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},
             },

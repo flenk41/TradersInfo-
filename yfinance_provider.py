@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from net import retry_call
+
 try:
     import yfinance as yf
 except ImportError:
@@ -37,7 +39,10 @@ def fetch_klines_yf(symbol: str, interval: str = "1h", limit: int = 200) -> pd.D
         period = "5y"
 
     ticker = yf.Ticker(symbol)
-    df = ticker.history(period=period, interval=yf_interval, auto_adjust=True)
+    df = retry_call(
+        lambda: ticker.history(period=period, interval=yf_interval, auto_adjust=True),
+        source=f"Yahoo Finance ({symbol})",
+    )
     if df.empty:
         raise ValueError(f"Нет данных для {symbol}")
 
@@ -83,7 +88,10 @@ def _resample_4h(df: pd.DataFrame) -> pd.DataFrame:
 def fetch_ticker_24h_yf(symbol: str) -> dict[str, Any]:
     _require_yf()
     t = yf.Ticker(symbol)
-    hist = t.history(period="5d", interval="1h", auto_adjust=True)
+    hist = retry_call(
+        lambda: t.history(period="5d", interval="1h", auto_adjust=True),
+        source=f"Yahoo Finance ({symbol})",
+    )
     if hist.empty:
         info = t.fast_info
         price = float(getattr(info, "last_price", 0) or 0)

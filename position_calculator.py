@@ -28,6 +28,9 @@ class PositionResult:
     stop_loss: float
     take_profit: float
     take_profit_2: float | None
+    liquidation_price: float | None
+    liquidation_distance_pct: float | None
+    stop_before_liquidation: bool
     stop_reason: str
     tp_reason: str
     methodology: str
@@ -48,6 +51,44 @@ class PositionResult:
 # Минимум R:R 1:2 — при таком соотношении достаточно ~40% прибыльных сделок.
 MIN_RR = 2.0
 TP2_RR = 3.5
+
+# Ставка поддерживающей маржи (maintenance margin rate) для оценки ликвидации.
+# Усреднённое значение для изолированной маржи; реальная зависит от биржи и тира позиции.
+DEFAULT_MMR = 0.005
+
+# Тейкерская комиссия за сторону (≈0.05% на фьючерсах Binance). Учитываем вход+выход,
+# чтобы оценка ликвидации была консервативной, а не оптимистичной.
+DEFAULT_TAKER_FEE = 0.0005
+
+
+def liquidation_price(
+    entry: float,
+    leverage: int,
+    side: str,
+    mmr: float = DEFAULT_MMR,
+    fee_rate: float = DEFAULT_TAKER_FEE,
+) -> float | None:
+    """Оценка цены ликвидации для изолированной маржи с учётом комиссий.
+
+    Выводится из условия «маржа − убыток − комиссии = поддерживающая маржа»:
+
+        long:  P = entry · (1 − 1/L + fee) / (1 − mmr − fee)
+        short: P = entry · (1 + 1/L − fee) / (1 + mmr + fee)
+
+    Учёт fee и mmr делает оценку чуть консервативнее (ликвидация ближе к входу),
+    чем «голая» формула entry·(1 ∓ 1/L). Это приближение: реальная цена зависит
+    от тиров маржи биржи и режима маржи. При плече ≤ x1 ликвидации практически
+    нет — возвращаем None.
+    """
+    if entry <= 0 or leverage <= 1:
+        return None
+    inv = 1.0 / leverage
+    if side == "long":
+        denom = 1.0 - mmr - fee_rate
+        price = entry * (1.0 - inv + fee_rate) / denom if denom > 0 else 0.0
+    else:
+        price = entry * (1.0 + inv - fee_rate) / (1.0 + mmr + fee_rate)
+    return round(max(price, 0.0), 6)
 
 # Множитель ATR для стопа и буфер за структурой адаптируются к волатильности.
 # Высокая волатильность → шире стоп (меньше выбьет шумом), низкая → плотнее.
@@ -120,6 +161,30 @@ def _tp_short(entry: float, stop: float, supports: list[float], fib: list[float]
     return round(tp1, 6), round(tp2, 6), reason
 
 
+def zone_stop_take(
+    side: str,
+    entry: float,
+    supports: list[float],
+    resistances: list[float],
+    fib_prices: list[float],
+    atr: float,
+    volatility=None,
+) -> tuple[float, float]:
+    """Стоп/тейк для произвольной точки входа по ЕДИНОЙ методологии с позицией:
+    стоп за структурой + буфер ATR (множитель по режиму волатильности),
+    тейк у ближайшего уровня с минимумом R:R. Используется и графиком (зоны входа),
+    и расчётом позиции, чтобы значения совпадали.
+    """
+    reg = _regime(volatility)
+    if side == "long":
+        stop, _ = _stop_long(entry, supports, fib_prices, atr, reg)
+        tp, _tp2, _ = _tp_long(entry, stop, resistances, fib_prices, atr)
+    else:
+        stop, _ = _stop_short(entry, resistances, fib_prices, atr, reg)
+        tp, _tp2, _ = _tp_short(entry, stop, supports, fib_prices, atr)
+    return round(stop, 6), round(tp, 6)
+
+
 def calculate_position(analysis: MarketAnalysis, pos: PositionInput) -> PositionResult:
     entry = pos.entry_price
     margin = pos.margin_usdt
@@ -154,6 +219,14 @@ def calculate_position(analysis: MarketAnalysis, pos: PositionInput) -> Position
     reward = abs(tp - entry)
     rr = round(reward / risk, 2) if risk > 0 else 0
 
+    liq = liquidation_price(entry, lev, side)
+    liq_dist_pct = None
+    stop_before_liq = True
+    if liq is not None:
+        liq_dist_pct = round(abs(entry - liq) / entry * 100, 2)
+        # Стоп должен срабатывать раньше ликвидации.
+        stop_before_liq = stop > liq if side == "long" else stop < liq
+
     pnl_cur, pnl_cur_pct = _pnl(side, entry, current, margin, lev)
     pnl_tp, pnl_tp_pct = _pnl(side, entry, tp, margin, lev)
     pnl_sl, pnl_sl_pct = _pnl(side, entry, stop, margin, lev)
@@ -177,6 +250,10 @@ def calculate_position(analysis: MarketAnalysis, pos: PositionInput) -> Position
     elif analysis.trade:
         v = analysis.trade.long_verdict if side == "long" else analysis.trade.short_verdict
         advice_parts.append(f"Рынок: {v}")
+    if liq is not None:
+        advice_parts.append(f"⚠ Ликвидация при ${liq:,.4f} ({liq_dist_pct}% от входа)")
+        if not stop_before_liq:
+            advice_parts.append("🚨 Стоп ЗА ценой ликвидации — позиция ликвидируется раньше стопа, снизьте плечо")
     if abs(pnl_sl) > margin * 0.8:
         advice_parts.append("Стоп >80% маржи — плечо слишком высокое")
     if rr >= MIN_RR:
@@ -206,6 +283,9 @@ def calculate_position(analysis: MarketAnalysis, pos: PositionInput) -> Position
         stop_loss=stop,
         take_profit=tp,
         take_profit_2=tp2,
+        liquidation_price=liq,
+        liquidation_distance_pct=liq_dist_pct,
+        stop_before_liquidation=stop_before_liq,
         stop_reason=stop_reason,
         tp_reason=tp_reason,
         methodology=methodology,

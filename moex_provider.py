@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pandas as pd
-import requests
+
+from net import request_with_retry
 
 _MOEX = "https://iss.moex.com/iss"
 _TIMEOUT = 25
@@ -51,8 +52,7 @@ def fetch_klines_moex(symbol: str, interval: str = "1h", limit: int = 200) -> pd
         f"{_MOEX}/engines/stock/markets/shares/securities/{secid}/candles.json"
         f"?interval={moex_interval}&from={start}"
     )
-    r = requests.get(url, timeout=_TIMEOUT)
-    r.raise_for_status()
+    r = request_with_retry(url, timeout=_TIMEOUT, source="MOEX")
     data = r.json()
     rows = data.get("candles", {}).get("data", [])
     cols = data.get("candles", {}).get("columns", [])
@@ -96,8 +96,7 @@ def fetch_ticker_moex(symbol: str) -> dict[str, Any]:
     url = (
         f"{_MOEX}/engines/stock/markets/shares/boards/TQBR/securities/{secid}.json"
     )
-    r = requests.get(url, timeout=_TIMEOUT)
-    r.raise_for_status()
+    r = request_with_retry(url, timeout=_TIMEOUT, source="MOEX")
     payload = r.json()
     market = payload.get("marketdata", {})
     cols = market.get("columns", [])

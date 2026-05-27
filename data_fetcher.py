@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pandas as pd
@@ -12,6 +13,20 @@ from config import BINANCE_FUTURES_URL, BINANCE_SPOT_URL, DEFAULT_QUOTE
 
 class BinanceDataError(Exception):
     pass
+
+
+class RateLimitedError(BinanceDataError):
+    """Биржа вернула 429/418 — слишком много запросов."""
+
+
+class GeoBlockedError(BinanceDataError):
+    """Биржа вернула 451 — доступ заблокирован для этого региона/IP."""
+
+
+_TIMEOUT = 30
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 0.6  # сек; растёт экспоненциально: 0.6, 1.2, 2.4 ...
+_session = requests.Session()
 
 
 def normalize_symbol(pair: str, quote: str = DEFAULT_QUOTE) -> str:
@@ -26,9 +41,53 @@ def normalize_symbol(pair: str, quote: str = DEFAULT_QUOTE) -> str:
 
 
 def _get(url: str, path: str, params: dict[str, Any] | None = None) -> Any:
-    response = requests.get(f"{url}{path}", params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
+    full = f"{url}{path}"
+    last_exc: Exception | None = None
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            response = _session.get(full, params=params, timeout=_TIMEOUT)
+        except requests.RequestException as exc:
+            # Сетевые сбои/таймауты — повторяем с backoff.
+            last_exc = exc
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_BACKOFF_BASE * (2 ** attempt))
+                continue
+            raise BinanceDataError(f"Сеть недоступна: {exc}") from exc
+
+        status = response.status_code
+
+        if status == 451:
+            raise GeoBlockedError(
+                "Доступ к Binance заблокирован для этого IP/региона (HTTP 451). "
+                "На облачном хостинге (Render и т.п.) используйте прокси или другой источник данных."
+            )
+
+        if status in (418, 429):
+            # Слишком много запросов: уважаем Retry-After, иначе экспоненциальный backoff.
+            if attempt < _MAX_RETRIES - 1:
+                retry_after = response.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after and retry_after.isdigit() else _BACKOFF_BASE * (2 ** attempt)
+                time.sleep(min(delay, 5.0))
+                continue
+            raise RateLimitedError(
+                "Биржа ограничила частоту запросов (HTTP 429). Подождите и повторите."
+            )
+
+        if status >= 500:
+            # Временная ошибка биржи — повторяем.
+            last_exc = requests.HTTPError(f"HTTP {status}", response=response)
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_BACKOFF_BASE * (2 ** attempt))
+                continue
+            response.raise_for_status()
+
+        response.raise_for_status()
+        return response.json()
+
+    if last_exc:
+        raise BinanceDataError(str(last_exc)) from last_exc
+    raise BinanceDataError("Не удалось получить данные")
 
 
 def fetch_klines(symbol: str, interval: str = "1h", limit: int = 200) -> pd.DataFrame:
@@ -63,6 +122,17 @@ def fetch_klines(symbol: str, interval: str = "1h", limit: int = 200) -> pd.Data
 
 def fetch_ticker_24h(symbol: str) -> dict[str, Any]:
     return _get(BINANCE_SPOT_URL, "/api/v3/ticker/24hr", {"symbol": symbol})
+
+
+def fetch_all_tickers_24h() -> list[dict[str, Any]]:
+    """Все 24ч-тикеры одним запросом (для экрана движений по крипте)."""
+    data = _get(BINANCE_SPOT_URL, "/api/v3/ticker/24hr")
+    return data if isinstance(data, list) else []
+
+
+def fetch_exchange_info() -> dict[str, Any]:
+    """Полный список торгуемых пар Binance (для поиска по всем монетам)."""
+    return _get(BINANCE_SPOT_URL, "/api/v3/exchangeInfo")
 
 
 def fetch_funding_rate(symbol: str) -> dict[str, Any] | None:

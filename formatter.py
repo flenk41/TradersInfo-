@@ -79,8 +79,8 @@ def format_analysis(analysis: MarketAnalysis) -> str:
 
     if analysis.accuracy:
         acc = analysis.accuracy
-        lines.append("📊 ТОЧНОСТЬ АНАЛИЗА")
-        lines.append(f"   Сводная:     {acc.overall_pct}% (класс {acc.confidence_grade})")
+        lines.append("📊 СОГЛАСОВАННОСТЬ СИГНАЛОВ")
+        lines.append(f"   Балл:        {acc.overall_pct}/100 (класс {acc.confidence_grade})")
         lines.append(f"   Надёжность:  {acc.reliability_label}")
         lines.append(f"   ТФ согласие: {acc.timeframe_alignment_pct}%")
         lines.append(f"   Бэктест 4H:  {acc.backtest_hit_rate}% ({acc.backtest_samples} сэмплов)")

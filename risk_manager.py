@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from analyzer import MarketAnalysis
+from position_calculator import liquidation_price
 
 
 @dataclass
@@ -38,6 +39,9 @@ class RiskPlan:
     position_quantity: float
     stop_distance_pct: float
     take_profit_distance_pct: float | None
+    liquidation_price: float | None
+    liquidation_distance_pct: float | None
+    stop_before_liquidation: bool
     risk_reward: float
     max_loss_at_stop_usdt: float
     potential_profit_usdt: float | None
@@ -108,6 +112,13 @@ def calculate_risk_plan(inp: RiskInput, analysis: MarketAnalysis | None = None) 
     max_safe_lev = _max_leverage_for_stop(stop_dist)
     recommended_lev = min(lev, max_safe_lev)
 
+    liq = liquidation_price(entry, lev, side)
+    liq_dist_pct = None
+    stop_before_liq = True
+    if liq is not None:
+        liq_dist_pct = round(abs(entry - liq) / entry * 100, 2)
+        stop_before_liq = stop > liq if side == "long" else stop < liq
+
     margin = float(inp.margin_usdt) if inp.margin_usdt and inp.margin_usdt > 0 else recommended_margin
     notional = margin * lev
     quantity = notional / entry if entry else 0
@@ -145,6 +156,10 @@ def calculate_risk_plan(inp: RiskInput, analysis: MarketAnalysis | None = None) 
         )
     if margin * lev * stop_dist > balance * 0.5:
         warnings.append("Потеря по стопу >50% депозита — критический размер")
+    if liq is not None and not stop_before_liq:
+        warnings.append(
+            f"Ликвидация (${liq:,.4f}, {liq_dist_pct}%) наступит раньше стопа — снизьте плечо"
+        )
     if rr and rr < 2:
         warnings.append(f"R:R 1:{rr} — ниже рекомендуемого 1:2.5")
     if analysis and analysis.trade:
@@ -199,6 +214,9 @@ def calculate_risk_plan(inp: RiskInput, analysis: MarketAnalysis | None = None) 
         position_quantity=round(quantity, 6),
         stop_distance_pct=round(stop_dist * 100, 2),
         take_profit_distance_pct=round(tp_dist_pct, 2) if tp_dist_pct else None,
+        liquidation_price=liq,
+        liquidation_distance_pct=liq_dist_pct,
+        stop_before_liquidation=stop_before_liq,
         risk_reward=rr,
         max_loss_at_stop_usdt=max_loss,
         potential_profit_usdt=potential_profit,

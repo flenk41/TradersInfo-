@@ -6,6 +6,16 @@ const TradingViewWidget = (() => {
   let currentSymbol = "BINANCE:ETHUSDT";
   let currentInterval = "60";
 
+  // Индикаторы по умолчанию в расширенном графике. Пользователь может добавить
+  // другие через кнопку «Индикаторы» в верхней панели виджета.
+  const STUDIES = [
+    "Volume@tv-basicstudies",
+    "RSI@tv-basicstudies",
+    "MACD@tv-basicstudies",
+    "MAExp@tv-basicstudies",
+    "BB@tv-basicstudies",
+  ];
+
   function embedUrl(symbol, interval) {
     const p = new URLSearchParams({
       symbol: symbol || "BINANCE:ETHUSDT",
@@ -16,8 +26,12 @@ const TradingViewWidget = (() => {
       timezone: "Europe/Moscow",
       hidesidetoolbar: "0",
       hidetoptoolbar: "0",
+      withdateranges: "1",
+      details: "1",
+      studies_overrides: "{}",
       saveimage: "0",
     });
+    STUDIES.forEach((s) => p.append("studies", s));
     return `https://s.tradingview.com/widgetembed/?frameElementId=tv_chart&${p.toString()}`;
   }
 

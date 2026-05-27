@@ -1,6 +1,12 @@
-"""Зоны входа LONG (зелёные) и SHORT (красные) для графика."""
+"""Зоны входа LONG (зелёные) и SHORT (красные) для графика.
+
+Стоп и тейк для каждой зоны считаются той же функцией, что и для вкладки
+позиции (position_calculator.zone_stop_take) — единая методология.
+"""
 
 from __future__ import annotations
+
+from position_calculator import zone_stop_take
 
 
 def _zone(price: float, band_pct: float, label: str, kind: str, strength: int) -> dict:
@@ -23,22 +29,23 @@ def build_entry_zones(
     trade,
     scalp,
     atr: float,
+    volatility=None,
 ) -> tuple[list[dict], list[dict]]:
     long_zones: list[dict] = []
     short_zones: list[dict] = []
     if not price or price <= 0:
         price = 1.0
     band = max(0.0008, (atr / price) * 0.35)
-    # Риск от точки входа: 1.5×ATR (с полом), тейк по R:R 1:2.
-    risk = max(atr * 1.5, price * 0.004)
-    rr = 2.0
+    fib_prices = [l.price for l in fib.levels] if fib else []
 
     def add_long(center: float, label: str, strength: int = 2):
         if center <= 0:
             return
         z = _zone(center, band, label, "long_entry", strength)
-        z["stop"] = round(center - risk, 6)
-        z["take"] = round(center + risk * rr, 6)
+        stop, take = zone_stop_take(
+            "long", center, support_levels, resistance_levels, fib_prices, atr, volatility
+        )
+        z["stop"], z["take"] = stop, take
         if not any(abs(z["price"] - x["price"]) / price < band for x in long_zones):
             long_zones.append(z)
 
@@ -46,8 +53,10 @@ def build_entry_zones(
         if center <= 0:
             return
         z = _zone(center, band, label, "short_entry", strength)
-        z["stop"] = round(center + risk, 6)
-        z["take"] = round(center - risk * rr, 6)
+        stop, take = zone_stop_take(
+            "short", center, support_levels, resistance_levels, fib_prices, atr, volatility
+        )
+        z["stop"], z["take"] = stop, take
         if not any(abs(z["price"] - x["price"]) / price < band for x in short_zones):
             short_zones.append(z)
 

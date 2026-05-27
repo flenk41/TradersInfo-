@@ -28,6 +28,12 @@ def _stock_icon_us(ticker: str) -> str:
     return f"https://financialmodelingprep.com/image-stock/{ticker}.png"
 
 
+def _stock_icon_ru(ticker: str) -> str:
+    # Надёжного бесплатного CDN логотипов MOEX нет (Т-Инвестиции отдают 403),
+    # поэтому для РФ-акций используем цветной монограмм-бейдж с тикером (фронтенд).
+    return ""
+
+
 CRYPTO_LIST: list[Instrument] = [
     Instrument("BTC/USDT", "Bitcoin", "crypto", _crypto_icon("BTC"), subtitle="BTC"),
     Instrument("ETH/USDT", "Ethereum", "crypto", _crypto_icon("ETH"), subtitle="ETH"),
@@ -175,6 +181,50 @@ FOREX_LIST: list[Instrument] = [
     Instrument("USD/MXN", "Доллар / Песо", "forex", "", "", "", "", "FX"),
     Instrument("USD/SGD", "Доллар / Сингапурский", "forex", "", "", "", "", "FX"),
     Instrument("USD/ZAR", "Доллар / Рэнд", "forex", "", "", "", "", "FX"),
+]
+
+# Логотипы для российских акций (CDN Т-Инвестиций).
+for _ru in STOCKS_RU:
+    if not _ru.icon_url:
+        _ru.icon_url = _stock_icon_ru(_ru.id)
+
+# Расширение списка акций США (популярные тикеры разных секторов).
+STOCKS_US += [
+    Instrument(t, n, "stock", _stock_icon_us(t), "us", t, ex, "США")
+    for t, n, ex in [
+        ("JNJ", "Johnson & Johnson", "NYSE"), ("UNH", "UnitedHealth", "NYSE"),
+        ("XOM", "Exxon Mobil", "NYSE"), ("CVX", "Chevron", "NYSE"),
+        ("LLY", "Eli Lilly", "NYSE"), ("PFE", "Pfizer", "NYSE"),
+        ("MRK", "Merck", "NYSE"), ("ABBV", "AbbVie", "NYSE"),
+        ("COST", "Costco", "NASDAQ"), ("HD", "Home Depot", "NYSE"),
+        ("NKE", "Nike", "NYSE"), ("SBUX", "Starbucks", "NASDAQ"),
+        ("CAT", "Caterpillar", "NYSE"), ("GS", "Goldman Sachs", "NYSE"),
+        ("MS", "Morgan Stanley", "NYSE"), ("BAC", "Bank of America", "NYSE"),
+        ("WFC", "Wells Fargo", "NYSE"), ("C", "Citigroup", "NYSE"),
+        ("AXP", "American Express", "NYSE"), ("IBM", "IBM", "NYSE"),
+        ("CSCO", "Cisco", "NASDAQ"), ("TXN", "Texas Instruments", "NASDAQ"),
+        ("HON", "Honeywell", "NASDAQ"), ("GE", "GE Aerospace", "NYSE"),
+        ("F", "Ford", "NYSE"), ("GM", "General Motors", "NYSE"),
+        ("T", "AT&T", "NYSE"), ("VZ", "Verizon", "NYSE"),
+        ("MRNA", "Moderna", "NASDAQ"), ("GILD", "Gilead", "NASDAQ"),
+        ("AMGN", "Amgen", "NASDAQ"), ("ABNB", "Airbnb", "NASDAQ"),
+        ("RBLX", "Roblox", "NYSE"), ("SOFI", "SoFi", "NASDAQ"),
+        ("RIVN", "Rivian", "NASDAQ"), ("LCID", "Lucid", "NASDAQ"),
+        ("SNAP", "Snap", "NYSE"), ("SPOT", "Spotify", "NYSE"),
+        ("PINS", "Pinterest", "NYSE"), ("ZM", "Zoom", "NASDAQ"),
+    ]
+]
+
+# Расширение списка валютных пар (мажоры, кроссы, экзотика).
+FOREX_LIST += [
+    Instrument(p, p, "forex", "", "", "", "", "FX")
+    for p in [
+        "USD/NOK", "USD/SEK", "USD/DKK", "USD/PLN", "USD/HUF", "USD/CZK",
+        "USD/HKD", "USD/INR", "USD/THB", "USD/ILS", "EUR/CAD", "EUR/NZD",
+        "EUR/SEK", "EUR/NOK", "EUR/PLN", "EUR/TRY", "EUR/CNH", "GBP/AUD",
+        "GBP/CAD", "GBP/NZD", "AUD/CAD", "AUD/CHF", "AUD/NZD", "CAD/CHF",
+        "CHF/JPY", "NZD/CAD", "NZD/CHF", "AUD/CNH", "GBP/SGD", "EUR/SGD",
+    ]
 ]
 
 _ALL = {i.id: i for i in CRYPTO_LIST + STOCKS_US + STOCKS_RU + FOREX_LIST}

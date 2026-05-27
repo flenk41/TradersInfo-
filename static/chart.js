@@ -12,6 +12,7 @@ const TradingChart = (() => {
   let entryConfig = {}; // { L1:{entry,stop,take}, S2:{...} }
   let lastEntryZones = { long: [], short: [] };
   let onPricePick = null;
+  let onRefresh = null;
   let lastCandles = [];
   let mainContainer = null;
   let zoneOverlay = null;
@@ -442,6 +443,10 @@ const TradingChart = (() => {
         }
       }
     } catch (_) {}
+    // Помимо свечей — даём знать приложению обновить анализ (с троттлингом на его стороне).
+    if (typeof onRefresh === "function") {
+      try { onRefresh(); } catch (_) {}
+    }
   }
 
   function clearEntryZones() {
@@ -484,14 +489,14 @@ const TradingChart = (() => {
       const c = _cfg("L" + (i + 1));
       if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
       if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
-      if (c.entry) _addEntryLine(z.price, COLORS.longEntry, dash, "▲ ЛОНГ " + (i + 1), true, 2);
+      if (c.entry) _addEntryLine(z.price, COLORS.longEntry, dash, "▲ " + (window.I18N ? I18N.tr("ЛОНГ") : "ЛОНГ") + " " + (i + 1), true, 2);
     });
 
     shorts.forEach((z, i) => {
       const c = _cfg("S" + (i + 1));
       if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
       if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
-      if (c.entry) _addEntryLine(z.price, COLORS.shortEntry, dash, "▼ ШОРТ " + (i + 1), true, 2);
+      if (c.entry) _addEntryLine(z.price, COLORS.shortEntry, dash, "▼ " + (window.I18N ? I18N.tr("ШОРТ") : "ШОРТ") + " " + (i + 1), true, 2);
     });
   }
 
@@ -515,6 +520,10 @@ const TradingChart = (() => {
 
   function setEntryPicker(callback) {
     onPricePick = callback;
+  }
+
+  function setRefreshCallback(callback) {
+    onRefresh = callback;
   }
 
   function setCurrency(symbol) {
@@ -553,6 +562,7 @@ const TradingChart = (() => {
     setZones,
     loadPair,
     setEntryPicker,
+    setRefreshCallback,
     applyAnalysis,
     setFundingHistory,
     resize,

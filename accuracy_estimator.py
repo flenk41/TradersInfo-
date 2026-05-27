@@ -1,4 +1,4 @@
-"""Оценка точности и согласованности сигналов анализа."""
+"""Балл согласованности сигналов анализа (НЕ вероятность прибыли)."""
 
 from __future__ import annotations
 
@@ -257,16 +257,16 @@ def build_accuracy_metrics(
     if news and news.get("total"):
         adj_txt = ""
         if news_adj:
-            adj_txt = f" ({'+' if news_adj > 0 else ''}{news_adj} к точности)"
+            adj_txt = f" ({'+' if news_adj > 0 else ''}{news_adj} к баллу)"
         factors.append(
             f"Новостной фон ({news['window_days']}д): {news['good']}↑ / {news['bad']}↓ — {news['label']}{adj_txt}"
         )
 
     passed = sum(1 for c in checks if c["status"] == "good")
     expl = (
-        f"Сводная точность {overall}% — {label}. "
+        f"Балл согласованности {overall}/100 — {label}. "
         f"Подтверждающих методов: {passed}/{len(checks)}. "
-        f"Это не гарантия прибыли: оценка согласованности индикаторов и недавней истории 4H."
+        f"Это НЕ вероятность прибыли — это оценка согласия индикаторов, ТФ и недавней истории 4H."
     )
 
     return AccuracyMetrics(

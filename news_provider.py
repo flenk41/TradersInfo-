@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
-import requests
+from net import request_with_retry
 
 _GN = "https://news.google.com/rss/search"
 _TIMEOUT = 15
@@ -40,11 +40,18 @@ def _sentiment(title: str) -> tuple[str, int]:
     return "neutral", 0
 
 
-def build_query(pair: str, market: str) -> str:
+def build_query(pair: str, market: str, lang: str = "ru") -> str:
     from instruments_catalog import get_instrument
 
     inst = get_instrument(pair, market)
     name = inst.name if inst else pair
+    if lang == "en":
+        if market == "crypto":
+            return f"{name} cryptocurrency"
+        if market == "forex":
+            p = pair.upper().replace("=X", "")
+            return f"{p} forex"
+        return f"{name} stock"
     if market == "crypto":
         return f"{name} криптовалюта"
     if market == "forex":
@@ -79,12 +86,14 @@ def sentiment_counts(items: list[dict], window_days: int = 7) -> dict:
     }
 
 
-def fetch_news(query: str, limit: int = 60) -> list[dict]:
-    url = _GN + "?" + urllib.parse.urlencode(
-        {"q": query, "hl": "ru", "gl": "RU", "ceid": "RU:ru"}
+def fetch_news(query: str, limit: int = 60, lang: str = "ru") -> list[dict]:
+    locale = (
+        {"hl": "en-US", "gl": "US", "ceid": "US:en"}
+        if lang == "en"
+        else {"hl": "ru", "gl": "RU", "ceid": "RU:ru"}
     )
-    r = requests.get(url, timeout=_TIMEOUT, headers=_HEADERS)
-    r.raise_for_status()
+    url = _GN + "?" + urllib.parse.urlencode({"q": query, **locale})
+    r = request_with_retry(url, headers=_HEADERS, timeout=_TIMEOUT, source="Google News")
     root = ET.fromstring(r.content)
 
     items: list[dict] = []

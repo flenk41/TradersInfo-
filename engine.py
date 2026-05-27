@@ -134,7 +134,7 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     scalp = build_scalping_analysis(klines_5m, klines_15m, price, atr)
 
     long_entry, short_entry = build_entry_zones(
-        price, support, resistance, fib, bias, trade, scalp, atr
+        price, support, resistance, fib, bias, trade, scalp, atr, volatility
     )
 
     signals = build_signals(tf_analyses, volatility, funding, bias)
@@ -239,6 +239,6 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     if partial.accuracy:
         signals.insert(
             4,
-            f"Точность анализа: {partial.accuracy.overall_pct}% · класс {partial.accuracy.confidence_grade}",
+            f"Согласованность сигналов: {partial.accuracy.overall_pct}/100 · класс {partial.accuracy.confidence_grade}",
         )
     return partial

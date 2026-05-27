@@ -6,7 +6,9 @@ import json
 import os
 import time
 import webbrowser
-from threading import Timer
+from collections import defaultdict, deque
+from functools import wraps
+from threading import Lock, Timer
 
 try:
     from dotenv import load_dotenv
@@ -24,18 +26,56 @@ from formatter import format_analysis, format_position
 from market_data import fetch_funding_history, fetch_klines
 from markets import MarketDataError, detect_market, normalize_pair, to_tradingview_symbol
 from position_calculator import PositionInput, calculate_position
-from risk_manager import RiskInput, calculate_risk_plan
-from serialization import analysis_to_dict, position_to_dict, risk_to_dict
+from serialization import analysis_to_dict, position_to_dict
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
+# --- Простой in-memory rate-limit на IP+эндпоинт ---------------------------
+# Защищает апстрим-источники (Binance/Yahoo/MOEX/Google) и платный OpenAI от
+# случайного флуда. Это локальный/одно-процессный лимитер; для многопроцессного
+# прод-развёртывания нужен общий бэкенд (Redis) — здесь достаточно для инструмента.
+# Отключается переменной окружения RATE_LIMIT_OFF=1.
+_RL_OFF = os.environ.get("RATE_LIMIT_OFF") == "1"
+_rl_lock = Lock()
+_rl_hits: dict[str, deque] = defaultdict(deque)
+
+
+def rate_limit(max_calls: int, window_sec: int = 60):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if _RL_OFF:
+                return fn(*args, **kwargs)
+            ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "?")
+                  .split(",")[0].strip())
+            key = f"{ip}:{request.endpoint}"
+            now = time.time()
+            with _rl_lock:
+                hits = _rl_hits[key]
+                while hits and now - hits[0] > window_sec:
+                    hits.popleft()
+                if len(hits) >= max_calls:
+                    retry = int(window_sec - (now - hits[0])) + 1
+                    resp = jsonify({
+                        "ok": False,
+                        "error": f"Слишком много запросов. Повторите через ~{retry} с.",
+                    })
+                    resp.headers["Retry-After"] = str(retry)
+                    return resp, 429
+                hits.append(now)
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
 
 def _asset_version() -> str:
     """Версия статики по времени изменения файлов — для сброса кэша браузера."""
     try:
-        names = ("app.js", "chart.js", "style.css", "terminal.css", "tradingview.js")
+        names = ("app.js", "chart.js", "i18n.js", "style.css", "terminal.css", "tradingview.js")
         latest = max(
             os.path.getmtime(os.path.join(_STATIC_DIR, n))
             for n in names
@@ -64,12 +104,34 @@ def api_instruments():
     return jsonify({"ok": True, "items": list_instruments(market, region)})
 
 
+@app.route("/api/instruments/search")
+@rate_limit(60, 60)
+def api_instruments_search():
+    market = _market_param() or "crypto"
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    q = request.args.get("q", "").strip()
+    try:
+        from universe import search_universe
+
+        items = search_universe(market, region, q)
+        return jsonify({"ok": True, "items": items, "count": len(items)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Поиск недоступен: {e}"}), 500
+
+
 def _market_param() -> str | None:
     m = request.args.get("market", "").strip().lower()
     return m if m in ("crypto", "stock", "forex") else None
 
 
+def _lang_param() -> str:
+    return "en" if request.args.get("lang", "ru").strip().lower() == "en" else "ru"
+
+
 @app.route("/api/analyze")
+@rate_limit(30, 60)
 def api_analyze():
     pair = request.args.get("pair", "").strip()
     market = _market_param()
@@ -120,6 +182,7 @@ def api_analyze():
 
 
 @app.route("/api/position", methods=["GET", "POST"])
+@rate_limit(40, 60)
 def api_position():
     data = request.get_json(silent=True) or {}
     pair = (data.get("pair") or request.args.get("pair", "")).strip()
@@ -167,6 +230,7 @@ def api_position():
 
 
 @app.route("/api/klines")
+@rate_limit(90, 60)
 def api_klines():
     pair = request.args.get("pair", "").strip()
     interval = request.args.get("interval", "1h")
@@ -204,90 +268,6 @@ def api_klines():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/api/risk", methods=["GET", "POST"])
-def api_risk():
-    data = request.get_json(silent=True) or {}
-    pair = (data.get("pair") or request.args.get("pair", "")).strip()
-    market = (data.get("market") or request.args.get("market", "")).strip().lower() or None
-    if market and market not in ("crypto", "stock", "forex"):
-        market = None
-
-    def _float(key, default=0.0):
-        v = data.get(key) if key in data else request.args.get(key)
-        return float(v) if v not in (None, "") else default
-
-    def _int(key, default=None):
-        v = data.get(key) if key in data else request.args.get(key)
-        return int(v) if v not in (None, "") else default
-
-    try:
-        balance = _float("balance")
-        entry = _float("entry")
-        stop = _float("stop")
-        risk_pct = _float("risk_pct", 1.0)
-        max_daily = _float("max_daily_pct", 3.0)
-        max_portfolio = _float("max_portfolio_pct", 6.0)
-        daily_used = _float("daily_loss_used_pct", 0.0)
-        open_trades = _int("open_trades", 0) or 0
-        leverage = _int("leverage")
-        margin = _float("margin") if (data.get("margin") or request.args.get("margin")) else None
-        tp_raw = data.get("take_profit") or request.args.get("take_profit")
-        take_profit = float(tp_raw) if tp_raw not in (None, "") else None
-        side = (data.get("side") or request.args.get("side", "long")).strip().lower()
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "Некорректные параметры риска"}), 400
-
-    if balance <= 0:
-        return jsonify({"ok": False, "error": "Укажите размер депозита"}), 400
-    if entry <= 0 or stop <= 0:
-        return jsonify({"ok": False, "error": "Укажите цену входа и стоп"}), 400
-
-    analysis = None
-    if pair and take_profit is None:
-        try:
-            cache_key = f"analyze:{market or 'auto'}:{pair.upper()}"
-            analysis = get_cached(
-                cache_key,
-                lambda: analyze_pair(pair, market=market),
-            )
-            calc = calculate_position(
-                analysis,
-                PositionInput(
-                    entry_price=entry,
-                    margin_usdt=margin or 100,
-                    leverage=leverage or 10,
-                    side=side,
-                ),
-            )
-            take_profit = calc.take_profit
-        except MarketDataError:
-            pass
-
-    try:
-        plan = calculate_risk_plan(
-            RiskInput(
-                balance_usdt=balance,
-                risk_per_trade_pct=risk_pct,
-                max_daily_loss_pct=max_daily,
-                max_portfolio_risk_pct=max_portfolio,
-                entry=entry,
-                stop=stop,
-                take_profit=take_profit,
-                side=side,
-                leverage=leverage,
-                margin_usdt=margin,
-                daily_loss_used_pct=daily_used,
-                open_trades=open_trades,
-            ),
-            analysis=analysis,
-        )
-        return jsonify({"ok": True, "risk": risk_to_dict(plan)})
-    except ValueError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Ошибка: {e}"}), 500
-
-
 @app.route("/api/funding-history")
 def api_funding_history():
     pair = request.args.get("pair", "").strip()
@@ -310,9 +290,11 @@ _NEWS_SPANS = {"day": 86400, "week": 7 * 86400, "month": 30 * 86400}
 
 
 @app.route("/api/news")
+@rate_limit(30, 60)
 def api_news():
     pair = request.args.get("pair", "").strip()
     market = _market_param()
+    lang = _lang_param()
     rng = request.args.get("range", "week").strip().lower()
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
@@ -320,10 +302,10 @@ def api_news():
         from news_provider import build_query, fetch_news
 
         m = detect_market(pair, market)
-        query = build_query(pair, m)
+        query = build_query(pair, m, lang)
         items = get_cached(
-            f"news:{m}:{pair.upper()}",
-            lambda: fetch_news(query, 60),
+            f"news:{m}:{lang}:{pair.upper()}",
+            lambda: fetch_news(query, 60, lang),
             ttl=300,
         )
         span = _NEWS_SPANS.get(rng, _NEWS_SPANS["week"])
@@ -340,9 +322,11 @@ def api_news():
 
 
 @app.route("/api/news-ai")
+@rate_limit(10, 60)
 def api_news_ai():
     pair = request.args.get("pair", "").strip()
     market = _market_param()
+    lang = _lang_param()
     rng = request.args.get("range", "week").strip().lower()
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
@@ -364,8 +348,8 @@ def api_news_ai():
 
         m = detect_market(pair, market)
         items = get_cached(
-            f"news:{m}:{pair.upper()}",
-            lambda: fetch_news(build_query(pair, m), 60),
+            f"news:{m}:{lang}:{pair.upper()}",
+            lambda: fetch_news(build_query(pair, m, lang), 60, lang),
             ttl=300,
         )
         span = _NEWS_SPANS.get(rng, _NEWS_SPANS["week"])
@@ -377,8 +361,8 @@ def api_news_ai():
         inst = get_instrument(pair, m)
         name = inst.name if inst else pair
         result = get_cached(
-            f"newsai:{m}:{pair.upper()}:{rng}",
-            lambda: analyze_news(name, m, filt),
+            f"newsai:{m}:{lang}:{pair.upper()}:{rng}",
+            lambda: analyze_news(name, m, filt, lang=lang),
             ttl=600,
         )
         return jsonify({"ok": True, "ai": result, "range": rng})
@@ -386,6 +370,32 @@ def api_news_ai():
         return jsonify({"ok": False, "error": str(e)}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ошибка AI-анализа: {e}"}), 500
+
+
+_MOVERS_TTL = {"day": 90, "month": 1800, "year": 3600}
+
+
+@app.route("/api/movers")
+@rate_limit(20, 60)
+def api_movers():
+    market = _market_param() or "crypto"
+    rng = request.args.get("range", "day").strip().lower()
+    if rng not in ("day", "month", "year"):
+        rng = "day"
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    try:
+        from movers_provider import fetch_movers
+
+        data = get_cached(
+            f"movers:{market}:{region}:{rng}",
+            lambda: fetch_movers(market, rng, region),
+            ttl=_MOVERS_TTL.get(rng, 300),
+        )
+        return jsonify({"ok": True, "market": market, "range": rng, "region": region, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить движения: {e}"}), 500
 
 
 @app.route("/api/journal", methods=["GET"])
