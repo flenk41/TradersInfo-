@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 from net import request_with_retry
 
 _GN = "https://news.google.com/rss/search"
-_TIMEOUT = 15
+_TIMEOUT = 8
 _HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # Подстроки (рус + англ). Совпадение по вхождению, чтобы ловить словоформы.
@@ -86,14 +86,14 @@ def sentiment_counts(items: list[dict], window_days: int = 7) -> dict:
     }
 
 
-def fetch_news(query: str, limit: int = 60, lang: str = "ru") -> list[dict]:
+def fetch_news(query: str, limit: int = 60, lang: str = "ru", max_retries: int = 3) -> list[dict]:
     locale = (
         {"hl": "en-US", "gl": "US", "ceid": "US:en"}
         if lang == "en"
         else {"hl": "ru", "gl": "RU", "ceid": "RU:ru"}
     )
     url = _GN + "?" + urllib.parse.urlencode({"q": query, **locale})
-    r = request_with_retry(url, headers=_HEADERS, timeout=_TIMEOUT, source="Google News")
+    r = request_with_retry(url, headers=_HEADERS, timeout=_TIMEOUT, source="Google News", max_retries=max_retries)
     root = ET.fromstring(r.content)
 
     items: list[dict] = []

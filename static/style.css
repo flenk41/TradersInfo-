@@ -925,6 +925,24 @@ body {
   z-index: 2;
 }
 
+/* Имбаланс (FVG): полосатая заливка, чтобы отличать от зон S/R и входа */
+.zone-box.zone-imbalance-bull {
+  background: repeating-linear-gradient(45deg,
+    rgba(56, 189, 248, 0.26) 0 7px, rgba(56, 189, 248, 0.10) 7px 14px);
+  border-color: rgba(56, 189, 248, 0.85);
+  border-style: dashed;
+  z-index: 1;
+}
+.zone-box.zone-imbalance-bear {
+  background: repeating-linear-gradient(45deg,
+    rgba(251, 146, 60, 0.26) 0 7px, rgba(251, 146, 60, 0.10) 7px 14px);
+  border-color: rgba(251, 146, 60, 0.85);
+  border-style: dashed;
+  z-index: 1;
+}
+.zone-box.zone-imbalance-bull .zone-label { color: #7dd3fc; }
+.zone-box.zone-imbalance-bear .zone-label { color: #fdba74; }
+
 .zone-hint-long {
   color: #4ade80;
   font-weight: 600;

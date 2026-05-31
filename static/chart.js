@@ -11,6 +11,8 @@ const TradingChart = (() => {
   let entryZoneLines = [];
   let entryConfig = {}; // { L1:{entry,stop,take}, S2:{...} }
   let lastEntryZones = { long: [], short: [] };
+  let lastImbalances = [];
+  let imbalancesVisible = false;
   let onPricePick = null;
   let onRefresh = null;
   let lastCandles = [];
@@ -157,7 +159,7 @@ const TradingChart = (() => {
   }
 
   function updateZoneBoxes() {
-    if (!zoneOverlay || zoneOverlay.classList.contains("hidden")) return;
+    if (!zoneOverlay) return;
     if (!candleSeries || !mainChart || !lastCandles.length) return;
     if (!mainContainer || mainContainer.offsetHeight < 50) return;
     zoneOverlay.innerHTML = "";
@@ -199,6 +201,23 @@ const TradingChart = (() => {
     zoneData.shortEntry.forEach((z) => drawZone(z, "short-entry"));
     zoneData.support.forEach((z) => drawZone(z, "support"));
     zoneData.resistance.forEach((z) => drawZone(z, "resistance"));
+    if (imbalancesVisible) {
+      lastImbalances.forEach((z) =>
+        drawZone(z, z.kind === "bullish" ? "imbalance-bull" : "imbalance-bear")
+      );
+    }
+  }
+
+  function setImbalances(zones) {
+    lastImbalances = Array.isArray(zones) ? zones : [];
+    updateZoneBoxes();
+  }
+
+  function toggleImbalances(show) {
+    imbalancesVisible = !!show;
+    if (zoneOverlay) zoneOverlay.classList.toggle("hidden", !imbalancesVisible);
+    updateZoneBoxes();
+    return imbalancesVisible;
   }
 
   function _volBar(c) {
@@ -572,5 +591,7 @@ const TradingChart = (() => {
     setTheme,
     setEntryZones,
     setEntryConfig,
+    setImbalances,
+    toggleImbalances,
   };
 })();

@@ -40,6 +40,7 @@
           <button type="button" class="brand-link" id="linkPrivacy">Политика конфиденциальности</button>
           <button type="button" class="brand-link" id="linkInfo">Info</button>
           <button type="button" class="brand-link brand-link-accent" id="linkGuide">📘 Гайд</button>
+          <button type="button" class="brand-link brand-link-accent" id="linkAiKey">🔑 AI-ключ</button>
         </nav>
       </div>
       <div class="topbar-center">
@@ -81,6 +82,8 @@
       </div>
       <div class="nav-group nav-views">
         <button type="button" class="nav-tab" data-view="movers">Обзор рынка</button>
+        <button type="button" class="nav-tab" data-view="screener">Скринер</button>
+        <button type="button" class="nav-tab" data-view="portfolio">Портфель</button>
         <button type="button" class="nav-tab" data-view="news">Новости</button>
         <button type="button" class="nav-tab" data-view="journal">Журнал</button>
       </div>
@@ -108,6 +111,8 @@
             <button type="button" class="btn-entrypoints active" id="btnEntryPoints" title="Настройка точек входа">◎ Точки входа ▾</button>
             <div class="entry-menu hidden" id="entryMenu"></div>
           </div>
+          <button type="button" class="btn-entrypoints" id="btnImbalance" title="Имбаланс (Fair Value Gap) — незаполненные разрывы цены">▦ Имбаланс</button>
+          <button type="button" class="btn-entrypoints" id="btnWatch" title="Добавить в список наблюдения">☆ В список</button>
           <div class="interval-group" id="tvIntervals">
             <button type="button" class="btn-interval" data-interval="5">5m</button>
             <button type="button" class="btn-interval" data-interval="15">15m</button>
@@ -151,14 +156,33 @@
               <span class="verdict-badge" id="verdictBadge">—</span>
               <div class="verdict-text">
                 <strong id="verdictTitle">Выберите инструмент</strong>
-                <p id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
               </div>
               <div class="verdict-conf" title="Балл согласованности сигналов — это не вероятность прибыли">
                 <span class="vc-num" id="verdictConf">—</span>
                 <span class="vc-label">балл согласов.</span>
               </div>
             </div>
+            <p class="verdict-reason" id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
           </section>
+
+          <section class="persona-card" id="personaCard">
+            <div class="persona-head">
+              <h3>🧠 AI-мнения инвесторов</h3>
+              <small>Один актив глазами разных стилей · нужен AI-ключ</small>
+            </div>
+            <div class="persona-chips" id="personaChips"></div>
+            <div class="persona-result" id="personaResult"></div>
+          </section>
+
+          <section class="macro-card" id="macroCard">
+            <div class="macro-head">
+              <h3>🌍 Макро-фон</h3>
+              <span class="macro-label" id="macroLabel">—</span>
+            </div>
+            <div class="macro-grid" id="macroGrid"></div>
+            <p class="macro-note" id="macroNote"></p>
+          </section>
+
           <section class="accuracy-panel pro-only" id="accuracyPanel">
             <div class="accuracy-header">
               <span>Согласованность сигналов</span>
@@ -360,6 +384,35 @@
               </div>
             </section>
 
+            <section class="panel fundamentals-panel hidden" id="fundamentalsPanel">
+              <h3>🏢 Фундаментал</h3>
+              <div class="fund-meta" id="fundMeta"></div>
+              <div class="fund-grid" id="fundGrid"></div>
+              <p class="fund-summary" id="fundSummary"></p>
+            </section>
+
+            <section class="panel corr-panel" id="corrPanel">
+              <h3>🔗 Корреляции</h3>
+              <div class="corr-cols">
+                <div class="corr-col">
+                  <h4 class="corr-pos">Движутся вместе</h4>
+                  <div class="corr-list" id="corrPositive"></div>
+                </div>
+                <div class="corr-col">
+                  <h4 class="corr-neg">Движутся против</h4>
+                  <div class="corr-list" id="corrNegative"></div>
+                </div>
+              </div>
+              <p class="corr-note">Корреляция дневных доходностей за ~120 дней. Вместе — для подтверждения; против — для диверсификации и хеджа. Клик открывает анализ.</p>
+            </section>
+
+            <section class="panel imbalance-panel">
+              <h3>▦ Имбаланс (Fair Value Gap)</h3>
+              <p class="imbalance-summary" id="imbalanceSummary">—</p>
+              <div class="imbalance-list" id="imbalanceList"></div>
+              <p class="imbalance-note">Незаполненные разрывы цены — рынок часто возвращается их «залить». Кнопка «▦ Имбаланс» над графиком показывает зоны на свечах.</p>
+            </section>
+
             <section class="panel signals-panel">
               <h3>🔔 Сигналы</h3>
               <ul id="signals"></ul>
@@ -400,6 +453,54 @@
       </section>
     </div>
 
+    <div class="app-view hidden" id="view-screener">
+      <section class="panel screener-panel">
+        <div class="movers-header">
+          <h2>🔎 Скринер</h2>
+          <div class="movers-controls">
+            <div class="seg" id="scrMarkets">
+              <button type="button" class="active" data-market="crypto">Крипта</button>
+              <button type="button" data-market="stock">Акции</button>
+              <button type="button" data-market="forex">Валюта</button>
+            </div>
+            <div class="seg stock-region-tabs hidden" id="scrRegion">
+              <button type="button" class="active" data-region="ru">🇷🇺 Россия</button>
+              <button type="button" data-region="us">🇺🇸 США</button>
+            </div>
+            <div class="seg" id="scrTf">
+              <button type="button" data-tf="1h">1H</button>
+              <button type="button" data-tf="4h">4H</button>
+              <button type="button" class="active" data-tf="1d">1D</button>
+            </div>
+            <button type="button" class="btn-secondary btn-icon" id="scrRefresh" title="Обновить">↻</button>
+          </div>
+        </div>
+        <div class="screener-filters" id="scrFilters">
+          <select id="scrTrend">
+            <option value="any">Тренд: любой</option>
+            <option value="bull">Тренд: бычий</option>
+            <option value="bear">Тренд: медвежий</option>
+            <option value="flat">Тренд: флэт</option>
+          </select>
+          <select id="scrSignal">
+            <option value="any">Сигнал: любой</option>
+            <option value="bull_pullback">Бычий откат (лонг)</option>
+            <option value="bear_pullback">Медвежий откат (шорт)</option>
+            <option value="oversold">Перепродан</option>
+            <option value="overbought">Перекуплен</option>
+          </select>
+          <label class="scr-range">RSI ≤ <input type="number" id="scrRsiMax" min="0" max="100" placeholder="100"></label>
+          <label class="scr-range">RSI ≥ <input type="number" id="scrRsiMin" min="0" max="100" placeholder="0"></label>
+          <label class="scr-range">Δ% ≥ <input type="number" id="scrChgMin" step="0.5" placeholder="—"></label>
+          <span class="scr-count" id="scrCount"></span>
+        </div>
+        <p class="movers-note">Фильтр по сигналам. Клик по строке открывает полный анализ инструмента.</p>
+        <div class="screener-table" id="scrTable">
+          <p class="news-empty">Выберите рынок — данные посчитаются.</p>
+        </div>
+      </section>
+    </div>
+
     <div class="app-view hidden" id="view-news">
       <section class="panel news-panel">
         <div class="news-header">
@@ -413,7 +514,7 @@
         <div class="news-counts" id="newsCounts"></div>
         <div class="news-ai-bar">
           <button type="button" class="btn-secondary" id="btnNewsAi">🤖 AI-разбор</button>
-          <small>Сводка по новостям с подтверждающими ссылками</small>
+          <small id="newsAiHint">Сводка по новостям с подтверждающими ссылками</small>
         </div>
         <div class="news-ai-result hidden" id="newsAiResult"></div>
         <div class="news-list" id="newsList">
@@ -439,6 +540,36 @@
       </section>
     </div>
 
+    <div class="app-view hidden" id="view-portfolio">
+      <section class="panel portfolio-panel">
+        <div class="pf-section">
+          <h2>⭐ Список наблюдения</h2>
+          <div class="watchlist" id="watchlist">
+            <p class="news-empty">Пусто. Откройте инструмент и нажмите «☆ В список» над графиком.</p>
+          </div>
+        </div>
+
+        <div class="pf-section">
+          <div class="pf-head">
+            <h2>💼 Портфель</h2>
+            <button type="button" class="btn-secondary btn-icon" id="pfRefresh" title="Пересчитать">↻</button>
+          </div>
+          <form class="pf-add" id="pfAdd" onsubmit="return false">
+            <input type="text" id="pfPair" placeholder="Инструмент (BTC/USDT, AAPL)">
+            <input type="number" id="pfQty" step="any" placeholder="Кол-во">
+            <input type="number" id="pfEntry" step="any" placeholder="Цена покупки">
+            <button type="button" class="btn-primary" id="pfAddBtn">+ Добавить</button>
+          </form>
+          <div class="pf-metrics" id="pfMetrics"></div>
+          <div class="pf-equity" id="pfEquity"></div>
+          <div class="pf-holdings" id="pfHoldings">
+            <p class="news-empty">Добавьте позиции, чтобы увидеть P&L и риск (Sharpe, просадка).</p>
+          </div>
+          <p class="pf-note">Метрики риска считаются по дневной истории (~6 мес). Значения в номинале без конвертации валют — точнее для портфеля в одной валюте.</p>
+        </div>
+      </section>
+    </div>
+
     <footer class="footer">
       ⚠️ Не финансовая рекомендация · Binance / Yahoo · График TradingView
     </footer>
@@ -451,6 +582,16 @@
         <button type="button" class="modal-close" id="modalClose" aria-label="Закрыть">✕</button>
       </div>
       <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="aiKeyOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="aiKeyTitle">🔑 Подключение AI</h2>
+        <button type="button" class="modal-close" id="aiKeyClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="aiKeyBody"></div>
     </div>
   </div>
 

@@ -23,7 +23,7 @@ from instruments_catalog import catalog_for_frontend, list_instruments
 from data_cache import get_cached, invalidate
 from engine import analyze_pair
 from formatter import format_analysis, format_position
-from market_data import fetch_funding_history, fetch_klines
+from market_data import fetch_funding_history, fetch_klines, fetch_ticker_24h
 from markets import MarketDataError, detect_market, normalize_pair, to_tradingview_symbol
 from position_calculator import PositionInput, calculate_position
 from serialization import analysis_to_dict, position_to_dict
@@ -321,24 +321,30 @@ def api_news():
         return jsonify({"ok": False, "error": f"Не удалось загрузить новости: {e}"}), 500
 
 
-@app.route("/api/news-ai")
+@app.route("/api/news-ai", methods=["GET", "POST"])
 @rate_limit(10, 60)
 def api_news_ai():
-    pair = request.args.get("pair", "").strip()
+    body = request.get_json(silent=True) or {}
+    pair = (body.get("pair") or request.args.get("pair", "")).strip()
     market = _market_param()
     lang = _lang_param()
-    rng = request.args.get("range", "week").strip().lower()
+    rng = (body.get("range") or request.args.get("range", "week")).strip().lower()
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
 
+    # Ключ пользователя (BYOK) имеет приоритет над серверным окружением.
+    ai_key = (body.get("ai_key") or "").strip() or None
+    ai_base = (body.get("ai_base") or "").strip() or None
+    ai_model = (body.get("ai_model") or "").strip() or None
+
     from ai_news import AINewsError, analyze_news, is_configured
 
-    if not is_configured():
+    if not ai_key and not is_configured():
         return jsonify(
             {
                 "ok": False,
                 "need_key": True,
-                "error": "AI-анализ не настроен: добавьте OPENAI_API_KEY в файл .env и перезапустите сервер.",
+                "error": "AI-анализ не настроен: нажмите «🔑 AI-ключ» и вставьте свой бесплатный ключ (Groq/Gemini).",
             }
         ), 200
 
@@ -360,9 +366,11 @@ def api_news_ai():
 
         inst = get_instrument(pair, m)
         name = inst.name if inst else pair
+        # Кэш-ключ варьируем по модели (но НЕ по секретному ключу).
+        cache_tag = (ai_model or ai_base or "env")
         result = get_cached(
-            f"newsai:{m}:{lang}:{pair.upper()}:{rng}",
-            lambda: analyze_news(name, m, filt, lang=lang),
+            f"newsai:{m}:{lang}:{pair.upper()}:{rng}:{cache_tag}",
+            lambda: analyze_news(name, m, filt, lang=lang, api_key=ai_key, base_url=ai_base, model=ai_model),
             ttl=600,
         )
         return jsonify({"ok": True, "ai": result, "range": rng})
@@ -370,6 +378,99 @@ def api_news_ai():
         return jsonify({"ok": False, "error": str(e)}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ошибка AI-анализа: {e}"}), 500
+
+
+@app.route("/api/ai-persona", methods=["POST"])
+@rate_limit(15, 60)
+def api_ai_persona():
+    body = request.get_json(silent=True) or {}
+    pair = (body.get("pair") or "").strip()
+    market = (body.get("market") or "").strip().lower() or None
+    if market not in ("crypto", "stock", "forex"):
+        market = None
+    lang = "en" if (body.get("lang") or "ru").lower() == "en" else "ru"
+    persona_id = (body.get("persona") or "").strip()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+
+    ai_key = (body.get("ai_key") or "").strip() or None
+    ai_base = (body.get("ai_base") or "").strip() or None
+    ai_model = (body.get("ai_model") or "").strip() or None
+
+    from ai_personas import PersonaError, analyze_persona, build_snapshot
+    from ai_news import is_configured
+
+    if not ai_key and not is_configured():
+        return jsonify({
+            "ok": False, "need_key": True,
+            "error": "AI не настроен: нажмите «🔑 AI-ключ» и вставьте свой бесплатный ключ.",
+        }), 200
+
+    try:
+        cache_key = f"analyze:{market or 'auto'}:{pair.upper()}"
+        analysis = get_cached(cache_key, lambda: analyze_pair(pair, market=market))
+        snapshot = build_snapshot(analysis_to_dict(analysis, pair=pair), lang)
+        # Персонам стоимости/роста добавляем фундаментал акции (P/E, маржа, рост).
+        if persona_id in ("value", "growth", "deepvalue") and detect_market(pair, market) == "stock":
+            try:
+                from fundamentals_provider import fundamentals_line
+                fl = get_cached(
+                    f"fundline:{lang}:{pair.upper()}",
+                    lambda: fundamentals_line(pair, "stock", lang),
+                    ttl=3600,
+                )
+                if fl:
+                    snapshot += ("\nFundamentals: " if lang == "en" else "\nФундаментал: ") + fl
+            except Exception:
+                pass
+        # Персоне «Макро» добавляем реальный макро-фон из FRED (если настроен).
+        if persona_id == "macro":
+            try:
+                from fred_provider import is_configured as _fred_ok, macro_line
+                fred_key = (body.get("fred_key") or "").strip() or None
+                if fred_key or _fred_ok():
+                    tag = "env" if not fred_key else fred_key[:6]
+                    ml = get_cached(f"macroline:{lang}:{tag}", lambda: macro_line(lang, fred_key), ttl=3600)
+                    if ml:
+                        snapshot += ("\nMacro backdrop: " if lang == "en" else "\nМакро-фон: ") + ml
+            except Exception:
+                pass
+        tag = ai_model or ai_base or "env"
+        result = get_cached(
+            f"persona:{persona_id}:{lang}:{pair.upper()}:{tag}",
+            lambda: analyze_persona(persona_id, snapshot, lang, api_key=ai_key, base_url=ai_base, model=ai_model),
+            ttl=600,
+        )
+        return jsonify({"ok": True, "persona": result})
+    except MarketDataError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except PersonaError as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка AI-персоны: {e}"}), 500
+
+
+@app.route("/api/macro", methods=["GET", "POST"])
+@rate_limit(30, 60)
+def api_macro():
+    lang = _lang_param()
+    body = request.get_json(silent=True) or {}
+    user_key = (body.get("fred_key") or request.args.get("fred_key") or "").strip() or None
+    from fred_provider import fetch_macro, is_configured
+
+    if not user_key and not is_configured():
+        return jsonify({
+            "ok": False, "need_key": True,
+            "error": "Макро-данные не настроены: вставьте бесплатный ключ FRED ниже "
+                     "(fred.stlouisfed.org/docs/api/api_key.html).",
+        }), 200
+    try:
+        # Кэш по языку + по ключу (данные публичные, но ключ влияет на источник).
+        tag = "env" if not user_key else user_key[:6]
+        data = get_cached(f"macro:{lang}:{tag}", lambda: fetch_macro(lang, user_key), ttl=3600)
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить макро (проверьте ключ): {e}"}), 500
 
 
 _MOVERS_TTL = {"day": 90, "month": 1800, "year": 3600}
@@ -396,6 +497,108 @@ def api_movers():
         return jsonify({"ok": True, "market": market, "range": rng, "region": region, **data})
     except Exception as e:
         return jsonify({"ok": False, "error": f"Не удалось загрузить движения: {e}"}), 500
+
+
+@app.route("/api/correlations")
+@rate_limit(20, 60)
+def api_correlations():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        from correlation_provider import correlations
+
+        m = detect_market(pair, market)
+        data = get_cached(
+            f"corr:{m}:{region}:{pair.upper()}",
+            lambda: correlations(pair, m, region),
+            ttl=1800,
+        )
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось посчитать корреляции: {e}"}), 500
+
+
+@app.route("/api/quote")
+@rate_limit(120, 60)
+def api_quote():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        m = detect_market(pair, market)
+        t = get_cached(f"quote:{m}:{pair.upper()}", lambda: fetch_ticker_24h(pair, m), ttl=60)
+        return jsonify({
+            "ok": True, "pair": pair, "market": m,
+            "price": float(t.get("lastPrice", 0)),
+            "change_pct": round(float(t.get("priceChangePercent", 0)), 2),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/portfolio-risk", methods=["POST"])
+@rate_limit(20, 60)
+def api_portfolio_risk():
+    body = request.get_json(silent=True) or {}
+    holdings = body.get("holdings") or []
+    if not isinstance(holdings, list):
+        return jsonify({"ok": False, "error": "Неверный формат портфеля"}), 400
+    try:
+        from portfolio_provider import portfolio_risk
+
+        data = portfolio_risk(holdings)
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось посчитать риск: {e}"}), 500
+
+
+@app.route("/api/fundamentals")
+@rate_limit(30, 60)
+def api_fundamentals():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    lang = _lang_param()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        from fundamentals_provider import fetch_fundamentals
+
+        m = detect_market(pair, market)
+        data = get_cached(
+            f"fund:{m}:{lang}:{pair.upper()}",
+            lambda: fetch_fundamentals(pair, m, lang),
+            ttl=3600,
+        )
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить фундаментал: {e}"}), 500
+
+
+@app.route("/api/screener")
+@rate_limit(15, 60)
+def api_screener():
+    market = _market_param() or "crypto"
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    tf = request.args.get("tf", "1d").strip().lower()
+    try:
+        from screener_provider import screen_market
+
+        data = get_cached(
+            f"screener:{market}:{region}:{tf}",
+            lambda: screen_market(market, region, tf),
+            ttl=300,
+        )
+        return jsonify({"ok": True, "market": market, "region": region, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить скринер: {e}"}), 500
 
 
 @app.route("/api/journal", methods=["GET"])

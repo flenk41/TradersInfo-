@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from analyzer import (
+    _atr,
     analyze_funding,
     analyze_timeframe,
     build_market_bias,
@@ -51,13 +52,21 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     m = detect_market(pair, market)
     symbol, display = normalize_pair(pair, m)
 
-    if not validate_symbol(pair, m):
+    # Тикер сам по себе валидирует инструмент — отдельный validate_symbol не делаем,
+    # чтобы не дублировать сетевой запрос (особенно к MOEX/Yahoo).
+    try:
+        ticker = fetch_ticker_24h(pair, m)
+        price = float(ticker["lastPrice"])
+    except MarketDataError:
+        raise
+    except Exception:
         raise MarketDataError(
             f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
         )
-
-    ticker = fetch_ticker_24h(pair, m)
-    price = float(ticker["lastPrice"])
+    if price <= 0:
+        raise MarketDataError(
+            f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
+        )
 
     klines_map: dict[str, object] = {}
     intervals = [
@@ -133,9 +142,36 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     atr = volatility.atr_14 if volatility else price * 0.02
     scalp = build_scalping_analysis(klines_5m, klines_15m, price, atr)
 
-    long_entry, short_entry = build_entry_zones(
-        price, support, resistance, fib, bias, trade, scalp, atr, volatility
-    )
+    # Зоны входа и имбалансы для каждого ТФ: масштабируются под таймфрейм
+    # (на 5m уже, на 1D шире). Данные по ТФ уже загружены — без новых запросов.
+    from imbalance import find_imbalances, imbalance_summary
+
+    entry_zones_by_tf: dict = {}
+    imbalances_by_tf: dict = {}
+    for tf_key in ("5m", "15m", "1h", "4h", "1d"):
+        df_tf = klines_map.get(tf_key)
+        if df_tf is None or len(df_tf) < 20:
+            continue
+        try:
+            atr_tf = _atr(df_tf)
+        except Exception:
+            continue
+        if not atr_tf or atr_tf <= 0:
+            continue
+        lz, sz = build_entry_zones(price, support, resistance, fib, bias, trade, scalp, atr_tf, volatility)
+        entry_zones_by_tf[tf_key] = {"long": lz, "short": sz}
+        try:
+            imbalances_by_tf[tf_key] = find_imbalances(df_tf, price)
+        except Exception:
+            imbalances_by_tf[tf_key] = []
+
+    default_zones = entry_zones_by_tf.get("1h")
+    if default_zones:
+        long_entry, short_entry = default_zones["long"], default_zones["short"]
+    else:
+        long_entry, short_entry = build_entry_zones(
+            price, support, resistance, fib, bias, trade, scalp, atr, volatility
+        )
 
     signals = build_signals(tf_analyses, volatility, funding, bias)
     signals.insert(0, f"ЛОНГ: {trade.long_verdict} ({trade.long_score}/100)")
@@ -205,6 +241,10 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
         resistance_zones=resistance_zones,
         long_entry_zones=long_entry,
         short_entry_zones=short_entry,
+        entry_zones_by_tf=entry_zones_by_tf,
+        imbalances=imbalances_by_tf.get("1h", []),
+        imbalances_by_tf=imbalances_by_tf,
+        imbalance_summary=imbalance_summary(imbalances_by_tf.get("1h", []), price),
     )
 
     deep = build_deep_analysis(
@@ -228,7 +268,7 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
 
         news_items = get_cached(
             f"news:{m}:{pair.upper()}",
-            lambda: fetch_news(build_query(pair, m), 60),
+            lambda: fetch_news(build_query(pair, m), 60, max_retries=1),
             ttl=300,
         )
         partial.news = sentiment_counts(news_items)

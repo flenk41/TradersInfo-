@@ -274,10 +274,22 @@ async function loadNewsAi() {
   box.innerHTML = '<p class="news-empty">🤖 Анализирую новости…</p>';
   try {
     const lang = window.I18N ? I18N.get() : "ru";
+    const cfg = getAiCfg();
     const url = `/api/news-ai?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&range=${activeNewsRange}&lang=${lang}`;
-    const json = await (await fetch(url)).json();
-    if (json.ok) renderNewsAi(json.ai);
-    else box.innerHTML = `<p class="news-empty">${json.error || "AI-анализ недоступен"}</p>`;
+    const json = await (await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ai_key: cfg.key || "", ai_base: cfg.base || "", ai_model: cfg.model || "" }),
+    })).json();
+    if (json.ok) {
+      renderNewsAi(json.ai);
+    } else if (json.need_key) {
+      box.innerHTML = `<p class="news-empty">${json.error || "Нужен AI-ключ"}</p>` +
+        `<button type="button" class="btn-primary" id="aiOpenFromNews">🔑 AI-ключ</button>`;
+      $("aiOpenFromNews")?.addEventListener("click", openAiKeyModal);
+    } else {
+      box.innerHTML = `<p class="news-empty">${json.error || "AI-анализ недоступен"}</p>`;
+    }
   } catch (e) {
     box.innerHTML = '<p class="news-empty">Не удалось выполнить AI-анализ.</p>';
   } finally {
@@ -427,8 +439,26 @@ async function saveSignal() {
   }
 }
 
+// Подсказка про AI-ключ во вкладке «Новости».
+function updateNewsAiHint() {
+  const el = $("newsAiHint");
+  if (!el) return;
+  const en = window.I18N && I18N.get() === "en";
+  if (getAiCfg().key) {
+    el.textContent = en ? "AI summary with supporting links" : "Сводка по новостям с подтверждающими ссылками";
+    el.classList.remove("news-ai-need");
+  } else {
+    el.textContent = en ? "🔑 Free AI key needed — click to connect" : "🔑 Нужен бесплатный AI-ключ — подключить";
+    el.classList.add("news-ai-need");
+  }
+}
+$("newsAiHint")?.addEventListener("click", () => {
+  if (!getAiCfg().key && typeof openAiKeyModal === "function") openAiKeyModal();
+});
+
 let newsLoading = false;
 async function loadNews() {
+  updateNewsAiHint();
   const list = $("newsList");
   if (!list) return;
   if (!activePair) {
@@ -550,6 +580,117 @@ async function loadMovers() {
   }
 }
 
+// ---- Скринер ----
+let scrMarket = "crypto", scrRegion = "ru", scrTf = "1d", scrRows = [], scrLoading = false;
+let scrSort = { key: "change_pct", dir: "desc" };
+const SCR_SIGNAL = {
+  bull_pullback: { ru: "Бычий откат", en: "Bull pullback", cls: "good" },
+  bear_pullback: { ru: "Медвежий откат", en: "Bear pullback", cls: "bad" },
+  oversold: { ru: "Перепродан", en: "Oversold", cls: "good" },
+  overbought: { ru: "Перекуплен", en: "Overbought", cls: "bad" },
+  uptrend: { ru: "Восходящий", en: "Uptrend", cls: "good" },
+  downtrend: { ru: "Нисходящий", en: "Downtrend", cls: "bad" },
+  flat: { ru: "Флэт", en: "Flat", cls: "neutral" },
+};
+const SCR_TREND = { bull: { ru: "Бычий", en: "Bull", cls: "good" }, bear: { ru: "Медвежий", en: "Bear", cls: "bad" }, flat: { ru: "Флэт", en: "Flat", cls: "neutral" } };
+
+async function loadScreener(force) {
+  const table = $("scrTable");
+  if (!table || (scrLoading && !force)) return;
+  scrLoading = true;
+  table.innerHTML = '<p class="news-empty">Считаю сигналы по инструментам…</p>';
+  try {
+    let url = `/api/screener?market=${scrMarket}&tf=${scrTf}`;
+    if (scrMarket === "stock") url += `&region=${scrRegion}`;
+    const json = await (await fetch(url)).json();
+    if (json.ok) { scrRows = json.items || []; applyScreenerFilters(); }
+    else table.innerHTML = `<p class="news-empty">${json.error || "Ошибка"}</p>`;
+  } catch (e) {
+    table.innerHTML = '<p class="news-empty">Не удалось загрузить скринер.</p>';
+  } finally {
+    scrLoading = false;
+  }
+}
+
+function applyScreenerFilters() {
+  const trend = $("scrTrend")?.value || "any";
+  const signal = $("scrSignal")?.value || "any";
+  const rsiMax = parseFloat($("scrRsiMax")?.value);
+  const rsiMin = parseFloat($("scrRsiMin")?.value);
+  const chgMin = parseFloat($("scrChgMin")?.value);
+  const rows = scrRows.filter((r) => {
+    if (trend !== "any" && r.trend !== trend) return false;
+    if (signal !== "any" && r.signal !== signal) return false;
+    if (!isNaN(rsiMax) && r.rsi > rsiMax) return false;
+    if (!isNaN(rsiMin) && r.rsi < rsiMin) return false;
+    if (!isNaN(chgMin) && r.change_pct < chgMin) return false;
+    return true;
+  });
+  const k = scrSort.key, mul = scrSort.dir === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    const av = a[k], bv = b[k];
+    if (typeof av === "string") return mul * String(av).localeCompare(String(bv));
+    return mul * ((av || 0) - (bv || 0));
+  });
+  renderScreenerRows(rows);
+}
+
+function _setScrSort(key) {
+  if (scrSort.key === key) scrSort.dir = scrSort.dir === "asc" ? "desc" : "asc";
+  else scrSort = { key, dir: key === "name" ? "asc" : "desc" };
+  applyScreenerFilters();
+}
+
+function renderScreenerRows(rows) {
+  const table = $("scrTable");
+  const cnt = $("scrCount");
+  const en = window.I18N && I18N.get() === "en";
+  if (cnt) cnt.textContent = `${rows.length} / ${scrRows.length}`;
+  if (!rows.length) {
+    table.innerHTML = '<p class="news-empty">Ничего не подходит под фильтры.</p>';
+    return;
+  }
+  const arrow = (key) => (scrSort.key === key ? (scrSort.dir === "asc" ? " ▲" : " ▼") : "");
+  const sortable = (key, label) => `<span class="scr-sortable${scrSort.key === key ? " active" : ""}" data-sort="${key}">${label}${arrow(key)}</span>`;
+  const head = `<div class="scr-row scr-head">` +
+    sortable("name", en ? "Instrument" : "Инструмент") +
+    sortable("price", en ? "Price" : "Цена") +
+    sortable("change_pct", "Δ%") +
+    sortable("rsi", "RSI") +
+    `<span>${en ? "Trend" : "Тренд"}</span>` +
+    `<span>${en ? "Signal" : "Сигнал"}</span></div>`;
+  table.innerHTML = head;
+  table.querySelectorAll(".scr-head .scr-sortable").forEach((el) =>
+    el.addEventListener("click", () => _setScrSort(el.dataset.sort))
+  );
+  rows.forEach((r) => {
+    const tr = SCR_TREND[r.trend] || SCR_TREND.flat;
+    const sg = SCR_SIGNAL[r.signal] || SCR_SIGNAL.flat;
+    const up = r.change_pct >= 0;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "scr-row";
+    row.innerHTML =
+      `<span class="scr-inst"><span class="inst-icon-wrap">${moverIconHtml(r)}</span><span class="scr-name">${r.name}<small>${r.subtitle}</small></span></span>` +
+      `<span>${moverCurrency(r)}${formatPrice(r.price)}</span>` +
+      `<span class="${up ? "up" : "down"}">${up ? "+" : ""}${r.change_pct}%</span>` +
+      `<span class="scr-rsi ${r.rsi >= 70 ? "down" : r.rsi <= 30 ? "up" : ""}">${r.rsi}</span>` +
+      `<span class="chip-${tr.cls}">${en ? tr.en : tr.ru}</span>` +
+      `<span class="chip-${sg.cls}">${en ? sg.en : sg.ru}</span>`;
+    row.addEventListener("click", () => {
+      if (r.market === "stock") {
+        activeStockRegion = r.region || activeStockRegion;
+        document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
+          b.classList.toggle("active", b.dataset.region === activeStockRegion));
+      }
+      switchView("market", r.market);
+      analyze(r.id);
+    });
+    table.appendChild(row);
+  });
+  applyI18n();
+}
+
 function verdictClass(verdict) {
   if (!verdict) return "";
   if (verdict.includes("ВХОДИТЬ")) return "verdict-enter";
@@ -606,6 +747,10 @@ function switchView(view, market) {
     }
   } else if (view === "movers") {
     loadMovers();
+  } else if (view === "screener") {
+    if (!scrRows.length) loadScreener();
+  } else if (view === "portfolio") {
+    loadPortfolio();
   } else if (view === "news") {
     loadNews();
   } else if (view === "journal") {
@@ -646,12 +791,61 @@ async function loadChartsForPair(pair, marketType) {
   await TradingChart.loadPair(pair, activeMarket, tf);
 }
 
+const LW_TF_MAP = { "5": "5m", "15": "15m", "60": "1h", "240": "4h", D: "1d" };
+function currentLwTf() {
+  return LW_TF_MAP[tvInterval] || "1h";
+}
+// Зоны входа под текущий таймфрейм графика (стоп/тейк масштабированы под ATR ТФ).
+function zonesForTf(data) {
+  const byTf = data && data.entry_zones_by_tf;
+  const tf = currentLwTf();
+  if (byTf && byTf[tf]) {
+    return { long: byTf[tf].long || [], short: byTf[tf].short || [] };
+  }
+  return { long: (data && data.long_entry_zones) || [], short: (data && data.short_entry_zones) || [] };
+}
+
+// Имбаланс под текущий таймфрейм графика.
+function imbalancesForTf(data) {
+  const byTf = data && data.imbalances_by_tf;
+  const tf = currentLwTf();
+  if (byTf && byTf[tf]) return byTf[tf];
+  return (data && data.imbalances) || [];
+}
+
 function updateChartTrend(data) {
   if (!data) return;
-  TradingChart.applyAnalysis(data);
-  buildEntryMenu(data.long_entry_zones, data.short_entry_zones);
-  renderZonesStrip(data);
+  const z = zonesForTf(data);
+  const view = Object.assign({}, data, { long_entry_zones: z.long, short_entry_zones: z.short });
+  TradingChart.applyAnalysis(view);
+  buildEntryMenu(z.long, z.short);
+  renderZonesStrip(view);
+  TradingChart.setImbalances?.(imbalancesForTf(data));
+  renderImbalance(data);
   applyI18n();
+}
+
+function renderImbalance(data) {
+  const summary = $("imbalanceSummary");
+  const list = $("imbalanceList");
+  const zones = imbalancesForTf(data);
+  if (summary) summary.textContent = data.imbalance_summary || "—";
+  if (!list) return;
+  if (!zones.length) {
+    list.innerHTML = '<span class="imb-empty">Незаполненных имбалансов рядом нет</span>';
+    return;
+  }
+  list.innerHTML = "";
+  zones.forEach((z) => {
+    const up = z.kind === "bullish";
+    const row = document.createElement("div");
+    row.className = "imb-row " + (up ? "bull" : "bear");
+    row.innerHTML =
+      `<span class="imb-tag">${up ? "↑ Бычий" : "↓ Медвежий"}</span>` +
+      `<span class="imb-range">${money(z.low)} – ${money(z.high)}</span>` +
+      `<span class="imb-dist ${z.distance_pct >= 0 ? "up" : "down"}">${z.distance_pct >= 0 ? "+" : ""}${z.distance_pct}%</span>`;
+    list.appendChild(row);
+  });
 }
 
 function renderAccuracy(acc) {
@@ -1238,6 +1432,11 @@ async function analyze(pair, forceRefresh = false) {
     updateChartTrend(json.data);
 
     $("newsAiResult")?.classList.add("hidden");
+    if ($("personaResult")) $("personaResult").innerHTML = "";
+    document.querySelectorAll(".persona-chip.active").forEach((c) => c.classList.remove("active"));
+    loadFundamentals(pair, json.data.market_type);
+    loadCorrelations(pair, json.data.market_type);
+    updateWatchBtn();
     if (activeView === "news") loadNews();
   } catch (e) {
     setLoading(false);
@@ -1250,9 +1449,11 @@ let _lastAnalysisRefresh = 0;
 async function refreshAnalysis() {
   if (!activePair || activeView !== "market" || document.hidden) return;
   try {
+    // без refresh=1 — используем 50-сек серверный кэш; значения освежаются,
+    // когда кэш истекает, без «холодного» пересчёта на каждом тике.
     const url =
       "/api/analyze?pair=" + encodeURIComponent(activePair) +
-      "&market=" + encodeURIComponent(activeMarket) + "&refresh=1";
+      "&market=" + encodeURIComponent(activeMarket);
     const json = await (await fetch(url)).json();
     if (!json.ok) return;
     render(json.data);
@@ -1357,6 +1558,35 @@ document.querySelectorAll("#moversRange button").forEach((btn) => {
 });
 $("moversRefresh")?.addEventListener("click", () => loadMovers(true));
 
+// Скринер: рынок / регион / ТФ
+document.querySelectorAll("#scrMarkets button").forEach((b) => {
+  b.addEventListener("click", () => {
+    scrMarket = b.dataset.market;
+    document.querySelectorAll("#scrMarkets button").forEach((x) => x.classList.toggle("active", x === b));
+    $("scrRegion")?.classList.toggle("hidden", scrMarket !== "stock");
+    loadScreener(true);
+  });
+});
+document.querySelectorAll("#scrRegion button").forEach((b) => {
+  b.addEventListener("click", () => {
+    scrRegion = b.dataset.region;
+    document.querySelectorAll("#scrRegion button").forEach((x) => x.classList.toggle("active", x === b));
+    loadScreener(true);
+  });
+});
+document.querySelectorAll("#scrTf button").forEach((b) => {
+  b.addEventListener("click", () => {
+    scrTf = b.dataset.tf;
+    document.querySelectorAll("#scrTf button").forEach((x) => x.classList.toggle("active", x === b));
+    loadScreener(true);
+  });
+});
+$("scrRefresh")?.addEventListener("click", () => loadScreener(true));
+["scrTrend", "scrSignal", "scrRsiMax", "scrRsiMin", "scrChgMin"].forEach((id) => {
+  $(id)?.addEventListener("input", () => applyScreenerFilters());
+  $(id)?.addEventListener("change", () => applyScreenerFilters());
+});
+
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
 $("btnJournalAdd")?.addEventListener("click", () => saveSignal());
 $("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
@@ -1424,6 +1654,13 @@ $("btnEntryPoints")?.addEventListener("click", (e) => {
   e.stopPropagation();
   $("entryMenu")?.classList.toggle("hidden");
 });
+
+let imbalanceOn = false;
+$("btnImbalance")?.addEventListener("click", () => {
+  imbalanceOn = !imbalanceOn;
+  TradingChart.toggleImbalances?.(imbalanceOn);
+  $("btnImbalance")?.classList.toggle("active", imbalanceOn);
+});
 document.addEventListener("click", (e) => {
   const dd = $("entryDropdown");
   if (dd && !dd.contains(e.target)) $("entryMenu")?.classList.add("hidden");
@@ -1446,6 +1683,10 @@ window.onLangChange = () => {
     updateChartTrend(lastAnalysisData);
   }
   $("newsAiResult")?.classList.add("hidden");
+  updateNewsAiHint();
+  buildPersonaChips();
+  if ($("personaResult")) $("personaResult").innerHTML = "";
+  macroLoaded = false; loadMacro(true);
   if (activeView === "news") loadNews();
   else if (activeView === "journal") loadJournal();
   else if (activeView === "movers") loadMovers();
@@ -1532,6 +1773,7 @@ const _GV = {
   movers: `<div class="gv-movers"><span class="up">BTC +5.2%</span><span class="up">SOL +3.1%</span><span class="down">XRP −2.4%</span></div>`,
   news: `<div class="gv-news"><span class="gv-nb good">Хорошая</span><span class="gv-nb bad">Плохая</span></div>`,
   journal: `<div class="gv-stat"><span>Винрейт</span><b class="up">62%</b><span>Профит-фактор</span><b>1.8</b></div>`,
+  aikey: `<div class="gv-aikey">🔑 → 🤖</div>`,
 };
 
 const GUIDE_SLIDES = {
@@ -1544,6 +1786,7 @@ const GUIDE_SLIDES = {
     { v: _GV.movers, t: "Обзор рынка", d: "Лидеры роста и падения за день / месяц / год (как cryptobubbles). Клик по карточке открывает график и анализ инструмента." },
     { v: _GV.news, t: "Новости + AI", d: "Хорошие и плохие новости по инструменту, плюс AI-разбор с подтверждающими ссылками на источники." },
     { v: _GV.journal, t: "Журнал сигналов", d: "Нажмите «Записать сигнал» — система сама проверит по истории цены, что сработало первым (тейк или стоп), и посчитает реальный винрейт." },
+    { v: _GV.aikey, t: "AI-разбор (свой ключ)", d: "Для AI-разбора и мнений инвесторов нажмите «🔑 AI-ключ» вверху и вставьте бесплатный ключ. Рекомендую OpenRouter ⭐ (openrouter.ai) — бесплатные модели и доступен из большинства регионов. Ключ хранится только в вашем браузере." },
   ],
   en: [
     { v: _GV.market.replace("Крипта", "Crypto").replace("Акции", "Stocks").replace("Валюта", "Forex"), t: "Pick a market", d: "Choose Crypto, Stocks or Forex at the top. Pick an instrument from the strip or type in search — all Binance pairs and all MOEX stocks are available." },
@@ -1554,6 +1797,7 @@ const GUIDE_SLIDES = {
     { v: _GV.movers, t: "Market overview", d: "Top gainers and losers for day / month / year (like cryptobubbles). Click a card to open its chart and analysis." },
     { v: `<div class="gv-news"><span class="gv-nb good">Good</span><span class="gv-nb bad">Bad</span></div>`, t: "News + AI", d: "Good and bad news per instrument, plus an AI review with supporting links to sources." },
     { v: `<div class="gv-stat"><span>Win rate</span><b class="up">62%</b><span>Profit factor</span><b>1.8</b></div>`, t: "Signal journal", d: "Click “Log signal” — the system checks price history for what hit first (take or stop) and computes a real win rate." },
+    { v: _GV.aikey, t: "AI review (your key)", d: "For the AI review and investor views, click “🔑 AI key” at the top and paste a free key. Recommended: OpenRouter ⭐ (openrouter.ai) — free models, works in most regions. The key is stored only in your browser." },
   ],
 };
 
@@ -1633,6 +1877,486 @@ function closeModal() {
 $("linkPrivacy")?.addEventListener("click", () => openModal("privacy"));
 $("linkInfo")?.addEventListener("click", () => openModal("info"));
 $("linkGuide")?.addEventListener("click", () => openGuide());
+
+// ---- BYOK: пользователь подключает свой AI-ключ (хранится только в браузере) ----
+const AI_PROVIDERS = {
+  openrouter: { label: "OpenRouter — рекомендуется ⭐ (бесплатно)", base: "https://openrouter.ai/api/v1", model: "meta-llama/llama-3.3-70b-instruct:free", url: "https://openrouter.ai/keys" },
+  groq: { label: "Groq — бесплатно, быстро", base: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", url: "https://console.groq.com/keys" },
+  gemini: { label: "Google Gemini — бесплатно", base: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "gemini-2.0-flash", url: "https://aistudio.google.com/apikey" },
+  ollama: { label: "Ollama — локально, бесплатно", base: "http://localhost:11434/v1", model: "llama3.1", url: "https://ollama.com/download" },
+  openai: { label: "OpenAI — платно", base: "https://api.openai.com/v1", model: "gpt-4o-mini", url: "https://platform.openai.com/api-keys" },
+};
+
+// Определяем провайдера по префиксу ключа — чтобы бесплатный ключ всегда ушёл
+// на правильный эндпоинт, даже если в списке выбран не тот провайдер.
+function detectProviderByKey(key) {
+  const k = (key || "").trim();
+  if (k.startsWith("gsk_")) return "groq";
+  if (k.startsWith("sk-or-")) return "openrouter";
+  if (k.startsWith("AIza")) return "gemini";
+  if (k.startsWith("sk-")) return "openai";
+  return null;
+}
+
+function getAiCfg() {
+  try { return JSON.parse(localStorage.getItem("ai_cfg") || "{}"); } catch (e) { return {}; }
+}
+function saveAiCfgObj(cfg) {
+  try { localStorage.setItem("ai_cfg", JSON.stringify(cfg)); } catch (e) {}
+}
+
+function openAiKeyModal() {
+  const en = window.I18N && I18N.get() === "en";
+  const cfg = getAiCfg();
+  const prov = cfg.provider || "openrouter";
+  const T = en ? {
+    title: "🔑 Connect AI (free)",
+    intro: "The AI news review needs a key. It's free — get one in ~1 minute and paste it below. The key is stored only in your browser and is never shared.",
+    steps: ["Open the provider site (link below) and sign in.", "Create an API key (button “Create API key”).", "Copy the key and paste it here.", "Save — then use “🤖 AI review” on the News tab."],
+    provider: "Provider", key: "API key", model: "Model", get: "Get a free key ↗",
+    save: "Save", clear: "Clear", saved: "Key saved ✓", none: "No key set", note: "Recommended: OpenRouter ⭐ (free models, works in most regions). Alternatives: Groq, Gemini, or Ollama (local).",
+  } : {
+    title: "🔑 Подключение AI (бесплатно)",
+    intro: "Для AI-разбора новостей нужен ключ. Это бесплатно — получите его за ~1 минуту и вставьте ниже. Ключ хранится только в вашем браузере и никому не передаётся.",
+    steps: ["Откройте сайт провайдера (ссылка ниже) и войдите.", "Создайте API-ключ (кнопка «Create API key»).", "Скопируйте ключ и вставьте сюда.", "Сохраните — и пользуйтесь «🤖 AI-разбор» во вкладке «Новости»."],
+    provider: "Провайдер", key: "API-ключ", model: "Модель", get: "Получить бесплатный ключ ↗",
+    save: "Сохранить", clear: "Очистить", saved: "Ключ сохранён ✓", none: "Ключ не задан", note: "Рекомендую OpenRouter ⭐ (бесплатные модели, доступен из большинства регионов). Альтернативы: Groq, Gemini или Ollama (локально).",
+  };
+  const opts = Object.entries(AI_PROVIDERS).map(([k, v]) => `<option value="${k}" ${k === prov ? "selected" : ""}>${v.label}</option>`).join("");
+  const steps = T.steps.map((s, i) => `<div class="ai-step"><span class="ai-step-n">${i + 1}</span><span>${s}</span></div>`).join("");
+  $("aiKeyTitle").textContent = T.title;
+  $("aiKeyBody").innerHTML =
+    `<p>${T.intro}</p>` +
+    `<div class="ai-steps">${steps}</div>` +
+    `<label class="ai-field"><span>${T.provider}</span><select id="aiProvider">${opts}</select></label>` +
+    `<a class="ai-getkey" id="aiGetKey" target="_blank" rel="noopener">${T.get}</a>` +
+    `<label class="ai-field"><span>${T.key}</span><input type="password" id="aiKeyInput" placeholder="••••••••" autocomplete="off"></label>` +
+    `<label class="ai-field"><span>${T.model}</span><input type="text" id="aiModelInput"></label>` +
+    `<div class="ai-actions"><button type="button" class="btn-primary" id="aiSave">${T.save}</button>` +
+    `<button type="button" class="btn-secondary" id="aiClear">${T.clear}</button>` +
+    `<span class="ai-status" id="aiStatus">${cfg.key ? T.saved : T.none}</span></div>` +
+    `<p class="modal-note">${T.note}</p>`;
+
+  const keyInput = $("aiKeyInput"), modelInput = $("aiModelInput"), provSel = $("aiProvider"), getLink = $("aiGetKey");
+  if (cfg.key) keyInput.value = cfg.key;
+  modelInput.value = cfg.model || AI_PROVIDERS[prov].model;
+  getLink.href = AI_PROVIDERS[prov].url;
+  provSel.addEventListener("change", () => {
+    const p = AI_PROVIDERS[provSel.value];
+    modelInput.value = p.model;
+    getLink.href = p.url;
+  });
+  // Авто-подстройка провайдера по введённому ключу.
+  keyInput.addEventListener("input", () => {
+    const det = detectProviderByKey(keyInput.value);
+    if (det && det !== provSel.value) {
+      provSel.value = det;
+      modelInput.value = AI_PROVIDERS[det].model;
+      getLink.href = AI_PROVIDERS[det].url;
+    }
+  });
+  $("aiSave").addEventListener("click", () => {
+    const key = keyInput.value.trim();
+    // Ключ — источник истины: если префикс распознан, берём его провайдера/адрес.
+    const p = detectProviderByKey(key) || provSel.value;
+    const next = { provider: p, key, base: AI_PROVIDERS[p].base, model: modelInput.value.trim() || AI_PROVIDERS[p].model };
+    saveAiCfgObj(next);
+    provSel.value = p;
+    $("aiStatus").textContent = key
+      ? (T.saved + " · " + (AI_PROVIDERS[p].label.split(" ")[0]) + " → " + next.model)
+      : T.none;
+    updateNewsAiHint();
+  });
+  $("aiClear").addEventListener("click", () => {
+    try { localStorage.removeItem("ai_cfg"); } catch (e) {}
+    keyInput.value = "";
+    $("aiStatus").textContent = T.none;
+    updateNewsAiHint();
+  });
+  $("aiKeyOverlay").classList.remove("hidden");
+}
+function closeAiKey() { $("aiKeyOverlay")?.classList.add("hidden"); }
+$("linkAiKey")?.addEventListener("click", openAiKeyModal);
+
+// ---- AI-персоны инвесторов ----
+const PERSONA_META = [
+  { id: "value", emoji: "🛡️", ru: "Баффет", en: "Buffett", ruTag: "Стоимость", enTag: "Value" },
+  { id: "growth", emoji: "🚀", ru: "Линч", en: "Lynch", ruTag: "Рост", enTag: "Growth" },
+  { id: "deepvalue", emoji: "📉", ru: "Грэм", en: "Graham", ruTag: "Осторожно", enTag: "Cautious" },
+  { id: "trader", emoji: "⚡", ru: "Трейдер", en: "Trader", ruTag: "Техника", enTag: "Technicals" },
+  { id: "macro", emoji: "🌍", ru: "Макро", en: "Macro", ruTag: "Сверху вниз", enTag: "Top-down" },
+];
+const PERSONA_VERDICT = {
+  buy: { ru: "ПОКУПАТЬ", en: "BUY", cls: "buy" },
+  hold: { ru: "ДЕРЖАТЬ", en: "HOLD", cls: "wait" },
+  avoid: { ru: "ИЗБЕГАТЬ", en: "AVOID", cls: "sell" },
+};
+let personaLoading = false;
+
+function buildPersonaChips() {
+  const wrap = $("personaChips");
+  if (!wrap) return;
+  const en = window.I18N && I18N.get() === "en";
+  wrap.innerHTML = "";
+  PERSONA_META.forEach((p) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "persona-chip";
+    b.dataset.id = p.id;
+    b.innerHTML = `<span class="pc-emoji">${p.emoji}</span><span class="pc-name">${en ? p.en : p.ru}</span><small>${en ? p.enTag : p.ruTag}</small>`;
+    b.addEventListener("click", () => askPersona(p.id, b));
+    wrap.appendChild(b);
+  });
+}
+
+async function askPersona(id, chip) {
+  const box = $("personaResult");
+  if (!box) return;
+  if (!activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  if (personaLoading) return;
+  if (!getAiCfg().key) {
+    box.innerHTML = `<p class="news-empty">🔑 Нужен бесплатный AI-ключ</p><button type="button" class="btn-primary" id="personaKeyBtn">🔑 AI-ключ</button>`;
+    $("personaKeyBtn")?.addEventListener("click", openAiKeyModal);
+    return;
+  }
+  personaLoading = true;
+  document.querySelectorAll(".persona-chip").forEach((c) => c.classList.toggle("active", c === chip));
+  box.innerHTML = '<p class="news-empty">🧠 Анализирую…</p>';
+  try {
+    const cfg = getAiCfg();
+    const json = await (await fetch("/api/ai-persona", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pair: activePair, market: activeMarket, persona: id,
+        lang: window.I18N ? I18N.get() : "ru",
+        ai_key: cfg.key || "", ai_base: cfg.base || "", ai_model: cfg.model || "",
+        fred_key: getFredKey(),
+      }),
+    })).json();
+    if (json.ok) renderPersona(json.persona);
+    else if (json.need_key) {
+      box.innerHTML = `<p class="news-empty">${json.error}</p><button type="button" class="btn-primary" id="personaKeyBtn">🔑 AI-ключ</button>`;
+      $("personaKeyBtn")?.addEventListener("click", openAiKeyModal);
+    } else box.innerHTML = `<p class="news-empty">${json.error || "AI недоступен"}</p>`;
+  } catch (e) {
+    box.innerHTML = '<p class="news-empty">Не удалось получить мнение.</p>';
+  } finally {
+    personaLoading = false;
+  }
+}
+
+// ---- Макро-фон (FRED) ----
+let macroLoaded = false;
+function getFredKey() {
+  try { return localStorage.getItem("fred_key") || ""; } catch (e) { return ""; }
+}
+function renderFredKeyForm(message) {
+  const grid = $("macroGrid"), label = $("macroLabel"), note = $("macroNote");
+  label.textContent = ""; label.className = "macro-label";
+  grid.innerHTML = "";
+  const en = window.I18N && I18N.get() === "en";
+  note.innerHTML =
+    `<span class="macro-msg">🔑 ${message || (en ? "Free FRED key needed" : "Нужен бесплатный ключ FRED")}</span>` +
+    `<span class="fred-form">` +
+    `<input type="password" id="fredKeyInput" placeholder="${en ? "paste FRED key" : "вставьте ключ FRED"}" autocomplete="off">` +
+    `<button type="button" class="btn-primary" id="fredSave">${en ? "Save" : "Сохранить"}</button>` +
+    `</span>` +
+    `<a href="https://fredaccount.stlouisfed.org/apikeys" target="_blank" rel="noopener">${en ? "Get a free key ↗" : "Получить бесплатный ключ ↗"}</a>`;
+  const inp = $("fredKeyInput");
+  if (inp) inp.value = getFredKey();
+  $("fredSave")?.addEventListener("click", () => {
+    const v = ($("fredKeyInput")?.value || "").trim();
+    try { v ? localStorage.setItem("fred_key", v) : localStorage.removeItem("fred_key"); } catch (e) {}
+    macroLoaded = false;
+    loadMacro(true);
+  });
+}
+async function loadMacro(force) {
+  const card = $("macroCard");
+  if (!card) return;
+  if (macroLoaded && !force) return;
+  const grid = $("macroGrid");
+  grid.innerHTML = '<span class="macro-empty">Загрузка…</span>';
+  try {
+    const lang = window.I18N ? I18N.get() : "ru";
+    const json = await (await fetch(`/api/macro?lang=${lang}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fred_key: getFredKey() }),
+    })).json();
+    if (json.ok) {
+      macroLoaded = true;
+      renderMacro(json);
+    } else if (json.need_key) {
+      renderFredKeyForm(json.error);
+    } else {
+      renderFredKeyForm(json.error); // ошибка ключа — тоже показываем форму
+    }
+  } catch (e) {
+    $("macroGrid").innerHTML = '<span class="macro-empty">Не удалось загрузить макро.</span>';
+  }
+}
+
+function renderMacro(m) {
+  const grid = $("macroGrid"), label = $("macroLabel"), note = $("macroNote");
+  label.textContent = m.label || "";
+  label.className = "macro-label " + (m.risk || "mixed");
+  note.textContent = m.note || "";
+  grid.innerHTML = "";
+  (m.items || []).forEach((it) => {
+    const up = it.change > 0, down = it.change < 0;
+    const arrow = up ? "▲" : down ? "▼" : "•";
+    const tile = document.createElement("div");
+    tile.className = "macro-tile";
+    tile.innerHTML =
+      `<span class="mt-name">${it.name}</span>` +
+      `<span class="mt-val">${it.value}${it.unit}</span>` +
+      `<span class="mt-chg ${up ? "up" : down ? "down" : ""}">${arrow} ${it.change > 0 ? "+" : ""}${it.change}${it.unit}</span>`;
+    grid.appendChild(tile);
+  });
+  applyI18n();
+}
+
+// ---- Фундаментал акций ----
+async function loadFundamentals(pair, market) {
+  const panel = $("fundamentalsPanel");
+  if (!panel) return;
+  if (market !== "stock") { panel.classList.add("hidden"); return; }
+  try {
+    const lang = window.I18N ? I18N.get() : "ru";
+    const json = await (await fetch(`/api/fundamentals?pair=${encodeURIComponent(pair)}&market=stock&lang=${lang}`)).json();
+    if (json.ok && json.available) renderFundamentals(json);
+    else panel.classList.add("hidden");
+  } catch (e) {
+    panel.classList.add("hidden");
+  }
+}
+
+function renderFundamentals(d) {
+  const panel = $("fundamentalsPanel");
+  panel.classList.remove("hidden");
+  const meta = $("fundMeta"), grid = $("fundGrid"), sum = $("fundSummary");
+  meta.textContent = [d.sector, d.industry].filter(Boolean).join(" · ");
+  grid.innerHTML = "";
+  (d.items || []).forEach((it) => {
+    const tile = document.createElement("div");
+    tile.className = "fund-tile";
+    tile.innerHTML = `<span class="ft-name">${it.name}</span><span class="ft-val">${it.value}</span>`;
+    grid.appendChild(tile);
+  });
+  sum.textContent = d.summary || "";
+}
+
+// ---- Корреляции ----
+async function loadCorrelations(pair, market) {
+  const panel = $("corrPanel");
+  if (!panel) return;
+  $("corrPositive").innerHTML = '<span class="corr-empty">…</span>';
+  $("corrNegative").innerHTML = "";
+  try {
+    let url = `/api/correlations?pair=${encodeURIComponent(pair)}&market=${market}`;
+    if (market === "stock") url += `&region=${activeStockRegion}`;
+    const json = await (await fetch(url)).json();
+    if (json.ok) renderCorrelations(json);
+    else { $("corrPositive").innerHTML = `<span class="corr-empty">${json.error || "—"}</span>`; }
+  } catch (e) {
+    $("corrPositive").innerHTML = '<span class="corr-empty">Не удалось загрузить.</span>';
+  }
+}
+
+function _corrRow(it) {
+  const up = it.corr >= 0;
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "corr-row";
+  row.innerHTML =
+    `<span class="inst-icon-wrap">${moverIconHtml(it)}</span>` +
+    `<span class="corr-name">${it.name}<small>${it.subtitle}</small></span>` +
+    `<span class="corr-val ${up ? "up" : "down"}">${it.corr > 0 ? "+" : ""}${it.corr}</span>`;
+  row.addEventListener("click", () => {
+    if (it.market === "stock") {
+      activeStockRegion = it.region || activeStockRegion;
+      document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
+        b.classList.toggle("active", b.dataset.region === activeStockRegion));
+    }
+    switchView("market", it.market);
+    analyze(it.id);
+  });
+  return row;
+}
+
+function renderCorrelations(d) {
+  const pos = $("corrPositive"), neg = $("corrNegative");
+  pos.innerHTML = ""; neg.innerHTML = "";
+  if (!d.positive?.length) pos.innerHTML = '<span class="corr-empty">—</span>';
+  else d.positive.forEach((it) => pos.appendChild(_corrRow(it)));
+  if (!d.negative?.length) neg.innerHTML = '<span class="corr-empty">—</span>';
+  else d.negative.forEach((it) => neg.appendChild(_corrRow(it)));
+  applyI18n();
+}
+
+// ================= Watchlist + Портфель =================
+function guessMarket(pair) {
+  const p = (pair || "").toUpperCase();
+  if (p.endsWith(".ME")) return "stock";
+  if (p.includes("/")) return p.includes("USDT") ? "crypto" : "forex";
+  return "stock";
+}
+function getWatchlist() { try { return JSON.parse(localStorage.getItem("watchlist") || "[]"); } catch (e) { return []; } }
+function setWatchlist(a) { try { localStorage.setItem("watchlist", JSON.stringify(a)); } catch (e) {} }
+function getPortfolio() { try { return JSON.parse(localStorage.getItem("portfolio") || "[]"); } catch (e) { return []; } }
+function setPortfolio(a) { try { localStorage.setItem("portfolio", JSON.stringify(a)); } catch (e) {} }
+
+function inWatchlist(id) { return getWatchlist().some((w) => w.id === id); }
+function updateWatchBtn() {
+  const b = $("btnWatch");
+  if (!b) return;
+  const on = activePair && inWatchlist(activePair);
+  b.textContent = on ? "★ В списке" : "☆ В список";
+  b.classList.toggle("active", !!on);
+}
+function toggleWatch() {
+  if (!activePair) return;
+  let wl = getWatchlist();
+  if (inWatchlist(activePair)) wl = wl.filter((w) => w.id !== activePair);
+  else wl.unshift({ id: activePair, market: activeMarket, name: (lastAnalysisData && lastAnalysisData.display_name) || activePair });
+  setWatchlist(wl);
+  updateWatchBtn();
+  if (activeView === "portfolio") renderWatchlist();
+}
+$("btnWatch")?.addEventListener("click", toggleWatch);
+
+async function renderWatchlist() {
+  const box = $("watchlist");
+  if (!box) return;
+  const wl = getWatchlist();
+  if (!wl.length) {
+    box.innerHTML = '<p class="news-empty">Пусто. Откройте инструмент и нажмите «☆ В список» над графиком.</p>';
+    return;
+  }
+  box.innerHTML = wl.map((w) =>
+    `<div class="wl-row" data-id="${w.id}" data-market="${w.market}"><span class="wl-name">${w.name}<small>${w.id}</small></span>` +
+    `<span class="wl-quote" data-q="${w.id}">…</span>` +
+    `<button class="wl-del" data-del="${w.id}" title="Убрать">✕</button></div>`
+  ).join("");
+  box.querySelectorAll(".wl-row").forEach((r) => {
+    r.addEventListener("click", (e) => {
+      if (e.target.closest(".wl-del")) return;
+      switchView("market", r.dataset.market);
+      analyze(r.dataset.id);
+    });
+  });
+  box.querySelectorAll(".wl-del").forEach((b) =>
+    b.addEventListener("click", (e) => { e.stopPropagation(); setWatchlist(getWatchlist().filter((w) => w.id !== b.dataset.del)); renderWatchlist(); updateWatchBtn(); })
+  );
+  // котировки
+  wl.forEach(async (w) => {
+    try {
+      const j = await (await fetch(`/api/quote?pair=${encodeURIComponent(w.id)}&market=${w.market}`)).json();
+      const cell = box.querySelector(`[data-q="${CSS.escape(w.id)}"]`);
+      if (cell && j.ok) {
+        const cur = moverCurrency({ market: w.market, id: w.id });
+        const up = j.change_pct >= 0;
+        cell.innerHTML = `${cur}${formatPrice(j.price)} <span class="${up ? "up" : "down"}">${up ? "+" : ""}${j.change_pct}%</span>`;
+      }
+    } catch (e) {}
+  });
+}
+
+function pfAddHolding() {
+  const pair = ($("pfPair").value || "").trim();
+  const qty = parseFloat($("pfQty").value);
+  const entry = parseFloat($("pfEntry").value);
+  if (!pair || !(qty > 0)) { showError("Укажите инструмент и количество"); return; }
+  const market = guessMarket(pair);
+  const pf = getPortfolio();
+  pf.push({ id: pair.toUpperCase(), market, name: pair.toUpperCase(), qty, entry: entry > 0 ? entry : 0 });
+  setPortfolio(pf);
+  $("pfPair").value = ""; $("pfQty").value = ""; $("pfEntry").value = "";
+  loadPortfolio();
+}
+$("pfAddBtn")?.addEventListener("click", pfAddHolding);
+$("pfRefresh")?.addEventListener("click", () => loadPortfolio());
+
+async function loadPortfolio() {
+  renderWatchlist();
+  const pf = getPortfolio();
+  const hbox = $("pfHoldings"), mbox = $("pfMetrics"), ebox = $("pfEquity");
+  if (!hbox) return;
+  if (!pf.length) {
+    mbox.innerHTML = ""; ebox.innerHTML = "";
+    hbox.innerHTML = '<p class="news-empty">Добавьте позиции, чтобы увидеть P&L и риск (Sharpe, просадка).</p>';
+    return;
+  }
+  hbox.innerHTML = '<p class="news-empty">Считаю риск по истории…</p>';
+  try {
+    const json = await (await fetch("/api/portfolio-risk", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ holdings: pf.map((h) => ({ pair: h.id, market: h.market, qty: h.qty, entry: h.entry })) }),
+    })).json();
+    if (json.ok) renderPortfolio(json, pf);
+    else hbox.innerHTML = `<p class="news-empty">${json.error || "Ошибка"}</p>`;
+  } catch (e) {
+    hbox.innerHTML = '<p class="news-empty">Не удалось посчитать портфель.</p>';
+  }
+}
+
+function renderPortfolio(d, pf) {
+  const mbox = $("pfMetrics"), ebox = $("pfEquity"), hbox = $("pfHoldings");
+  const pnlUp = d.pnl >= 0;
+  mbox.innerHTML =
+    `<div class="pf-metric"><span>Стоимость</span><strong>$${d.value.toLocaleString("en-US")}</strong></div>` +
+    `<div class="pf-metric"><span>P&L</span><strong class="${pnlUp ? "up" : "down"}">${pnlUp ? "+" : ""}${d.pnl_pct}%</strong></div>` +
+    `<div class="pf-metric"><span>Доходность (6м)</span><strong class="${d.total_return_pct >= 0 ? "up" : "down"}">${d.total_return_pct}%</strong></div>` +
+    `<div class="pf-metric"><span>Sharpe</span><strong class="${d.sharpe >= 1 ? "up" : d.sharpe < 0 ? "down" : ""}">${d.sharpe}</strong></div>` +
+    `<div class="pf-metric"><span>Волатильность</span><strong>${d.volatility_pct}%</strong></div>` +
+    `<div class="pf-metric"><span>Макс. просадка</span><strong class="down">${d.max_drawdown_pct}%</strong></div>`;
+  ebox.innerHTML = sparkline(d.equity);
+
+  const cur = (h) => moverCurrency({ market: h.market, id: h.pair });
+  hbox.innerHTML =
+    `<div class="pf-row pf-hhead"><span>Инструмент</span><span>Кол-во</span><span>Цена</span><span>Стоимость</span><span>P&L</span><span>Доля</span><span></span></div>` +
+    d.holdings.map((h) =>
+      `<div class="pf-row"><span class="pf-inst">${h.name}</span>` +
+      `<span>${h.qty}</span>` +
+      `<span>${cur(h)}${formatPrice(h.price)}</span>` +
+      `<span>${cur(h)}${h.value.toLocaleString("en-US")}</span>` +
+      `<span class="${h.pnl_pct >= 0 ? "up" : "down"}">${h.pnl_pct == null ? "—" : (h.pnl_pct >= 0 ? "+" : "") + h.pnl_pct + "%"}</span>` +
+      `<span>${h.weight_pct}%</span>` +
+      `<button class="pf-del" data-del="${h.pair}" title="Убрать">✕</button></div>`
+    ).join("");
+  hbox.querySelectorAll(".pf-del").forEach((b) =>
+    b.addEventListener("click", () => { setPortfolio(getPortfolio().filter((h) => h.id !== b.dataset.del)); loadPortfolio(); })
+  );
+}
+
+function sparkline(values) {
+  if (!values || values.length < 2) return "";
+  const w = 100, h = 28, min = Math.min(...values), max = Math.max(...values), rng = max - min || 1;
+  const pts = values.map((v, i) => `${(i / (values.length - 1) * w).toFixed(1)},${(h - (v - min) / rng * h).toFixed(1)}`).join(" ");
+  const up = values[values.length - 1] >= values[0];
+  const col = up ? "#22c55e" : "#ef4444";
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;
+}
+
+function renderPersona(p) {
+  const box = $("personaResult");
+  if (!box || !p) return;
+  const en = window.I18N && I18N.get() === "en";
+  const v = PERSONA_VERDICT[p.verdict] || PERSONA_VERDICT.hold;
+  const li = (arr, cls) => (arr || []).map((x) => `<li class="${cls}">${x}</li>`).join("");
+  box.innerHTML =
+    `<div class="persona-top"><span class="persona-name">${p.emoji} ${p.name}</span>` +
+    `<span class="verdict-badge ${v.cls}">${en ? v.en : v.ru}</span>` +
+    `<span class="persona-conf">${p.confidence || 0}%</span></div>` +
+    (p.horizon ? `<div class="persona-horizon">${en ? "Horizon" : "Горизонт"}: ${p.horizon}</div>` : "") +
+    `<p class="persona-summary">${p.summary || ""}</p>` +
+    `<ul class="persona-points">${li(p.pros, "pro")}${li(p.cons, "con")}</ul>` +
+    `<p class="persona-note">${en ? "AI opinion in a style, not financial advice." : "AI-мнение в стиле, не финансовая рекомендация."} · ${p.model || ""}</p>`;
+}
+$("aiKeyClose")?.addEventListener("click", closeAiKey);
+$("aiKeyOverlay")?.addEventListener("click", (e) => { if (e.target === $("aiKeyOverlay")) closeAiKey(); });
 $("modalClose")?.addEventListener("click", closeModal);
 $("modalOverlay")?.addEventListener("click", (e) => {
   if (e.target === $("modalOverlay")) closeModal();
@@ -1647,10 +2371,12 @@ document.querySelectorAll(".btn-interval").forEach((btn) => {
     btn.classList.add("active");
     tvInterval = btn.dataset.interval;
     if (tvReady) TradingViewWidget.setInterval(tvInterval);
-    const lwMap = { "5": "5m", "15": "15m", "60": "1h", "240": "4h", D: "1d" };
-    const lwTf = lwMap[tvInterval];
+    const lwTf = LW_TF_MAP[tvInterval];
     if (lwReady && activePair && lwTf) {
-      TradingChart.loadPair(activePair, activeMarket, lwTf);
+      Promise.resolve(TradingChart.loadPair(activePair, activeMarket, lwTf)).then(() => {
+        // перерисовываем зоны входа под новый таймфрейм (стоп/тейк под его ATR)
+        if (lastAnalysisData) updateChartTrend(lastAnalysisData);
+      });
     }
   });
 });
@@ -1672,6 +2398,8 @@ document.addEventListener("DOMContentLoaded", () => {
   } catch (e) {}
   applyMode(savedMode);
   window.I18N?.init();
+  buildPersonaChips();
+  loadMacro();
   $("fundingPanel")?.classList.add("hidden");
   switchTab("overview");
   // Стартуем на рыночной вкладке (крипта), грузим инструмент по умолчанию.

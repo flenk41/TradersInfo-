@@ -107,6 +107,10 @@ class MarketAnalysis:
     deep: Any = None
     accuracy: Any = None
     news: dict | None = None
+    entry_zones_by_tf: dict = field(default_factory=dict)
+    imbalances: list[dict] = field(default_factory=list)
+    imbalances_by_tf: dict = field(default_factory=dict)
+    imbalance_summary: str = ""
 
 
 def _ema(series: pd.Series, period: int) -> pd.Series:

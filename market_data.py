@@ -25,18 +25,22 @@ from yfinance_provider import (
 )
 
 
+def _is_moex(pair: str, market: str) -> bool:
+    """Любая бумага с суффиксом .ME — это MOEX (а не только из каталога)."""
+    return market == "stock" and pair.strip().upper().endswith(".ME")
+
+
 def fetch_klines(pair: str, interval: str = "1h", limit: int = 200, market: str | None = None) -> pd.DataFrame:
     m = detect_market(pair, market)
     sym, _ = normalize_pair(pair, m)
     if m == "crypto":
         return _fetch_klines_binance(sym, interval, limit)
-    from instruments_catalog import get_instrument, resolve_yf_symbol
-
-    inst = get_instrument(pair, m) if m == "stock" else None
-    if inst and inst.region == "ru":
+    if _is_moex(pair, m):
         from moex_provider import fetch_klines_moex
 
-        return fetch_klines_moex(inst.id, interval, limit)
+        return fetch_klines_moex(pair, interval, limit)
+    from instruments_catalog import resolve_yf_symbol
+
     yf_sym = resolve_yf_symbol(pair, m) if m == "stock" else sym
     return fetch_klines_yf(yf_sym, interval, limit)
 
@@ -46,13 +50,12 @@ def fetch_ticker_24h(pair: str, market: str | None = None) -> dict[str, Any]:
     sym, _ = normalize_pair(pair, m)
     if m == "crypto":
         return _fetch_ticker_binance(sym)
-    from instruments_catalog import get_instrument, resolve_yf_symbol
-
-    inst = get_instrument(pair, m) if m == "stock" else None
-    if inst and inst.region == "ru":
+    if _is_moex(pair, m):
         from moex_provider import fetch_ticker_moex
 
-        return fetch_ticker_moex(inst.id)
+        return fetch_ticker_moex(pair)
+    from instruments_catalog import resolve_yf_symbol
+
     yf_sym = resolve_yf_symbol(pair, m) if m == "stock" else sym
     return fetch_ticker_24h_yf(yf_sym)
 
@@ -63,13 +66,12 @@ def validate_symbol(pair: str, market: str | None = None) -> bool:
     try:
         if m == "crypto":
             return _validate_binance(sym)
-        from instruments_catalog import get_instrument, resolve_yf_symbol
-
-        inst = get_instrument(pair, m) if m == "stock" else None
-        if inst and inst.region == "ru":
+        if _is_moex(pair, m):
             from moex_provider import validate_moex
 
-            return validate_moex(inst.id)
+            return validate_moex(pair)
+        from instruments_catalog import resolve_yf_symbol
+
         yf_sym = resolve_yf_symbol(pair, m) if m == "stock" else sym
         return validate_symbol_yf(yf_sym)
     except Exception:
