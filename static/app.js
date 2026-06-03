@@ -328,6 +328,28 @@ function fmtDate(ts) {
     " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
+// ---- Журнал хранится в localStorage (как watchlist/портфель, без сервера) ----
+const JKEY = "signal_journal";
+function jLoad() { try { return JSON.parse(localStorage.getItem(JKEY) || "[]"); } catch (e) { return []; } }
+function jSave(arr) { try { localStorage.setItem(JKEY, JSON.stringify(arr)); } catch (e) {} }
+function jStats(rows) {
+  const closed = rows.filter((r) => r.status === "tp" || r.status === "sl");
+  const wins = closed.filter((r) => r.status === "tp");
+  const n = closed.length;
+  const rs = closed.map((r) => r.r_multiple).filter((v) => v != null);
+  const gw = rs.filter((v) => v > 0).reduce((a, b) => a + b, 0);
+  const gl = Math.abs(rs.filter((v) => v < 0).reduce((a, b) => a + b, 0));
+  return {
+    total: rows.length,
+    open: rows.filter((r) => r.status === "open").length,
+    closed: n, wins: wins.length, losses: n - wins.length,
+    expired: rows.filter((r) => r.status === "expired").length,
+    win_rate: n ? Math.round((wins.length / n) * 1000) / 10 : 0,
+    avg_r: rs.length ? Math.round((rs.reduce((a, b) => a + b, 0) / rs.length) * 100) / 100 : 0,
+    profit_factor: gl ? Math.round((gw / gl) * 100) / 100 : (gw ? Math.round(gw * 100) / 100 : 0),
+  };
+}
+
 function renderJournal(data) {
   const statsEl = $("journalStats");
   const list = $("journalList");
@@ -378,13 +400,10 @@ function renderJournal(data) {
   });
 
   list.querySelectorAll(".j-del").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await fetch("/api/journal/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: btn.dataset.id }),
-      });
-      loadJournal();
+    btn.addEventListener("click", () => {
+      const arr = jLoad().filter((s) => s.id !== btn.dataset.id);
+      jSave(arr);
+      renderJournal({ signals: arr, stats: jStats(arr) });
     });
   });
   applyI18n();
@@ -394,13 +413,24 @@ let journalLoading = false;
 async function loadJournal() {
   const list = $("journalList");
   if (!list) return;
-  if (journalLoading) return;
+  const sigs = jLoad();
+  // Мгновенно рисуем из localStorage (статистика по сохранённым исходам)…
+  renderJournal({ signals: sigs, stats: jStats(sigs) });
+  // …затем сервер дооценивает открытые сигналы по истории цены (stateless).
+  if (journalLoading || !sigs.length) return;
   journalLoading = true;
   try {
-    const json = await (await fetch("/api/journal")).json();
-    if (json.ok) renderJournal(json);
+    const json = await (await fetch("/api/journal/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signals: sigs }),
+    })).json();
+    if (json.ok && json.signals) {
+      jSave(json.signals);
+      renderJournal({ signals: json.signals, stats: json.stats });
+    }
   } catch (e) {
-    /* keep previous */
+    /* нет сети — оставляем локальный рендер */
   } finally {
     journalLoading = false;
   }
@@ -495,7 +525,10 @@ async function confirmJournalAdd() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })).json();
-    if (json.ok) {
+    if (json.ok && json.signal) {
+      const arr = jLoad();
+      arr.unshift(json.signal);   // сохраняем запись в localStorage
+      jSave(arr);
       closeJournalAdd();
       switchView("journal");
       loadJournal();
@@ -1843,19 +1876,10 @@ document.querySelectorAll("#jaddSide button").forEach((b) =>
   })
 );
 $("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
-$("btnJournalClear")?.addEventListener("click", async () => {
+$("btnJournalClear")?.addEventListener("click", () => {
   if (!confirm("Удалить ВСЕ записи журнала? Действие необратимо.")) return;
-  try {
-    const json = await (await fetch("/api/journal/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    })).json();
-    if (json.ok) loadJournal();
-    else showError(json.error || "Не удалось очистить журнал");
-  } catch (e) {
-    showError("Не удалось очистить журнал");
-  }
+  jSave([]);
+  loadJournal();
 });
 
 let entryConfig = {};

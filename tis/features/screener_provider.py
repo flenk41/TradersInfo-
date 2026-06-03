@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
-from accuracy_estimator import _quick_backtest_4h
-from analyzer import _atr, _ema, _rsi
-from instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US
-from market_data import fetch_klines
+from tis.analysis.accuracy_estimator import _quick_backtest_4h
+from tis.analysis.analyzer import _atr, _ema, _rsi
+from tis.data.instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US
+from tis.data.market_data import fetch_klines
 
 _TF_LIMIT = {"1h": 120, "4h": 120, "1d": 160}
+_MAX_WORKERS = 10  # лёгкие одиночные запросы свечей → можно много параллельных
 
 
 def _universe(market: str, region: str):
@@ -60,19 +61,19 @@ def _signal(trend: str, rsi: float) -> str:
 
 
 def _full_score(inst, df, trend: str, rsi: float, change_pct: float):
-    """Балл согласованности ИЗ ПОЛНОГО анализа — совпадает с вкладкой «Обзор».
+    """Балл согласованности.
 
-    Использует общий кэш (engine.cached_analysis), поэтому значение идентично
-    тому, что покажет Обзор при клике на инструмент. Если полный анализ почему-то
-    не удался (сеть/блокировка), мягко откатываемся на лёгкую оценку `_consistency`,
-    чтобы колонка не пустовала.
+    Если полный анализ инструмента УЖЕ лежит в кэше (его открывали в «Обзоре»),
+    берём оттуда точное значение — совпадает с Обзором. Иначе считаем лёгкий
+    прокси `_consistency` по одному ТФ. Скринер НЕ запускает полный analyze_pair
+    сам (это было главным тормозом — ~5с на инструмент по всей вселенной).
     """
     try:
-        from engine import cached_analysis
+        from tis.core.data_cache import peek
 
-        a = cached_analysis(inst.id, inst.market)
+        key = f"analyze:{inst.market or 'auto'}:{inst.id.upper()}"
+        a = peek(key)
         if a is not None and getattr(a, "accuracy", None):
-            # то же значение (с десятой), что показывает Обзор — без расхождений
             return round(float(a.accuracy.overall_pct), 1)
     except Exception:
         pass
@@ -149,9 +150,10 @@ def screen_market(market: str, region: str = "all", tf: str = "1d") -> dict:
         tf = "1d"
     universe = _universe(market, region)
     rows = []
-    # Полный анализ на инструмент тяжёлый (мульти-ТФ + новости) — умеренная
-    # параллельность, чтобы не упереться в лимиты бирж. Результат кэшируется на 5 мин.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Каждый _row теперь делает лишь ОДИН лёгкий запрос свечей (полный анализ из
+    # горячего пути убран) — нагрузка I/O-bound, поэтому поднимаем параллельность.
+    # Результат скринера кэшируется на 5 мин (web_app), так что всплески редки.
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         for r in pool.map(lambda i: _row(i, tf), universe):
             if r is not None:
                 rows.append(r)

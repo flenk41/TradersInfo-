@@ -19,6 +19,18 @@ def get_cached(key: str, loader: Callable[[], Any], ttl: float = _TTL_SEC) -> An
     return value
 
 
+def peek(key: str, ttl: float = _TTL_SEC) -> Any | None:
+    """Вернуть значение из кэша, если оно свежее, иначе None — БЕЗ вычисления.
+
+    В отличие от get_cached не запускает loader на промахе. Нужно там, где
+    дорого считать на каждый промах (напр. скринер не должен гонять полный
+    analyze_pair по всей вселенной — берёт балл, только если он уже в кэше)."""
+    hit = _store.get(key)
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    return None
+
+
 def invalidate(prefix: str | None = None) -> None:
     if prefix is None:
         _store.clear()

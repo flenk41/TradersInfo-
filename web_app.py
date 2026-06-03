@@ -22,18 +22,47 @@ except ImportError:
 
 from flask import Flask, jsonify, render_template, request
 
-from instruments_catalog import catalog_for_frontend, list_instruments
-from data_cache import get_cached, invalidate
-from engine import analyze_pair
-from formatter import format_analysis, format_position
-from market_data import fetch_funding_history, fetch_klines, fetch_ticker_24h
-from markets import MarketDataError, detect_market, normalize_pair, to_tradingview_symbol
-from position_calculator import PositionInput, calculate_position
-from serialization import analysis_to_dict, position_to_dict
+from tis.data.instruments_catalog import catalog_for_frontend, list_instruments
+from tis.core.data_cache import get_cached, invalidate
+from tis.engine import analyze_pair
+from tis.core.formatter import format_analysis, format_position
+from tis.data.market_data import fetch_funding_history, fetch_klines, fetch_ticker_24h
+from tis.core.markets import MarketDataError, detect_market, normalize_pair, to_tradingview_symbol
+from tis.analysis.position_calculator import PositionInput, calculate_position
+from tis.core.serialization import analysis_to_dict, position_to_dict
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+# --- Заголовки безопасности ------------------------------------------------
+# CSP подобран под реальные ресурсы фронта: lightweight-charts (unpkg),
+# Google Fonts, TradingView (script + iframe). 'unsafe-inline' оставлен, т.к.
+# в index.html есть инлайн-скрипты/стили (сборщика нет — vanilla). connect-src
+# разрешает 'self' (AI-ключи BYOK шлются на наш сервер, он сам ходит к провайдерам).
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://unpkg.com https://s.tradingview.com https://www.tradingview.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self'; "
+    "frame-src https://www.tradingview.com https://s.tradingview.com; "
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+)
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("Content-Security-Policy", _CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    # HSTS включаем только под HTTPS (за reverse-proxy), иначе ломает локальный http.
+    if request.is_secure or request.headers.get("X-Forwarded-Proto") == "https":
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
 
 # --- Простой in-memory rate-limit на IP+эндпоинт ---------------------------
 # Защищает апстрим-источники (Binance/Yahoo/MOEX/Google) и платный OpenAI от
@@ -116,7 +145,7 @@ def api_instruments_search():
         region = "all"
     q = request.args.get("q", "").strip()
     try:
-        from universe import search_universe
+        from tis.data.universe import search_universe
 
         items = search_universe(market, region, q)
         return jsonify({"ok": True, "items": items, "count": len(items)})
@@ -302,7 +331,7 @@ def api_news():
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
     try:
-        from news_provider import build_query, fetch_news
+        from tis.features.news_provider import build_query, fetch_news
 
         m = detect_market(pair, market)
         query = build_query(pair, m, lang)
@@ -340,7 +369,7 @@ def api_news_ai():
     ai_base = (body.get("ai_base") or "").strip() or None
     ai_model = (body.get("ai_model") or "").strip() or None
 
-    from ai_news import AINewsError, analyze_news, is_configured
+    from tis.ai.ai_news import AINewsError, analyze_news, is_configured
 
     if not ai_key and not is_configured():
         return jsonify(
@@ -352,8 +381,8 @@ def api_news_ai():
         ), 200
 
     try:
-        from instruments_catalog import get_instrument
-        from news_provider import build_query, fetch_news
+        from tis.data.instruments_catalog import get_instrument
+        from tis.features.news_provider import build_query, fetch_news
 
         m = detect_market(pair, market)
         items = get_cached(
@@ -400,8 +429,8 @@ def api_ai_persona():
     ai_base = (body.get("ai_base") or "").strip() or None
     ai_model = (body.get("ai_model") or "").strip() or None
 
-    from ai_personas import PersonaError, analyze_persona, build_snapshot
-    from ai_news import is_configured
+    from tis.ai.ai_personas import PersonaError, analyze_persona, build_snapshot
+    from tis.ai.ai_news import is_configured
 
     if not ai_key and not is_configured():
         return jsonify({
@@ -416,7 +445,7 @@ def api_ai_persona():
         # Персонам стоимости/роста добавляем фундаментал акции (P/E, маржа, рост).
         if persona_id in ("value", "growth", "deepvalue") and detect_market(pair, market) == "stock":
             try:
-                from fundamentals_provider import fundamentals_line
+                from tis.features.fundamentals_provider import fundamentals_line
                 fl = get_cached(
                     f"fundline:{lang}:{pair.upper()}",
                     lambda: fundamentals_line(pair, "stock", lang),
@@ -429,7 +458,7 @@ def api_ai_persona():
         # Персоне «Макро» добавляем реальный макро-фон из FRED (если настроен).
         if persona_id == "macro":
             try:
-                from fred_provider import is_configured as _fred_ok, macro_line
+                from tis.features.fred_provider import is_configured as _fred_ok, macro_line
                 fred_key = (body.get("fred_key") or "").strip() or None
                 if fred_key or _fred_ok():
                     tag = "env" if not fred_key else fred_key[:6]
@@ -459,7 +488,7 @@ def api_macro():
     lang = _lang_param()
     body = request.get_json(silent=True) or {}
     user_key = (body.get("fred_key") or request.args.get("fred_key") or "").strip() or None
-    from fred_provider import fetch_macro, is_configured
+    from tis.features.fred_provider import fetch_macro, is_configured
 
     if not user_key and not is_configured():
         return jsonify({
@@ -490,7 +519,7 @@ def api_movers():
     if region not in ("ru", "us", "all"):
         region = "all"
     try:
-        from movers_provider import fetch_movers
+        from tis.features.movers_provider import fetch_movers
 
         data = get_cached(
             f"movers:{market}:{region}:{rng}",
@@ -513,7 +542,7 @@ def api_correlations():
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
     try:
-        from correlation_provider import correlations
+        from tis.features.correlation_provider import correlations
 
         m = detect_market(pair, market)
         data = get_cached(
@@ -553,7 +582,7 @@ def api_portfolio_risk():
     if not isinstance(holdings, list):
         return jsonify({"ok": False, "error": "Неверный формат портфеля"}), 400
     try:
-        from portfolio_provider import portfolio_risk
+        from tis.features.portfolio_provider import portfolio_risk
 
         data = portfolio_risk(holdings)
         return jsonify({"ok": True, **data})
@@ -570,7 +599,7 @@ def api_fundamentals():
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
     try:
-        from fundamentals_provider import fetch_fundamentals
+        from tis.features.fundamentals_provider import fetch_fundamentals
 
         m = detect_market(pair, market)
         data = get_cached(
@@ -591,7 +620,7 @@ def api_dividends():
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
     try:
-        from fundamentals_provider import fetch_dividend_info
+        from tis.features.fundamentals_provider import fetch_dividend_info
 
         m = detect_market(pair, market)
         data = get_cached(
@@ -613,7 +642,7 @@ def api_screener():
         region = "all"
     tf = request.args.get("tf", "1d").strip().lower()
     try:
-        from screener_provider import screen_market
+        from tis.features.screener_provider import screen_market
 
         data = get_cached(
             f"screener:{market}:{region}:{tf}",
@@ -625,24 +654,17 @@ def api_screener():
         return jsonify({"ok": False, "error": f"Не удалось загрузить скринер: {e}"}), 500
 
 
-@app.route("/api/journal", methods=["GET"])
-def api_journal():
-    import signal_journal
-
-    try:
-        data = signal_journal.get_journal(fetch_klines)
-        return jsonify({"ok": True, **data})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Ошибка журнала: {e}"}), 500
-
+# Журнал сигналов хранится на КЛИЕНТЕ (localStorage). Сервер только: валидирует
+# запись при добавлении и stateless-оценивает исходы по истории цены. Никакого
+# общего файла — нет утечки данных между пользователями (см. signal_journal).
 
 @app.route("/api/journal/add", methods=["POST"])
 def api_journal_add():
-    import signal_journal
+    from tis.features import signal_journal
 
     data = request.get_json(silent=True) or {}
     try:
-        record = signal_journal.add_signal(data)
+        record = signal_journal.build_record(data)  # валидирует, НЕ сохраняет
         return jsonify({"ok": True, "signal": record})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -650,19 +672,17 @@ def api_journal_add():
         return jsonify({"ok": False, "error": f"Не удалось записать сигнал: {e}"}), 500
 
 
-@app.route("/api/journal/delete", methods=["POST"])
-def api_journal_delete():
-    import signal_journal
+@app.route("/api/journal/evaluate", methods=["POST"])
+def api_journal_evaluate():
+    from tis.features import signal_journal
 
     data = request.get_json(silent=True) or {}
-    sid = (data.get("id") or "").strip()
-    if data.get("all"):
-        signal_journal.clear_all()
-        return jsonify({"ok": True})
-    if not sid:
-        return jsonify({"ok": False, "error": "Укажите id сигнала"}), 400
-    ok = signal_journal.delete_signal(sid)
-    return jsonify({"ok": ok})
+    signals = data.get("signals") or []
+    try:
+        result = signal_journal.evaluate(signals, fetch_klines)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка оценки журнала: {e}"}), 500
 
 
 def run_server(host: str = "127.0.0.1", port: int = 5000, open_browser: bool = True) -> None:

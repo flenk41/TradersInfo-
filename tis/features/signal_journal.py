@@ -1,49 +1,32 @@
-"""Журнал сигналов: фиксация и автопроверка исходов (TP/SL) по истории цены.
+"""Журнал сигналов — STATELESS оценка исходов (TP/SL) по истории цены.
 
-Идея: вместо эвристической «точности» накапливаем реальные сделки-сигналы и
-смотрим, что сработало первым — тейк или стоп. Так получаем измеренный винрейт,
-средний R и экспектанси.
+⚠️ Сервер НЕ хранит журнал. Записи живут на КЛИЕНТЕ (localStorage, как watchlist
+и портфель) — поэтому нет общего файла, нет «утечки» данных между пользователями
+и нет гонок на запись. Под мобильные приложения это родная модель.
 
-Допущения (важно для честности цифр):
-- вход считается исполненным сразу по entry в момент сигнала;
-- при касании и стопа, и тейка в одной свече консервативно засчитываем СТОП;
-- издержки (комиссия/спред) пока не вычитаются — это следующий шаг.
+Здесь только чистые функции:
+- `build_record(payload)` — валидирует форму и собирает запись (id, R:R, статус open);
+- `evaluate(signals, fetch_klines)` — по истории цены смотрит, что сработало
+  первым (тейк/стоп), закрывает открытые записи и считает статистику.
+
+Допущения (для честности цифр):
+- вход исполнен сразу по entry в момент сигнала;
+- если в одной свече задеты и стоп, и тейк — консервативно засчитываем СТОП;
+- издержки (комиссия/спред) пока не вычитаются.
 """
 
 from __future__ import annotations
 
-import json
-import os
-import threading
 import time
 import uuid
 
-_FILE = os.path.join(os.path.dirname(__file__), "signals.json")
-_LOCK = threading.Lock()
 _EVAL_HORIZON_DAYS = 14
 _EVAL_INTERVAL = "1h"
 _EVAL_LIMIT = 500
 
 
-def _load() -> list[dict]:
-    if not os.path.exists(_FILE):
-        return []
-    try:
-        with open(_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
-    except (ValueError, OSError):
-        return []
-
-
-def _save(rows: list[dict]) -> None:
-    tmp = _FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(rows, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, _FILE)
-
-
-def add_signal(payload: dict) -> dict:
+def build_record(payload: dict) -> dict:
+    """Валидирует форму и возвращает готовую запись журнала (без сохранения)."""
     side = (payload.get("side") or "").lower()
     if side not in ("long", "short"):
         raise ValueError("side должен быть long или short")
@@ -59,7 +42,7 @@ def add_signal(payload: dict) -> dict:
 
     risk = abs(entry - stop)
     reward = abs(tp - entry)
-    record = {
+    return {
         "id": uuid.uuid4().hex[:12],
         "created_ts": int(time.time()),
         "pair": payload.get("pair", ""),
@@ -78,11 +61,6 @@ def add_signal(payload: dict) -> dict:
         "r_multiple": None,
         "evaluated_ts": None,
     }
-    with _LOCK:
-        rows = _load()
-        rows.insert(0, record)
-        _save(rows)
-    return record
 
 
 def _first_touch(side: str, entry: float, stop: float, tp: float, candles) -> tuple[str, float, int] | None:
@@ -107,7 +85,7 @@ def _first_touch(side: str, entry: float, stop: float, tp: float, candles) -> tu
 
 def _evaluate(record: dict, fetch_klines) -> bool:
     """Пытается закрыть открытый сигнал. Возвращает True, если статус изменился."""
-    if record["status"] != "open":
+    if record.get("status") != "open":
         return False
 
     pair = record.get("pair")
@@ -164,21 +142,8 @@ def _evaluate(record: dict, fetch_klines) -> bool:
     return False
 
 
-def evaluate_open(fetch_klines) -> int:
-    """Прогоняет все открытые сигналы. Возвращает число закрытых за вызов."""
-    with _LOCK:
-        rows = _load()
-        changed = 0
-        for r in rows:
-            if r["status"] == "open" and _evaluate(r, fetch_klines):
-                changed += 1
-        if changed:
-            _save(rows)
-        return changed
-
-
 def _stats(rows: list[dict]) -> dict:
-    closed = [r for r in rows if r["status"] in ("tp", "sl")]
+    closed = [r for r in rows if r.get("status") in ("tp", "sl")]
     wins = [r for r in closed if r["status"] == "tp"]
     losses = [r for r in closed if r["status"] == "sl"]
     n = len(closed)
@@ -187,35 +152,27 @@ def _stats(rows: list[dict]) -> dict:
     gross_loss = abs(sum(r for r in rs if r < 0))
     return {
         "total": len(rows),
-        "open": sum(1 for r in rows if r["status"] == "open"),
+        "open": sum(1 for r in rows if r.get("status") == "open"),
         "closed": n,
         "wins": len(wins),
         "losses": len(losses),
-        "expired": sum(1 for r in rows if r["status"] == "expired"),
+        "expired": sum(1 for r in rows if r.get("status") == "expired"),
         "win_rate": round(len(wins) / n * 100, 1) if n else 0.0,
         "avg_r": round(sum(rs) / len(rs), 2) if rs else 0.0,
         "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else (round(gross_win, 2) if gross_win else 0.0),
     }
 
 
-def get_journal(fetch_klines=None) -> dict:
-    if fetch_klines is not None:
-        evaluate_open(fetch_klines)
-    with _LOCK:
-        rows = _load()
+def evaluate(signals: list[dict], fetch_klines) -> dict:
+    """Stateless: оценивает открытые записи (история цены) и считает статистику.
+
+    Принимает список записей (с клиента), возвращает обновлённый список + stats.
+    Ничего не хранит на сервере."""
+    rows = [dict(s) for s in (signals or [])]
+    for r in rows:
+        if r.get("status") == "open":
+            try:
+                _evaluate(r, fetch_klines)
+            except Exception:
+                pass
     return {"signals": rows, "stats": _stats(rows)}
-
-
-def delete_signal(signal_id: str) -> bool:
-    with _LOCK:
-        rows = _load()
-        new = [r for r in rows if r["id"] != signal_id]
-        if len(new) == len(rows):
-            return False
-        _save(new)
-        return True
-
-
-def clear_all() -> None:
-    with _LOCK:
-        _save([])
