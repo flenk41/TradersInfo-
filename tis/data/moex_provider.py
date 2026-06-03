@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from net import request_with_retry
+from tis.core.net import request_with_retry
 
 _MOEX = "https://iss.moex.com/iss"
 _TIMEOUT = 25

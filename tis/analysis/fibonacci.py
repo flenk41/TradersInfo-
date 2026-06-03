@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from market_structure import find_pivot_highs, find_pivot_lows
+from tis.analysis.market_structure import find_pivot_highs, find_pivot_lows
 
 FIB_RATIOS = {
     "0%": 0.0,

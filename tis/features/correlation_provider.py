@@ -12,8 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
-from instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US, get_instrument
-from market_data import fetch_klines
+from tis.data.instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US, get_instrument
+from tis.data.market_data import fetch_klines
 
 _DAYS = 120
 _MIN_OVERLAP = 30

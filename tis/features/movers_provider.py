@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US
-from market_data import fetch_klines
+from tis.data.instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US
+from tis.data.market_data import fetch_klines
 
 _RANGE_DAYS = {"day": 1, "month": 30, "year": 365}
 
@@ -62,7 +62,7 @@ def _change_from_klines(inst, days: int) -> dict | None:
 
 def _crypto_day() -> list[dict]:
     """Быстрый путь: один запрос всех 24ч-тикеров Binance."""
-    from data_fetcher import fetch_all_tickers_24h
+    from tis.data.data_fetcher import fetch_all_tickers_24h
 
     tickers = {t.get("symbol"): t for t in fetch_all_tickers_24h()}
     rows = []

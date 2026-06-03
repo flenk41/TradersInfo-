@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from market_structure import (
+from tis.analysis.market_structure import (
     adx_label,
     calculate_adx,
     detect_structure,

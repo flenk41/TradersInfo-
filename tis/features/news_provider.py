@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
-from net import request_with_retry
+from tis.core.net import request_with_retry
 
 _GN = "https://news.google.com/rss/search"
 _TIMEOUT = 8
@@ -41,7 +41,7 @@ def _sentiment(title: str) -> tuple[str, int]:
 
 
 def build_query(pair: str, market: str, lang: str = "ru") -> str:
-    from instruments_catalog import get_instrument
+    from tis.data.instruments_catalog import get_instrument
 
     inst = get_instrument(pair, market)
     name = inst.name if inst else pair

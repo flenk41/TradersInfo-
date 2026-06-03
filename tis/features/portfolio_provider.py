@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from market_data import fetch_klines
+from tis.data.market_data import fetch_klines
 
 _DAYS = 190
 _TRADING = 252

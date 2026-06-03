@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 
-from ai_news import AIChatError, _extract_json, request_chat  # общий запросчик с fallback
+from tis.ai.ai_news import AIChatError, _extract_json, request_chat  # общий запросчик с fallback
 
 _DEFAULT_MODEL = "gpt-4o-mini"
 

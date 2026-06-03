@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from position_calculator import zone_stop_take
+from tis.analysis.position_calculator import zone_stop_take
 
 
 def _volume_support(df, price: float, bins: int = 24) -> float | None:

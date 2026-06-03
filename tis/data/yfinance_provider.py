@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from net import retry_call
+from tis.core.net import retry_call
 
 try:
     import yfinance as yf

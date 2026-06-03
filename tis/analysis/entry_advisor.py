@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from analyzer import FundingMetrics, MarketBias, TimeframeAnalysis, VolatilityMetrics
-from fibonacci import FibonacciAnalysis
+from tis.analysis.analyzer import FundingMetrics, MarketBias, TimeframeAnalysis, VolatilityMetrics
+from tis.analysis.fibonacci import FibonacciAnalysis
 
 VERDICT_ENTER = "ВХОДИТЬ ✅"
 VERDICT_WAIT = "ЖДАТЬ ⏳"

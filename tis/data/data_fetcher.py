@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from config import BINANCE_FUTURES_URL, BINANCE_SPOT_URL, DEFAULT_QUOTE
+from tis.core.config import BINANCE_FUTURES_URL, BINANCE_SPOT_URL, DEFAULT_QUOTE
 
 
 class BinanceDataError(Exception):

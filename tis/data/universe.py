@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from instruments_catalog import (
+from tis.data.instruments_catalog import (
     CRYPTO_LIST,
     FOREX_LIST,
     STOCKS_RU,
@@ -31,7 +31,7 @@ def _inst_dict(i) -> dict:
 
 
 def _crypto_universe() -> list[dict]:
-    from data_fetcher import fetch_exchange_info
+    from tis.data.data_fetcher import fetch_exchange_info
 
     info = fetch_exchange_info()
     out = []
@@ -106,7 +106,7 @@ def _ru_universe() -> list[dict]:
 
 def get_universe(market: str, region: str = "all") -> list[dict]:
     """Полный список инструментов рынка (с кэшем для живых источников)."""
-    from data_cache import get_cached
+    from tis.core.data_cache import get_cached
 
     if market == "crypto":
         try:

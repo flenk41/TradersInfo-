@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from analyzer import MarketAnalysis
+from tis.analysis.analyzer import MarketAnalysis
 
 
 def _line(char: str = "─", width: int = 50) -> str:

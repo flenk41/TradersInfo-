@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from net import retry_call
+from tis.core.net import retry_call
 
 try:
     import yfinance as yf
@@ -64,7 +64,7 @@ def fetch_fundamentals(pair: str, market: str, lang: str = "ru") -> dict:
     if yf is None:
         return {"available": False, "reason": "no_yfinance"}
 
-    from instruments_catalog import get_instrument, resolve_yf_symbol
+    from tis.data.instruments_catalog import get_instrument, resolve_yf_symbol
 
     yf_sym = resolve_yf_symbol(pair, market)
     inst = get_instrument(pair, market)
@@ -118,7 +118,7 @@ def fetch_dividend_info(pair: str, market: str) -> dict:
     if yf is None:
         return {"available": False, "reason": "no_yfinance"}
 
-    from instruments_catalog import get_instrument, resolve_yf_symbol
+    from tis.data.instruments_catalog import get_instrument, resolve_yf_symbol
 
     yf_sym = resolve_yf_symbol(pair, market)
     inst = get_instrument(pair, market)

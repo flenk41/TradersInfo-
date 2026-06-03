@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from analyzer import MarketAnalysis
+from tis.analysis.analyzer import MarketAnalysis
 
 
 @dataclass

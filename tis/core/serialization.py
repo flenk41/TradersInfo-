@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from analyzer import MarketAnalysis
-from position_calculator import PositionResult
-from accuracy_estimator import AccuracyMetrics
-from risk_manager import RiskPlan
+from tis.analysis.analyzer import MarketAnalysis
+from tis.analysis.position_calculator import PositionResult
+from tis.analysis.accuracy_estimator import AccuracyMetrics
+from tis.analysis.risk_manager import RiskPlan
 
 
 def analysis_to_dict(analysis: MarketAnalysis, pair: str | None = None) -> dict:
     data = asdict(analysis)
     if pair:
-        from markets import to_tradingview_symbol
+        from tis.core.markets import to_tradingview_symbol
 
         data["tv_symbol"] = to_tradingview_symbol(pair, analysis.market_type)
     return data

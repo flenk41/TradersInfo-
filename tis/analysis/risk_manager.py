@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from analyzer import MarketAnalysis
-from position_calculator import liquidation_price
+from tis.analysis.analyzer import MarketAnalysis
+from tis.analysis.position_calculator import liquidation_price
 
 
 @dataclass

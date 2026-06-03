@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from analyzer import FundingMetrics, MarketAnalysis, MarketBias, TimeframeAnalysis, VolatilityMetrics
-from fibonacci import FibonacciAnalysis
+from tis.analysis.analyzer import FundingMetrics, MarketAnalysis, MarketBias, TimeframeAnalysis, VolatilityMetrics
+from tis.analysis.fibonacci import FibonacciAnalysis
 
 
 @dataclass

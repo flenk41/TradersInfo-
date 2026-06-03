@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from analyzer import FundingMetrics, MarketBias, TimeframeAnalysis
-from fibonacci import FibonacciAnalysis
+from tis.analysis.analyzer import FundingMetrics, MarketBias, TimeframeAnalysis
+from tis.analysis.fibonacci import FibonacciAnalysis
 
 
 def _get_tf(tf_analyses: list[TimeframeAnalysis], name: str) -> TimeframeAnalysis | None:

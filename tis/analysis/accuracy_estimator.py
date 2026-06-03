@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from analyzer import MarketAnalysis, TimeframeAnalysis
-from entry_advisor import VERDICT_ENTER
+from tis.analysis.analyzer import MarketAnalysis, TimeframeAnalysis
+from tis.analysis.entry_advisor import VERDICT_ENTER
 
 
 @dataclass

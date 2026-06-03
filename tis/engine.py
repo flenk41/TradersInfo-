@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from analyzer import (
+from tis.analysis.analyzer import (
     _atr,
     analyze_funding,
     analyze_timeframe,
@@ -15,12 +15,12 @@ from analyzer import (
     find_support_resistance,
     MarketAnalysis,
 )
-from config import DEFAULT_TIMEFRAMES, SCALP_TIMEFRAMES
-from deep_analysis import build_deep_analysis
-from entry_advisor import build_trade_recommendation, evaluate_funding
-from entry_zones import build_entry_zones
-from fibonacci import calculate_fibonacci
-from market_data import (
+from tis.core.config import DEFAULT_TIMEFRAMES, SCALP_TIMEFRAMES
+from tis.analysis.deep_analysis import build_deep_analysis
+from tis.analysis.entry_advisor import build_trade_recommendation, evaluate_funding
+from tis.analysis.entry_zones import build_entry_zones
+from tis.analysis.fibonacci import calculate_fibonacci
+from tis.data.market_data import (
     fetch_btc_change_24h,
     fetch_funding_history,
     fetch_klines,
@@ -30,11 +30,11 @@ from market_data import (
     get_open_interest_history,
     validate_symbol,
 )
-from market_reasons import build_market_reasons, levels_to_zones
-from market_structure import find_key_levels
-from markets import MarketDataError, detect_market, normalize_pair
-from accuracy_estimator import build_accuracy_metrics
-from scalping import build_scalping_analysis
+from tis.analysis.market_reasons import build_market_reasons, levels_to_zones
+from tis.analysis.market_structure import find_key_levels
+from tis.core.markets import MarketDataError, detect_market, normalize_pair
+from tis.analysis.accuracy_estimator import build_accuracy_metrics
+from tis.analysis.scalping import build_scalping_analysis
 
 
 def _apply_funding_verdict(funding, verdict) -> None:
@@ -56,7 +56,7 @@ def cached_analysis(pair: str, market: str | None = None) -> "MarketAnalysis":
     числа идентичны, а клик по инструменту после скринера почти мгновенный
     (результат уже в кэше). TTL общий (data_cache, 50с).
     """
-    from data_cache import get_cached
+    from tis.core.data_cache import get_cached
 
     key = f"analyze:{market or 'auto'}:{pair.upper()}"
     return get_cached(key, lambda: analyze_pair(pair, market=market))
@@ -158,8 +158,8 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
 
     # Зоны входа и имбалансы для каждого ТФ: масштабируются под таймфрейм
     # (на 5m уже, на 1D шире). Данные по ТФ уже загружены — без новых запросов.
-    from imbalance import find_imbalances, imbalance_summary
-    from candle_patterns import detect_patterns, next_candle_outlook
+    from tis.analysis.imbalance import find_imbalances, imbalance_summary
+    from tis.analysis.candle_patterns import detect_patterns, next_candle_outlook
 
     entry_zones_by_tf: dict = {}
     imbalances_by_tf: dict = {}
@@ -291,8 +291,8 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     partial.deep = deep
 
     try:
-        from data_cache import get_cached
-        from news_provider import build_query, fetch_news, sentiment_counts
+        from tis.core.data_cache import get_cached
+        from tis.features.news_provider import build_query, fetch_news, sentiment_counts
 
         news_items = get_cached(
             f"news:{m}:{pair.upper()}",
@@ -308,8 +308,8 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     partial.insider = None
     if m == "stock":
         try:
-            from data_cache import get_cached as _gc
-            from insider_provider import insider_signal
+            from tis.core.data_cache import get_cached as _gc
+            from tis.features.insider_provider import insider_signal
 
             partial.insider = _gc(
                 f"insider:{pair.upper()}",

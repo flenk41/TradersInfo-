@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from net import request_with_retry
+from tis.core.net import request_with_retry
 
 _FRED = "https://api.stlouisfed.org/fred/series/observations"
 

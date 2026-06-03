@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import DEFAULT_QUOTE
+from tis.core.config import DEFAULT_QUOTE
 
 
 class MarketDataError(Exception):
@@ -31,7 +31,7 @@ def normalize_pair(pair: str, market: str, quote: str = DEFAULT_QUOTE) -> tuple[
     cleaned = pair.strip().upper().replace(" ", "")
 
     if market == "crypto":
-        from data_fetcher import normalize_symbol
+        from tis.data.data_fetcher import normalize_symbol
 
         sym = normalize_symbol(pair, quote)
         if "/" in pair.upper():
@@ -54,7 +54,7 @@ def normalize_pair(pair: str, market: str, quote: str = DEFAULT_QUOTE) -> tuple[
         return sym, display
 
     # stocks
-    from instruments_catalog import get_instrument, resolve_yf_symbol
+    from tis.data.instruments_catalog import get_instrument, resolve_yf_symbol
 
     inst = get_instrument(pair, "stock")
     if inst:
@@ -84,7 +84,7 @@ def to_tradingview_symbol(pair: str, market: str | None = None) -> str:
         return f"BINANCE:{sym}"
 
     if m == "stock":
-        from instruments_catalog import get_instrument
+        from tis.data.instruments_catalog import get_instrument
 
         inst = get_instrument(pair, "stock")
         if inst and inst.tv_exchange:

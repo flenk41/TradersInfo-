@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from data_cache import get_cached
+from tis.core.data_cache import get_cached
 
 _EXEC_KEYS = ("CEO", "CFO", "PRESIDENT", "CHIEF", "COO")
 
@@ -175,7 +175,7 @@ def insider_signal(pair: str, market: str | None, region: str | None = None) -> 
     is_ru = (region == "ru") or pair.strip().upper().endswith(".ME")
     try:
         if is_ru:
-            from instruments_catalog import resolve_yf_symbol
+            from tis.data.instruments_catalog import resolve_yf_symbol
 
             return _ru_ownership(resolve_yf_symbol(pair, "stock")) or {"available": False}
         ticker = pair.strip().upper().split(".")[0]
@@ -183,7 +183,7 @@ def insider_signal(pair: str, market: str | None, region: str | None = None) -> 
         if res:
             return res
         # фолбэк на доли, если CIK не найден
-        from instruments_catalog import resolve_yf_symbol
+        from tis.data.instruments_catalog import resolve_yf_symbol
 
         return _ru_ownership(resolve_yf_symbol(pair, "stock")) or {"available": False}
     except Exception:
