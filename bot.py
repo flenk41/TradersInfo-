@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 flenk41 (Trading Info Stats). Dual-licensed: AGPL-3.0 or a
+# commercial license (see COMMERCIAL.md).
 """Торговый помощник — анализ криптовалютных пар."""
 
 from __future__ import annotations

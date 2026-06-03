@@ -1,0 +1,35 @@
+Trading Info Stats (TIS)
+Copyright (C) 2026 flenk41 (Trading Info Stats)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+----------------------------------------------------------------------------
+
+DUAL LICENSING
+
+This software is also available under a separate COMMERCIAL LICENSE for users who
+do not wish to comply with the terms of the AGPL-3.0 (e.g. proprietary/closed-source
+products or commercial SaaS without source disclosure). See COMMERCIAL.md.
+
+Contact for commercial licensing:
+  Telegram: https://t.me/TradingInfoStats
+  Author:   https://flenk41.github.io/
+
+----------------------------------------------------------------------------
+
+THIRD-PARTY / ATTRIBUTION
+
+Some product ideas were inspired by FinceptTerminal (AGPL-3.0). Only ideas were
+used, not its source code. Market data is provided by Binance, Yahoo Finance and
+MOEX ISS; charting by TradingView / lightweight-charts. All trademarks belong to
+their respective owners.

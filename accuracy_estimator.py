@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from analyzer import MarketAnalysis, TimeframeAnalysis
+from entry_advisor import VERDICT_ENTER
 
 
 @dataclass
@@ -194,12 +195,16 @@ def build_accuracy_metrics(
     deep = analysis.deep
 
     bias_dir = bias.direction if bias else "neutral"
-    if trade and trade.long_score > trade.short_score + 12:
-        rec_side = "long"
-    elif trade and trade.short_score > trade.long_score + 12:
-        rec_side = "short"
-    else:
-        rec_side = bias_dir if bias_dir != "neutral" else "wait"
+    # Гейт селективности: направленный вердикт (ПОКУПАТЬ/ПРОДАВАТЬ) выдаём ТОЛЬКО
+    # когда лучшая сторона реально «ВХОДИТЬ» (score≥72 + нет блокеров) и явно
+    # доминирует. Иначе — «wait». Это режет слабые сетапы и поднимает долю удачных.
+    rec_side = "wait"
+    if trade:
+        best_side = "long" if trade.long_score >= trade.short_score else "short"
+        best_verdict = trade.long_verdict if best_side == "long" else trade.short_verdict
+        spread = abs(trade.long_score - trade.short_score)
+        if best_verdict == VERDICT_ENTER and spread >= 8:
+            rec_side = best_side
 
     tf_align = _timeframe_alignment(analysis.timeframes, bias_dir)
     bt_rate, bt_n = _quick_backtest_4h(klines_4h)
@@ -229,9 +234,17 @@ def build_accuracy_metrics(
             news_adj = -net * 6
         news_adj = round(max(-6.0, min(6.0, news_adj)), 1)
 
+    # Инсайдерский фактор (акции): бычий — за лонг/против шорта, медвежий — наоборот.
+    ins = getattr(analysis, "insider", None)
+    insider_adj = 0.0
+    if ins and ins.get("available") and ins.get("score_adj") and rec_side in ("long", "short"):
+        a = float(ins["score_adj"])
+        insider_adj = a if rec_side == "long" else -a
+        insider_adj = round(max(-8.0, min(8.0, insider_adj)), 1)
+
     checks, conf_adj = _confirmation_checks(analysis, rec_side)
 
-    overall = round(overall + news_adj + conf_adj, 1)
+    overall = round(overall + news_adj + conf_adj + insider_adj, 1)
     overall = max(35.0, min(92.0, overall))
 
     if overall >= 78 and spread >= 25:
@@ -261,6 +274,9 @@ def build_accuracy_metrics(
         factors.append(
             f"Новостной фон ({news['window_days']}д): {news['good']}↑ / {news['bad']}↓ — {news['label']}{adj_txt}"
         )
+    if ins and ins.get("available") and ins.get("label"):
+        adj_txt = f" ({'+' if insider_adj > 0 else ''}{insider_adj} к баллу)" if insider_adj else ""
+        factors.append(f"{ins['label']}: {ins.get('summary', '')}{adj_txt}")
 
     passed = sum(1 for c in checks if c["status"] == "good")
     expl = (

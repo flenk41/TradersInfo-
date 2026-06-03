@@ -122,7 +122,15 @@ function renderVerdict(d) {
   badge.textContent = label;
   $("verdictTitle").textContent = ttl;
   $("verdictReason").textContent = d.trend_summary || (d.bias && d.bias.summary) || "—";
-  $("verdictConf").textContent = acc != null ? acc + "/100" : "—";
+  $("verdictConf").textContent = acc != null ? acc : "—";
+  const card = $("verdictCard");
+  if (card) { card.classList.remove("v-buy", "v-sell", "v-wait"); card.classList.add("v-" + cls); }
+  const ring = $("verdictConfRing");
+  if (ring) {
+    ring.classList.remove("v-buy", "v-sell", "v-wait");
+    ring.classList.add("v-" + cls);
+    ring.style.setProperty("--pct", acc != null ? acc : 0);
+  }
   // Блок «позиции» (Вход/Стоп/Тейк/R:R/Ликвидация) убран: уровни входа со
   // стопом и тейком показываются на графике.
   applyI18n();
@@ -398,28 +406,87 @@ async function loadJournal() {
   }
 }
 
-async function saveSignal() {
+// ---- Запись сигнала: реальная цена входа пользователя + стоп/тейк от неё ----
+let jaddState = { side: "long", levels: null, recalcTimer: null };
+
+function openJournalAdd() {
   if (!lastAnalysisData || !activePair) {
     showError("Сначала выберите инструмент и нажмите «Анализ»");
     return;
   }
-  let side = lastAnalysisData.accuracy?.recommended_side;
-  if (side !== "long" && side !== "short") side = activeSide;
-  const preview = lastAnalysisData.position_preview?.[side];
-  if (!preview) {
-    showError("Нет рассчитанных уровней для записи");
+  const sigPair = lastAnalysisData.pair || activePair;
+  if (activePair && sigPair !== activePair) {
+    showError("Анализ ещё не обновился для текущего инструмента — нажмите «Анализ» и повторите");
     return;
   }
+  let side = lastAnalysisData.accuracy?.recommended_side;
+  if (side !== "long" && side !== "short") side = activeSide || "long";
+  jaddState.side = side;
+  $("jaddPair").textContent = (lastAnalysisData.display_name || sigPair) + " · " + (side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉");
+  document.querySelectorAll("#jaddSide button").forEach((b) => b.classList.toggle("active", b.dataset.side === side));
+  // По умолчанию — текущая рыночная цена (где человек реально входит сейчас).
+  $("jaddEntry").value = lastAnalysisData.price != null ? lastAnalysisData.price : "";
+  $("jaddLevels").innerHTML = "";
+  $("journalAddOverlay").classList.remove("hidden");
+  jaddRecalc();
+}
+
+function closeJournalAdd() { $("journalAddOverlay")?.classList.add("hidden"); }
+
+async function jaddRecalc() {
+  const entry = parseFloat($("jaddEntry").value);
+  const box = $("jaddLevels");
+  if (isNaN(entry) || entry <= 0) {
+    box.innerHTML = "";
+    jaddState.levels = null;
+    return;
+  }
+  const pair = lastAnalysisData.pair || activePair;
+  const market = lastAnalysisData.market || activeMarket;
+  box.innerHTML = '<div class="dr-row"><span>Расчёт уровней…</span><b>…</b></div>';
+  try {
+    const r = await fetch("/api/position", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair, market, entry, side: jaddState.side, margin: 100, leverage: 10 }),
+    });
+    const j = await r.json();
+    if (!j.ok || !j.position) { box.innerHTML = `<div class="dr-row bad"><span>${j.error || "Не удалось рассчитать"}</span><b>—</b></div>`; jaddState.levels = null; return; }
+    const p = j.position;
+    jaddState.levels = { entry, stop: p.stop_loss, take_profit: p.take_profit, take_profit_2: p.take_profit_2, rr: p.risk_reward };
+    const cur = (typeof curSymbol !== "undefined" ? "" : "");
+    const f = (v) => (v != null ? money(v) : "—");
+    const slPct = entry ? Math.abs((p.stop_loss - entry) / entry * 100).toFixed(2) : "—";
+    const tpPct = entry ? Math.abs((p.take_profit - entry) / entry * 100).toFixed(2) : "—";
+    box.innerHTML =
+      `<div class="dr-row bad"><span>Стоп-лосс (−${slPct}%)</span><b>${f(p.stop_loss)}</b></div>` +
+      `<div class="dr-row good"><span>Тейк-профит (+${tpPct}%)</span><b>${f(p.take_profit)}</b></div>` +
+      (p.take_profit_2 != null ? `<div class="dr-row"><span>Тейк 2</span><b>${f(p.take_profit_2)}</b></div>` : "") +
+      `<div class="dr-row"><span>R:R</span><b>1:${p.risk_reward}</b></div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="dr-row bad"><span>Ошибка сети</span><b>—</b></div>`;
+    jaddState.levels = null;
+  }
+}
+
+async function confirmJournalAdd() {
+  if (!lastAnalysisData) return;
+  const lvl = jaddState.levels;
+  if (!lvl || lvl.stop == null || lvl.take_profit == null) {
+    showError("Укажите корректную цену входа");
+    return;
+  }
+  const sigPair = lastAnalysisData.pair || activePair;
   const payload = {
-    pair: activePair,
-    market: activeMarket,
-    display: lastAnalysisData.display_name || activePair,
-    side,
-    entry: preview.entry_price,
-    stop: preview.stop_loss,
-    take_profit: preview.take_profit,
-    take_profit_2: preview.take_profit_2,
-    rr: preview.risk_reward,
+    pair: sigPair,
+    market: lastAnalysisData.market || activeMarket,
+    display: lastAnalysisData.display_name || sigPair,
+    side: jaddState.side,
+    entry: lvl.entry,
+    stop: lvl.stop,
+    take_profit: lvl.take_profit,
+    take_profit_2: lvl.take_profit_2,
+    rr: lvl.rr,
     accuracy_pct: lastAnalysisData.accuracy?.overall_pct,
   };
   try {
@@ -429,6 +496,7 @@ async function saveSignal() {
       body: JSON.stringify(payload),
     })).json();
     if (json.ok) {
+      closeJournalAdd();
       switchView("journal");
       loadJournal();
     } else {
@@ -656,6 +724,7 @@ function renderScreenerRows(rows) {
     sortable("name", en ? "Instrument" : "Инструмент") +
     sortable("price", en ? "Price" : "Цена") +
     sortable("change_pct", "Δ%") +
+    sortable("score", en ? "Score" : "Балл") +
     sortable("rsi", "RSI") +
     `<span>${en ? "Trend" : "Тренд"}</span>` +
     `<span>${en ? "Signal" : "Сигнал"}</span></div>`;
@@ -674,6 +743,7 @@ function renderScreenerRows(rows) {
       `<span class="scr-inst"><span class="inst-icon-wrap">${moverIconHtml(r)}</span><span class="scr-name">${r.name}<small>${r.subtitle}</small></span></span>` +
       `<span>${moverCurrency(r)}${formatPrice(r.price)}</span>` +
       `<span class="${up ? "up" : "down"}">${up ? "+" : ""}${r.change_pct}%</span>` +
+      `<span class="scr-score ${r.score >= 70 ? "good" : r.score < 52 ? "weak" : "mid"}" title="Балл согласованности сигналов (лёгкая оценка, не вероятность прибыли)">${r.score != null ? r.score : "—"}</span>` +
       `<span class="scr-rsi ${r.rsi >= 70 ? "down" : r.rsi <= 30 ? "up" : ""}">${r.rsi}</span>` +
       `<span class="chip-${tr.cls}">${en ? tr.en : tr.ru}</span>` +
       `<span class="chip-${sg.cls}">${en ? sg.en : sg.ru}</span>`;
@@ -717,6 +787,11 @@ function switchTab(tabId) {
   document.querySelectorAll(".tab-panel").forEach((p) => {
     p.classList.toggle("active", p.id === `tab-${tabId}`);
   });
+  if (tabId === "patterns") {
+    patViewTf = currentLwTf();
+    document.querySelectorAll("#patTf button").forEach((x) => x.classList.toggle("active", x.dataset.tf === patViewTf));
+    renderPatternsView();
+  }
 }
 
 // Верхняя навигация: рынки (Крипта/Акции/Валюта) + Обзор рынка / Новости / Журнал.
@@ -756,6 +831,7 @@ function switchView(view, market) {
   } else if (view === "journal") {
     loadJournal();
   }
+  toggleDividendBtn();
   applyI18n();
 }
 
@@ -781,8 +857,63 @@ function initLightweightChartOnce() {
   if (!main || !funding || !window.LightweightCharts) return;
   TradingChart.init(main, funding, overlay);
   TradingChart.setRefreshCallback?.(onLiveRefresh);
+  applyEntryColors();
   lwReady = true;
 }
+
+// ---- Кастомные цвета линий входа (хранятся в браузере) ----
+const DEFAULT_ENTRY_COLORS = {
+  longEntry: "#2dd4bf", shortEntry: "#a855f7",
+  longEntryApprox: "#5eead4", shortEntryApprox: "#c4b5fd",
+};
+function getEntryColors() {
+  try { return Object.assign({}, DEFAULT_ENTRY_COLORS, JSON.parse(localStorage.getItem("chart_colors") || "{}")); }
+  catch (e) { return Object.assign({}, DEFAULT_ENTRY_COLORS); }
+}
+function applyEntryColors() {
+  TradingChart.setEntryColors?.(getEntryColors());
+}
+const _COLOR_FIELDS = [
+  ["colLong", "longEntry", "dotLong"],
+  ["colShort", "shortEntry", "dotShort"],
+  ["colLongApprox", "longEntryApprox", "dotLongApprox"],
+  ["colShortApprox", "shortEntryApprox", "dotShortApprox"],
+];
+function _syncColorDots() {
+  _COLOR_FIELDS.forEach(([inp, , dot]) => {
+    const d = $(dot); if (d) d.style.background = $(inp).value;
+  });
+}
+function openColorsModal() {
+  const cur = getEntryColors();
+  _COLOR_FIELDS.forEach(([inp, key]) => { if ($(inp)) $(inp).value = cur[key]; });
+  _syncColorDots();
+  $("colorsOverlay").classList.remove("hidden");
+}
+function closeColorsModal() { $("colorsOverlay")?.classList.add("hidden"); }
+function _previewColors() {
+  const c = {};
+  _COLOR_FIELDS.forEach(([inp, key]) => { c[key] = $(inp).value; });
+  TradingChart.setEntryColors?.(c);
+  _syncColorDots();
+}
+$("btnColors")?.addEventListener("click", openColorsModal);
+$("colorsClose")?.addEventListener("click", closeColorsModal);
+$("colorsOverlay")?.addEventListener("click", (e) => { if (e.target === $("colorsOverlay")) closeColorsModal(); });
+_COLOR_FIELDS.forEach(([inp]) => $(inp)?.addEventListener("input", _previewColors));
+$("colorsSave")?.addEventListener("click", () => {
+  const c = {};
+  _COLOR_FIELDS.forEach(([inp, key]) => { c[key] = $(inp).value; });
+  try { localStorage.setItem("chart_colors", JSON.stringify(c)); } catch (e) {}
+  applyEntryColors();
+  closeColorsModal();
+});
+$("colorsReset")?.addEventListener("click", () => {
+  try { localStorage.removeItem("chart_colors"); } catch (e) {}
+  _COLOR_FIELDS.forEach(([inp, key]) => { if ($(inp)) $(inp).value = DEFAULT_ENTRY_COLORS[key]; });
+  applyEntryColors();
+  _syncColorDots();
+});
 
 async function loadChartsForPair(pair, marketType) {
   initLightweightChartOnce();
@@ -822,8 +953,107 @@ function updateChartTrend(data) {
   renderZonesStrip(view);
   TradingChart.setImbalances?.(imbalancesForTf(data));
   renderImbalance(data);
+  if (document.querySelector('.panel-tabs button.active')?.dataset.tab === "patterns") renderPatternsView();
   applyI18n();
 }
+
+// ---- Свечные паттерны (картинки) ----
+// Описание свечей: [x, highY, lowY, bodyTopY, bodyBottomY, цвет g/r/n]; viewBox высота 44.
+const PATTERN_SHAPES = {
+  doji: [40, [[20, 4, 42, 22, 25, "n"]]],
+  marubozu_bull: [40, [[20, 6, 42, 8, 40, "g"]]],
+  marubozu_bear: [40, [[20, 6, 42, 8, 40, "r"]]],
+  hammer: [40, [[20, 8, 42, 8, 18, "g"]]],
+  hanging_man: [40, [[20, 8, 42, 8, 18, "r"]]],
+  shooting_star: [40, [[20, 2, 36, 26, 36, "r"]]],
+  inv_hammer: [40, [[20, 2, 36, 26, 36, "g"]]],
+  engulf_bull: [64, [[18, 14, 34, 20, 30, "r"], [44, 8, 40, 12, 38, "g"]]],
+  engulf_bear: [64, [[18, 14, 34, 20, 30, "g"], [44, 8, 40, 12, 38, "r"]]],
+  morning_star: [88, [[16, 6, 30, 8, 28, "r"], [44, 30, 42, 34, 37, "n"], [72, 10, 40, 14, 38, "g"]]],
+  evening_star: [88, [[16, 14, 38, 16, 36, "g"], [44, 2, 14, 6, 9, "n"], [72, 8, 34, 10, 32, "r"]]],
+  three_soldiers: [88, [[16, 24, 42, 28, 40, "g"], [44, 14, 32, 18, 30, "g"], [72, 4, 22, 8, 20, "g"]]],
+  three_crows: [88, [[16, 2, 20, 4, 18, "r"], [44, 12, 30, 14, 28, "r"], [72, 22, 40, 24, 38, "r"]]],
+};
+const PATTERN_COL = { g: "#22c55e", r: "#ef4444", n: "#9aa7bd" };
+
+function patternSvg(key) {
+  const shape = PATTERN_SHAPES[key];
+  if (!shape) return "";
+  const [w, candles] = shape;
+  let body = "";
+  candles.forEach(([x, hi, lo, bt, bb, col]) => {
+    const c = PATTERN_COL[col] || PATTERN_COL.n;
+    body += `<line x1="${x}" y1="${hi}" x2="${x}" y2="${lo}" stroke="${c}" stroke-width="2"/>`;
+    body += `<rect x="${x - 5}" y="${bt}" width="10" height="${Math.max(2, bb - bt)}" fill="${c}" rx="1"/>`;
+  });
+  return `<svg class="pat-svg" viewBox="0 0 ${w} 44" preserveAspectRatio="xMidYMid meet">${body}</svg>`;
+}
+
+let patViewTf = "1h";
+
+function renderOutlook() {
+  const box = $("patOutlook");
+  if (!box) return;
+  const en = window.I18N && I18N.get() === "en";
+  const o = (lastAnalysisData && lastAnalysisData.pattern_outlook_by_tf && lastAnalysisData.pattern_outlook_by_tf[patViewTf]) || null;
+  if (!o || !o.current_time) { box.innerHTML = ""; return; }
+  const DIR = {
+    up: { ru: "↑ Скорее зелёная (рост)", en: "↑ Likely green (up)", cls: "up" },
+    down: { ru: "↓ Скорее красная (падение)", en: "↓ Likely red (down)", cls: "down" },
+    neutral: { ru: "↔ Неопределённо", en: "↔ Uncertain", cls: "neutral" },
+  };
+  const CONF = { high: en ? "high" : "высокая", medium: en ? "medium" : "средняя", low: en ? "low" : "низкая" };
+  const d = DIR[o.direction] || DIR.neutral;
+  const curCls = o.current_bias === "bullish" ? "up" : "down";
+  const curTxt = o.current_bias === "bullish" ? (en ? "green" : "зелёная") : (en ? "red" : "красная");
+  const based = o.based_on_key ? `${en ? "by pattern" : "по паттерну"} «${en ? o.based_on_en : o.based_on_ru}», ${en ? "confidence" : "уверенность"} ${CONF[o.confidence] || ""}` : (en ? "no recent pattern" : "свежих паттернов нет");
+  box.innerHTML =
+    `<div class="po-cur"><span class="po-label">${en ? "Current candle" : "Текущая свеча"}</span>` +
+    `<span class="po-val">🕐 ${fmtDate(o.current_time)} · <b class="${curCls}">${curTxt}</b></span></div>` +
+    `<div class="po-next"><span class="po-label">${en ? "Next candle forecast" : "Прогноз следующей свечи"}</span>` +
+    `<span class="po-dir ${d.cls}">${en ? d.en : d.ru}</span><small>${based}</small></div>` +
+    `<p class="po-note">${en ? "Heuristic by candlestick theory — not a guarantee." : "Эвристика по теории свечей — не гарантия."}</p>`;
+}
+
+function renderPatternsView() {
+  const grid = $("patternsGrid");
+  if (!grid) return;
+  const en = window.I18N && I18N.get() === "en";
+  if (!lastAnalysisData) {
+    if ($("patOutlook")) $("patOutlook").innerHTML = "";
+    grid.innerHTML = `<span class="pat-empty">${en ? "Open an instrument and click Analyze." : "Откройте инструмент и нажмите «Анализ»."}</span>`;
+    return;
+  }
+  renderOutlook();
+  const byTf = lastAnalysisData.patterns_by_tf || {};
+  const pats = byTf[patViewTf] || [];
+  if (!pats.length) {
+    grid.innerHTML = `<span class="pat-empty">${en ? "No clear patterns on this timeframe" : "Чётких паттернов на этом таймфрейме нет"}</span>`;
+    return;
+  }
+  grid.innerHTML = "";
+  pats.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "pat-card pat-" + p.bias;
+    const when = p.time ? fmtDate(p.time) : "";
+    const ageTxt = p.age === 0 ? (en ? "current candle" : "текущая свеча") : when;
+    card.innerHTML =
+      `<div class="pat-pic">${patternSvg(p.key)}</div>` +
+      `<div class="pat-name">${en ? p.name_en : p.name_ru}</div>` +
+      `<div class="pat-time">🕐 ${ageTxt}</div>` +
+      `<div class="pat-detail">${en ? p.detail_en : p.detail_ru}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+document.querySelectorAll("#patTf button").forEach((b) => {
+  b.addEventListener("click", () => {
+    patViewTf = b.dataset.tf;
+    document.querySelectorAll("#patTf button").forEach((x) => x.classList.toggle("active", x === b));
+    renderPatternsView();
+  });
+});
+
 
 function renderImbalance(data) {
   const summary = $("imbalanceSummary");
@@ -1419,6 +1649,8 @@ async function analyze(pair, forceRefresh = false) {
       ...json.data,
       position_preview: json.position_preview,
       tv_symbol: json.data.tv_symbol || json.tv_symbol,
+      pair: pair,
+      market: json.data.market_type || activeMarket,
     };
     renderVerdict(lastAnalysisData);
 
@@ -1451,16 +1683,21 @@ async function refreshAnalysis() {
   try {
     // без refresh=1 — используем 50-сек серверный кэш; значения освежаются,
     // когда кэш истекает, без «холодного» пересчёта на каждом тике.
+    const refPair = activePair, refMarket = activeMarket;
     const url =
-      "/api/analyze?pair=" + encodeURIComponent(activePair) +
-      "&market=" + encodeURIComponent(activeMarket);
+      "/api/analyze?pair=" + encodeURIComponent(refPair) +
+      "&market=" + encodeURIComponent(refMarket);
     const json = await (await fetch(url)).json();
     if (!json.ok) return;
+    // Инструмент мог смениться, пока шёл запрос — не перетираем свежими чужими данными.
+    if (activePair !== refPair) return;
     render(json.data);
     lastAnalysisData = {
       ...json.data,
       position_preview: json.position_preview,
       tv_symbol: json.data.tv_symbol || json.tv_symbol,
+      pair: refPair,
+      market: json.data.market_type || refMarket,
     };
     renderVerdict(lastAnalysisData);
     updateChartTrend(json.data); // перерисует зоны входа (стоп/тейк) и тренд-бар
@@ -1588,8 +1825,38 @@ $("scrRefresh")?.addEventListener("click", () => loadScreener(true));
 });
 
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
-$("btnJournalAdd")?.addEventListener("click", () => saveSignal());
+$("btnJournalAdd")?.addEventListener("click", () => openJournalAdd());
+$("journalAddClose")?.addEventListener("click", closeJournalAdd);
+$("journalAddOverlay")?.addEventListener("click", (e) => { if (e.target === $("journalAddOverlay")) closeJournalAdd(); });
+$("jaddConfirm")?.addEventListener("click", () => confirmJournalAdd());
+$("jaddEntry")?.addEventListener("input", () => {
+  clearTimeout(jaddState.recalcTimer);
+  jaddState.recalcTimer = setTimeout(jaddRecalc, 350);
+});
+document.querySelectorAll("#jaddSide button").forEach((b) =>
+  b.addEventListener("click", () => {
+    jaddState.side = b.dataset.side;
+    document.querySelectorAll("#jaddSide button").forEach((x) => x.classList.toggle("active", x === b));
+    const sigPair = lastAnalysisData?.display_name || lastAnalysisData?.pair || activePair;
+    if (sigPair) $("jaddPair").textContent = sigPair + " · " + (jaddState.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉");
+    jaddRecalc();
+  })
+);
 $("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
+$("btnJournalClear")?.addEventListener("click", async () => {
+  if (!confirm("Удалить ВСЕ записи журнала? Действие необратимо.")) return;
+  try {
+    const json = await (await fetch("/api/journal/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    })).json();
+    if (json.ok) loadJournal();
+    else showError(json.error || "Не удалось очистить журнал");
+  } catch (e) {
+    showError("Не удалось очистить журнал");
+  }
+});
 
 let entryConfig = {};
 
@@ -1731,6 +1998,17 @@ const MODAL_CONTENT = {
         <p>Telegram-канал: <a href="https://t.me/TradingInfoStats" target="_blank" rel="noopener">@TradingInfoStats</a></p>
         <p class="modal-note">⚠️ Не является индивидуальной инвестиционной рекомендацией.</p>`,
     },
+    support: {
+      title: "❤️ Поддержать проект",
+      html: `
+        <p>Trading Info Stats — бесплатный проект с открытым кодом. Сервис существует благодаря энтузиазму и вашей поддержке.</p>
+        <div class="support-highlight">💯 <b>100% пожертвованных денежных средств</b> пойдут на покупку сервера для сайта и поддержку проекта.</div>
+        <p class="modal-note">Любая сумма помогает держать сервис онлайн и развивать его дальше. Спасибо! 🙏</p>
+        <div class="support-actions">
+          <a class="btn-primary support-btn" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 Поддержать через СБП (Ozon Банк)</a>
+          <a class="support-btn-alt" href="https://flenk41.github.io/" target="_blank" rel="noopener">Другие способы поддержки ↗</a>
+        </div>`,
+    },
   },
   en: {
     privacy: {
@@ -1760,6 +2038,17 @@ const MODAL_CONTENT = {
         <p>Telegram: <a href="https://t.me/TradingInfoStats" target="_blank" rel="noopener">@TradingInfoStats</a></p>
         <p class="modal-note">⚠️ Not individual investment advice.</p>`,
     },
+    support: {
+      title: "❤️ Support the project",
+      html: `
+        <p>Trading Info Stats is a free, open-source project. It runs thanks to enthusiasm and your support.</p>
+        <div class="support-highlight">💯 <b>100% of donated funds</b> go toward buying a server for the site and supporting the project.</div>
+        <p class="modal-note">Any amount helps keep the service online and growing. Thank you! 🙏</p>
+        <div class="support-actions">
+          <a class="btn-primary support-btn" href="https://flenk41.github.io/" target="_blank" rel="noopener">❤️ Support</a>
+          <a class="support-btn-alt" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 SBP / Ozon Bank (Russia) ↗</a>
+        </div>`,
+    },
   },
 };
 
@@ -1767,37 +2056,58 @@ const MODAL_CONTENT = {
 const _GV = {
   market: `<div class="gv-tabs"><span class="gv-tab active">Крипта</span><span class="gv-tab">Акции</span><span class="gv-tab">Валюта</span></div>`,
   sides: `<div class="gv-badges"><span class="gv-badge buy">ПОКУПАТЬ</span><span class="gv-badge sell">ПРОДАВАТЬ</span><span class="gv-badge wait">ЖДАТЬ</span></div>`,
-  entries: `<div class="gv-legend"><span><i style="background:#2dd4bf"></i>вход лонг</span><span><i style="background:#a855f7"></i>вход шорт</span><span><i style="background:#ef4444"></i>стоп</span><span><i style="background:#22c55e"></i>тейк</span></div>`,
+  entries: `<div class="gv-legend"><span><i style="background:#2dd4bf"></i>лонг</span><span><i style="background:#a855f7"></i>шорт</span><span><i style="background:#ef4444"></i>стоп</span><span><i style="background:#22c55e"></i>тейк</span></div>`,
+  approx: `<div class="gv-legend"><span><i style="background:#2dd4bf"></i>лонг</span><span><i style="background:#5eead4;outline:1px dotted #5eead4"></i>~лонг</span><span><i style="background:#a855f7"></i>шорт</span><span><i style="background:#c4b5fd;outline:1px dotted #c4b5fd"></i>~шорт</span></div>`,
+  colors: `<div class="gv-aikey">🎨 → 〰️</div>`,
   score: `<div class="gv-ring"><div class="gv-ring-in">78<small>/100</small></div></div>`,
   pro: `<div class="gv-chips"><span>MACD</span><span>RSI</span><span>ADX</span><span>Fibo</span><span>ATR</span></div>`,
   movers: `<div class="gv-movers"><span class="up">BTC +5.2%</span><span class="up">SOL +3.1%</span><span class="down">XRP −2.4%</span></div>`,
+  screener: `<div class="gv-stat"><span>INJ</span><b class="up">79</b><span>SOL</span><b>53</b></div>`,
   news: `<div class="gv-news"><span class="gv-nb good">Хорошая</span><span class="gv-nb bad">Плохая</span></div>`,
-  journal: `<div class="gv-stat"><span>Винрейт</span><b class="up">62%</b><span>Профит-фактор</span><b>1.8</b></div>`,
+  personas: `<div class="gv-movers"><span>🛡 Баффет</span><span>🚀 Линч</span><span>⚡ Трейдер</span></div>`,
+  dividends: `<div class="gv-aikey">💰 → 📈</div>`,
+  insider: `<div class="gv-aikey">🏛 Form 4</div>`,
+  journal: `<div class="gv-stat"><span>Винрейт</span><b class="up">62%</b><span>R:R</span><b>1:2</b></div>`,
   aikey: `<div class="gv-aikey">🔑 → 🤖</div>`,
+  support: `<div class="gv-aikey">❤️ СБП</div>`,
 };
 
 const GUIDE_SLIDES = {
   ru: [
-    { v: _GV.market, t: "Выбор рынка", d: "Вверху выберите рынок — Крипта, Акции или Валюта. Инструмент берите из полосы сверху или вбейте в поиск: доступны все пары Binance и все бумаги MOEX." },
-    { v: _GV.sides, t: "Лонг и Шорт", d: "ПОКУПАТЬ (лонг) — ставка на рост цены. ПРОДАВАТЬ (шорт) — на падение. ЖДАТЬ — чёткого сигнала нет, лучше не входить." },
-    { v: _GV.entries, t: "Точки входа, стоп, тейк", d: "На графике: бирюзовые линии — вход в лонг, фиолетовые — вход в шорт, красные — стоп-лосс, зелёные — тейк-профит. Что показывать — настройте кнопкой «Точки входа»." },
-    { v: _GV.score, t: "Балл согласованности", d: "0–100: насколько согласованы сигналы (таймфреймы, индикаторы, бэктест 4H). Чем выше — тем «чище» картина. Это НЕ вероятность прибыли." },
-    { v: _GV.pro, t: "Режим «Про»", d: "Переключите «Простой → Про» вверху, чтобы увидеть глубокий анализ: тренды по ТФ, MACD/RSI, волатильность, Фибоначчи, сценарии и уровни." },
-    { v: _GV.movers, t: "Обзор рынка", d: "Лидеры роста и падения за день / месяц / год (как cryptobubbles). Клик по карточке открывает график и анализ инструмента." },
-    { v: _GV.news, t: "Новости + AI", d: "Хорошие и плохие новости по инструменту, плюс AI-разбор с подтверждающими ссылками на источники." },
-    { v: _GV.journal, t: "Журнал сигналов", d: "Нажмите «Записать сигнал» — система сама проверит по истории цены, что сработало первым (тейк или стоп), и посчитает реальный винрейт." },
-    { v: _GV.aikey, t: "AI-разбор (свой ключ)", d: "Для AI-разбора и мнений инвесторов нажмите «🔑 AI-ключ» вверху и вставьте бесплатный ключ. Рекомендую OpenRouter ⭐ (openrouter.ai) — бесплатные модели и доступен из большинства регионов. Ключ хранится только в вашем браузере." },
+    { v: _GV.market, t: "Выбор рынка", d: "Вверху — Крипта / Акции / Валюта. Инструмент берите из полосы сверху или из поиска: доступны все пары Binance и бумаги MOEX. Крипта работает даже без VPN (при блокировке Binance данные берутся с Yahoo)." },
+    { v: _GV.sides, t: "Лонг, Шорт, Ждать", d: "ПОКУПАТЬ (лонг) — ставка на рост, ПРОДАВАТЬ (шорт) — на падение. ЖДАТЬ — сигнал слабый. Направленный сигнал показывается ТОЛЬКО на сильных сетапах — слабые отсекаются, чтобы повышать качество входов." },
+    { v: _GV.entries, t: "Точки входа, стоп, тейк", d: "На графике: бирюзовые линии — вход в лонг, фиолетовые — в шорт, красные — стоп, зелёные — тейк. Стоп ставится за структурой + буфер ATR (не в шуме), тейк — у уровня с R:R ≥ 1:2. Кнопка «Точки входа» — что показывать." },
+    { v: _GV.approx, t: "Приблизительные зоны", d: "Если по тренду явной зоны нет (напр. сильное падение) — система всё равно даёт ПРИБЛИЗИТЕЛЬНЫЙ вход от объёмной поддержки/сопротивления (Volume POC). Такие линии светлее, пунктиром и с пометкой «~»." },
+    { v: _GV.colors, t: "Свои цвета линий", d: "Кнопка «🎨 Цвета» в панели графика — задайте свои цвета для лонга, шорта и приблизительных зон. Меняются на графике сразу, сохраняются в браузере. «Сбросить» вернёт стандартные." },
+    { v: _GV.score, t: "Балл согласованности", d: "Кольцо 0–100: насколько согласованы сигналы — таймфреймы, индикаторы, бэктест 4H, новостной фон и инсайдеры. Цвет кольца и карточки = сигналу. Это НЕ вероятность прибыли, а «чистота» картины." },
+    { v: _GV.pro, t: "Режим «Про»", d: "Переключите «Простой → Про» вверху — глубокий анализ: тренды по ТФ, MACD/RSI/ADX, волатильность, Фибоначчи, имбаланс (FVG), свечные паттерны и сценарии." },
+    { v: _GV.movers, t: "Обзор рынка", d: "Лидеры роста и падения за день / месяц / год (как cryptobubbles), с полосой силы движения. Клик по карточке открывает график и анализ." },
+    { v: _GV.screener, t: "Скринер", d: "Таблица по всем инструментам с сортируемой колонкой «Балл» — тот же балл согласованности, что в Обзоре. Фильтры по тренду, RSI, сигналу. Клик по строке — полный анализ." },
+    { v: _GV.news, t: "Новости + AI", d: "Хорошие и плохие новости по инструменту с тональностью, плюс AI-разбор с подтверждающими ссылками на источники." },
+    { v: _GV.personas, t: "AI-мнения инвесторов", d: "Один актив глазами разных стилей: Баффет (стоимость), Линч (рост), Грэм, Трейдер (техника), Макро. Нужен бесплатный AI-ключ." },
+    { v: _GV.dividends, t: "Калькулятор дивидендов", d: "Для акций — кнопка «💰 Дивиденды»: введите количество акций и цену покупки → увидите дивиденды в год/месяц, доходность на вложения и прибыль/убыток «по средствам»." },
+    { v: _GV.insider, t: "Инсайдеры / умные деньги", d: "Для акций США — живой сигнал по SEC Form 4: покупки инсайдеров (особенно топ-менеджмента/крупные/кластерные) бычьи и добавляют к баллу. Для РФ-акций — доли инсайдеров/институционалов. Виден в факторах согласованности." },
+    { v: _GV.journal, t: "Журнал сигналов", d: "«Записать сигнал» → введите РЕАЛЬНУЮ цену входа (по умолчанию текущая) — стоп/тейк считаются от неё по той же методике, что на графике. Система сама проверит по истории, что сработало (тейк/стоп), и посчитает винрейт. Есть «🗑 Очистить»." },
+    { v: _GV.aikey, t: "AI-ключ (свой, бесплатный)", d: "Для AI-разбора и мнений нажмите «🔑 AI-ключ» вверху и вставьте бесплатный ключ. Рекомендую OpenRouter ⭐ (openrouter.ai) — бесплатные модели, доступен из большинства регионов. Ключ хранится только в вашем браузере." },
+    { v: _GV.support, t: "Поддержать проект", d: "Кнопка «❤️ Поддержать» вверху. Для РФ — оплата через СБП (Ozon Банк). 100% средств идут на сервер для сайта и развитие проекта." },
   ],
   en: [
-    { v: _GV.market.replace("Крипта", "Crypto").replace("Акции", "Stocks").replace("Валюта", "Forex"), t: "Pick a market", d: "Choose Crypto, Stocks or Forex at the top. Pick an instrument from the strip or type in search — all Binance pairs and all MOEX stocks are available." },
-    { v: _GV.sides.replace("ПОКУПАТЬ", "BUY").replace("ПРОДАВАТЬ", "SELL").replace("ЖДАТЬ", "WAIT"), t: "Long and Short", d: "BUY (long) — betting the price rises. SELL (short) — betting it falls. WAIT — no clear signal, better stay out." },
-    { v: `<div class="gv-legend"><span><i style="background:#2dd4bf"></i>long entry</span><span><i style="background:#a855f7"></i>short entry</span><span><i style="background:#ef4444"></i>stop</span><span><i style="background:#22c55e"></i>take</span></div>`, t: "Entry, stop, take", d: "On the chart: turquoise — long entry, purple — short entry, red — stop-loss, green — take-profit. Configure via the “Entry points” button." },
-    { v: _GV.score, t: "Agreement score", d: "0–100: how aligned the signals are (timeframes, indicators, 4H backtest). Higher = cleaner picture. This is NOT a probability of profit." },
-    { v: _GV.pro, t: "Pro mode", d: "Switch “Simple → Pro” to see deep analysis: per-TF trends, MACD/RSI, volatility, Fibonacci, scenarios and levels." },
-    { v: _GV.movers, t: "Market overview", d: "Top gainers and losers for day / month / year (like cryptobubbles). Click a card to open its chart and analysis." },
-    { v: `<div class="gv-news"><span class="gv-nb good">Good</span><span class="gv-nb bad">Bad</span></div>`, t: "News + AI", d: "Good and bad news per instrument, plus an AI review with supporting links to sources." },
-    { v: `<div class="gv-stat"><span>Win rate</span><b class="up">62%</b><span>Profit factor</span><b>1.8</b></div>`, t: "Signal journal", d: "Click “Log signal” — the system checks price history for what hit first (take or stop) and computes a real win rate." },
-    { v: _GV.aikey, t: "AI review (your key)", d: "For the AI review and investor views, click “🔑 AI key” at the top and paste a free key. Recommended: OpenRouter ⭐ (openrouter.ai) — free models, works in most regions. The key is stored only in your browser." },
+    { v: _GV.market.replace("Крипта", "Crypto").replace("Акции", "Stocks").replace("Валюта", "Forex"), t: "Pick a market", d: "Crypto / Stocks / Forex at the top. Pick from the strip or search — all Binance pairs and MOEX stocks. Crypto works even without a VPN (falls back to Yahoo if Binance is blocked)." },
+    { v: _GV.sides.replace("ПОКУПАТЬ", "BUY").replace("ПРОДАВАТЬ", "SELL").replace("ЖДАТЬ", "WAIT"), t: "Long, Short, Wait", d: "BUY (long) — bet on a rise, SELL (short) — on a fall. WAIT — weak signal. A directional call shows ONLY on strong setups — weak ones are filtered out to improve entry quality." },
+    { v: `<div class="gv-legend"><span><i style="background:#2dd4bf"></i>long</span><span><i style="background:#a855f7"></i>short</span><span><i style="background:#ef4444"></i>stop</span><span><i style="background:#22c55e"></i>take</span></div>`, t: "Entry, stop, take", d: "Turquoise — long entry, purple — short, red — stop, green — take. Stop sits behind structure + ATR buffer (out of noise); take at a level with R:R ≥ 1:2. Use the “Entry points” button to toggle." },
+    { v: _GV.approx, t: "Approximate zones", d: "If the trend leaves no clear zone (e.g. a strong drop), the system still gives an APPROXIMATE entry at a volume support/resistance (Volume POC). Such lines are lighter, dotted and marked with “~”." },
+    { v: _GV.colors, t: "Custom line colors", d: "The “🎨 Colors” button on the chart bar — set your own colors for long, short and approximate zones. Applied instantly, saved in your browser. “Reset” restores defaults." },
+    { v: _GV.score, t: "Agreement score", d: "A 0–100 ring: how aligned the signals are — timeframes, indicators, 4H backtest, news and insiders. Ring/card color = the signal. NOT a probability of profit — it's how clean the picture is." },
+    { v: _GV.pro, t: "Pro mode", d: "Switch “Simple → Pro” for deep analysis: per-TF trends, MACD/RSI/ADX, volatility, Fibonacci, imbalance (FVG), candlestick patterns and scenarios." },
+    { v: _GV.movers, t: "Market overview", d: "Top gainers and losers for day / month / year (like cryptobubbles) with a move-strength bar. Click a card to open its chart and analysis." },
+    { v: `<div class="gv-stat"><span>INJ</span><b class="up">79</b><span>SOL</span><b>53</b></div>`, t: "Screener", d: "A table across instruments with a sortable “Score” column — the same agreement score as the Overview. Filters by trend, RSI, signal. Click a row for full analysis." },
+    { v: `<div class="gv-news"><span class="gv-nb good">Good</span><span class="gv-nb bad">Bad</span></div>`, t: "News + AI", d: "Good and bad news per instrument with sentiment, plus an AI review with supporting links to sources." },
+    { v: `<div class="gv-movers"><span>🛡 Buffett</span><span>🚀 Lynch</span><span>⚡ Trader</span></div>`, t: "AI investor views", d: "One asset through different styles: Buffett (value), Lynch (growth), Graham, Trader (technical), Macro. Needs a free AI key." },
+    { v: _GV.dividends, t: "Dividend calculator", d: "For stocks — the “💰 Dividends” button: enter share count and buy price → see yearly/monthly dividends, yield on cost and P&L on your money." },
+    { v: _GV.insider, t: "Insiders / smart money", d: "US stocks — a live SEC Form 4 signal: insider buys (esp. executives/large/clustered) are bullish and add to the score. RU stocks — insider/institutional ownership. Shown in the agreement factors." },
+    { v: `<div class="gv-stat"><span>Win rate</span><b class="up">62%</b><span>R:R</span><b>1:2</b></div>`, t: "Signal journal", d: "“Log signal” → enter your REAL entry price (defaults to current) — stop/take are computed from it with the same method as the chart. The system checks history for what hit first and computes a real win rate. There's a “🗑 Clear”." },
+    { v: _GV.aikey, t: "AI key (your own, free)", d: "For the AI review and views, click “🔑 AI key” and paste a free key. Recommended: OpenRouter ⭐ (openrouter.ai) — free models, works in most regions. Stored only in your browser." },
+    { v: `<div class="gv-aikey">❤️</div>`, t: "Support the project", d: "The “❤️ Support” button at the top. For Russia — payment via SBP (Ozon Bank). 100% of funds go to the server and project development." },
   ],
 };
 
@@ -1876,7 +2186,101 @@ function closeModal() {
 }
 $("linkPrivacy")?.addEventListener("click", () => openModal("privacy"));
 $("linkInfo")?.addEventListener("click", () => openModal("info"));
+$("linkSupport")?.addEventListener("click", () => openModal("support"));
 $("linkGuide")?.addEventListener("click", () => openGuide());
+
+// ---- Калькулятор дивидендов (только для акций) ----
+let divData = null;
+
+function toggleDividendBtn() {
+  const btn = $("linkDividends");
+  if (!btn) return;
+  btn.classList.toggle("hidden", !(activeView === "market" && activeMarket === "stock"));
+}
+
+function divCur(cur) {
+  return cur === "USD" ? "$" : cur === "RUB" ? "₽" : cur === "EUR" ? "€" : cur === "GBP" ? "£" : "";
+}
+function divFmt(v, cur) {
+  if (v == null || isNaN(v)) return "—";
+  const sym = divCur(cur);
+  const n = Math.abs(v) >= 1 ? v.toFixed(2) : parseFloat(v.toFixed(4)).toString();
+  return sym ? `${sym}${n}` : `${n} ${cur}`;
+}
+
+async function openDividends() {
+  if (activeMarket !== "stock" || !activePair) {
+    showError("Откройте акцию и нажмите «Анализ», затем считайте дивиденды");
+    return;
+  }
+  $("dividendOverlay").classList.remove("hidden");
+  $("divStock").textContent = "Загрузка…";
+  $("divMarket").innerHTML = "";
+  $("divResults").innerHTML = "";
+  $("divNote").textContent = "Введите количество акций и цену покупки.";
+  divData = null;
+  try {
+    const r = await fetch(`/api/dividends?pair=${encodeURIComponent(activePair)}&market=stock`);
+    const j = await r.json();
+    if (!j.ok || !j.available) {
+      $("divStock").textContent = (j && j.name) || activePair;
+      $("divNote").textContent = "Нет данных по дивидендам для этой бумаги (часть RU-акций Yahoo не отдаёт).";
+      return;
+    }
+    divData = j;
+    const cur = j.currency || "";
+    $("divStock").textContent = j.name || activePair;
+    $("divMarket").innerHTML =
+      `<div class="dm-row"><span>Текущая цена</span><b>${divFmt(j.price, cur)}</b></div>` +
+      `<div class="dm-row"><span>Дивиденд на акцию (в год)</span><b>${divFmt(j.dividend_per_share, cur)}</b></div>` +
+      `<div class="dm-row"><span>Дивидендная доходность</span><b>${j.dividend_yield != null ? (j.dividend_yield * 100).toFixed(2) + "%" : "—"}</b></div>`;
+    if (j.price != null && !$("divBuy").value) $("divBuy").value = j.price;
+    computeDividends();
+  } catch (e) {
+    $("divNote").textContent = "Ошибка загрузки данных.";
+  }
+}
+
+function computeDividends() {
+  const box = $("divResults");
+  if (!divData) { box.innerHTML = ""; return; }
+  const shares = parseFloat($("divShares").value);
+  const buy = parseFloat($("divBuy").value);
+  const cur = divData.currency || "";
+  const price = divData.price, dps = divData.dividend_per_share;
+  if (isNaN(shares) || shares <= 0) {
+    box.innerHTML = "";
+    $("divNote").textContent = "Введите количество акций.";
+    return;
+  }
+  const rows = [];
+  if (dps != null) {
+    const annual = dps * shares;
+    rows.push(["Дивиденды в год", divFmt(annual, cur), "good"]);
+    rows.push(["≈ в месяц", divFmt(annual / 12, cur), ""]);
+    if (!isNaN(buy) && buy > 0) {
+      rows.push(["Доходность на ваши вложения", ((dps / buy) * 100).toFixed(2) + "%", ""]);
+    }
+  }
+  if (price != null && !isNaN(buy) && buy > 0) {
+    const invested = buy * shares, nowVal = price * shares, pnl = nowVal - invested, pct = (pnl / invested) * 100;
+    rows.push(["Вложено", divFmt(invested, cur), ""]);
+    rows.push(["Сейчас стоит", divFmt(nowVal, cur), ""]);
+    rows.push([
+      (pnl >= 0 ? "Прибыль" : "Убыток") + " по средствам",
+      (pnl >= 0 ? "+" : "") + divFmt(pnl, cur) + ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`,
+      pnl >= 0 ? "good" : "bad",
+    ]);
+  }
+  box.innerHTML = rows.map(([k, v, c]) => `<div class="dr-row ${c || ""}"><span>${k}</span><b>${v}</b></div>`).join("");
+  $("divNote").textContent = "Оценка по годовым дивидендам Yahoo — не гарантия будущих выплат.";
+}
+
+function closeDividends() { $("dividendOverlay")?.classList.add("hidden"); }
+$("linkDividends")?.addEventListener("click", openDividends);
+$("dividendClose")?.addEventListener("click", closeDividends);
+$("dividendOverlay")?.addEventListener("click", (e) => { if (e.target === $("dividendOverlay")) closeDividends(); });
+["divShares", "divBuy"].forEach((id) => $(id)?.addEventListener("input", computeDividends));
 
 // ---- BYOK: пользователь подключает свой AI-ключ (хранится только в браузере) ----
 const AI_PROVIDERS = {

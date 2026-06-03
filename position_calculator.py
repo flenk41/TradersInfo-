@@ -93,9 +93,9 @@ def liquidation_price(
 # Множитель ATR для стопа и буфер за структурой адаптируются к волатильности.
 # Высокая волатильность → шире стоп (меньше выбьет шумом), низкая → плотнее.
 _REGIME = {
-    "high": {"stop_mult": 2.8, "buffer": 0.5, "label": "высокая волатильность"},
-    "medium": {"stop_mult": 2.0, "buffer": 0.3, "label": "средняя волатильность"},
-    "low": {"stop_mult": 1.5, "buffer": 0.2, "label": "низкая волатильность"},
+    "high": {"stop_mult": 2.8, "buffer": 0.5, "min_stop": 1.2, "label": "высокая волатильность"},
+    "medium": {"stop_mult": 2.0, "buffer": 0.3, "min_stop": 0.9, "label": "средняя волатильность"},
+    "low": {"stop_mult": 1.5, "buffer": 0.2, "min_stop": 0.7, "label": "низкая волатильность"},
 }
 
 
@@ -116,11 +116,20 @@ def _pnl(side: str, entry: float, exit_price: float, margin: float, leverage: in
 def _stop_long(entry: float, supports: list[float], fib: list[float], atr: float, reg: dict) -> tuple[float, str]:
     buffer = atr * reg["buffer"]
     cap = entry - atr * (reg["stop_mult"] + 1.5)
+    min_dist = atr * reg["min_stop"]  # минимум, чтобы стоп не стоял в шуме
     structural = [s for s in supports if s < entry * 0.998]
     structural += [f for f in fib if f < entry * 0.998]
     if structural:
         stop = max(structural) - buffer
-        return round(max(stop, cap), 6), "Стоп за ближайшей поддержкой/пивотом + буфер ATR"
+        # Не ближе минимальной дистанции (иначе выбьет шумом) и не дальше cap.
+        stop = min(stop, entry - min_dist)
+        too_close = (max(structural) - buffer) > entry - min_dist
+        reason = (
+            "Стоп за поддержкой/пивотом + буфер ATR"
+            if not too_close
+            else f"Поддержка близко — стоп отодвинут на {reg['min_stop']:g}×ATR (защита от шума)"
+        )
+        return round(max(stop, cap), 6), reason
     stop = entry - atr * reg["stop_mult"]
     return round(stop, 6), f"Стоп {reg['stop_mult']:g}×ATR ({reg['label']}) — нет близкой поддержки"
 
@@ -140,11 +149,20 @@ def _tp_long(entry: float, stop: float, resistances: list[float], fib: list[floa
 def _stop_short(entry: float, resistances: list[float], fib: list[float], atr: float, reg: dict) -> tuple[float, str]:
     buffer = atr * reg["buffer"]
     cap = entry + atr * (reg["stop_mult"] + 1.5)
+    min_dist = atr * reg["min_stop"]  # минимум, чтобы стоп не стоял в шуме
     structural = [r for r in resistances if r > entry * 1.002]
     structural += [f for f in fib if f > entry * 1.002]
     if structural:
         stop = min(structural) + buffer
-        return round(min(stop, cap), 6), "Стоп за ближайшим сопротивлением/пивотом + буфер ATR"
+        # Не ближе минимальной дистанции (иначе выбьет шумом) и не дальше cap.
+        stop = max(stop, entry + min_dist)
+        too_close = (min(structural) + buffer) < entry + min_dist
+        reason = (
+            "Стоп за сопротивлением/пивотом + буфер ATR"
+            if not too_close
+            else f"Сопротивление близко — стоп отодвинут на {reg['min_stop']:g}×ATR (защита от шума)"
+        )
+        return round(min(stop, cap), 6), reason
     stop = entry + atr * reg["stop_mult"]
     return round(stop, 6), f"Стоп {reg['stop_mult']:g}×ATR ({reg['label']}) над входом"
 

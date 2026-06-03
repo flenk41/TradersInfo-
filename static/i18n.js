@@ -195,6 +195,8 @@
     "🌍 Макро-фон": "🌍 Macro backdrop",
     "🏢 Фундаментал": "🏢 Fundamentals",
     "🔗 Корреляции": "🔗 Correlations",
+    "🕯 Свечные паттерны": "🕯 Candle patterns",
+    "Паттерны": "Patterns",
     "Движутся вместе": "Move together",
     "Движутся против": "Move inversely",
     "Загрузка…": "Loading…",
@@ -335,7 +337,7 @@
 
   function updateToggle() {
     const b = document.getElementById("langToggle");
-    if (b) b.textContent = lang === "en" ? "RU" : "EN";
+    if (b) b.textContent = lang === "en" ? "🌐 RU" : "🌐 EN";
   }
 
   function setLang(l) {

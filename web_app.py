@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 flenk41 (Trading Info Stats). Dual-licensed: AGPL-3.0 or a
+# commercial license (see COMMERCIAL.md).
 """Веб-интерфейс с кнопками для торгового помощника."""
 
 from __future__ import annotations
@@ -578,6 +581,27 @@ def api_fundamentals():
         return jsonify({"ok": True, **data})
     except Exception as e:
         return jsonify({"ok": False, "error": f"Не удалось загрузить фундаментал: {e}"}), 500
+
+
+@app.route("/api/dividends")
+@rate_limit(30, 60)
+def api_dividends():
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        from fundamentals_provider import fetch_dividend_info
+
+        m = detect_market(pair, market)
+        data = get_cached(
+            f"div:{m}:{pair.upper()}",
+            lambda: fetch_dividend_info(pair, m),
+            ttl=1800,
+        )
+        return jsonify({"ok": True, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось загрузить дивиденды: {e}"}), 500
 
 
 @app.route("/api/screener")

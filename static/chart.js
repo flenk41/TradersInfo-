@@ -23,8 +23,8 @@ const TradingChart = (() => {
   let curSymbol = "$";
   let live = { pair: null, market: "crypto", interval: "1h" };
   const LIVE_MS = 8000;
-  const VOL_UP = "rgba(34, 197, 94, 0.5)";
-  const VOL_DOWN = "rgba(239, 68, 68, 0.5)";
+  const VOL_UP = "rgba(52, 211, 153, 0.7)";
+  const VOL_DOWN = "rgba(251, 113, 133, 0.7)";
 
   const COLORS = {
     entry: "#3b82f6",
@@ -34,6 +34,8 @@ const TradingChart = (() => {
     current: "#eab308",
     longEntry: "#2dd4bf",
     shortEntry: "#a855f7",
+    longEntryApprox: "#5eead4",
+    shortEntryApprox: "#c4b5fd",
     supportFill: "rgba(34, 197, 94, 0.22)",
     supportBorder: "rgba(34, 197, 94, 0.75)",
     resistFill: "rgba(239, 68, 68, 0.22)",
@@ -55,24 +57,24 @@ const TradingChart = (() => {
     const h = Math.max(280, (parent?.clientHeight || 360) - 8);
 
     mainChart = LightweightCharts.createChart(mainEl, {
-      layout: { background: { color: "#0b0f14" }, textColor: "#8b9cb3" },
-      grid: { vertLines: { color: "#1a2330" }, horzLines: { color: "#1a2330" } },
+      layout: { background: { color: "#0f1623" }, textColor: "#8b9cb3" },
+      grid: { vertLines: { color: "rgba(255,255,255,0.05)" }, horzLines: { color: "rgba(255,255,255,0.05)" } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#243044" },
-      timeScale: { borderColor: "#243044", timeVisible: true },
+      rightPriceScale: { borderColor: "rgba(255,255,255,0.09)" },
+      timeScale: { borderColor: "rgba(255,255,255,0.09)", timeVisible: true },
       width: w,
       height: h,
     });
 
     const fw = fundingEl.clientWidth || w;
     fundingChart = LightweightCharts.createChart(fundingEl, {
-      layout: { background: { color: "#0b0f14" }, textColor: "#8b9cb3" },
-      grid: { vertLines: { color: "#1a2330" }, horzLines: { color: "#1a2330" } },
+      layout: { background: { color: "#0f1623" }, textColor: "#8b9cb3" },
+      grid: { vertLines: { color: "rgba(255,255,255,0.05)" }, horzLines: { color: "rgba(255,255,255,0.05)" } },
       rightPriceScale: {
-        borderColor: "#243044",
+        borderColor: "rgba(255,255,255,0.09)",
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },
-      timeScale: { borderColor: "#243044", visible: true, timeVisible: true },
+      timeScale: { borderColor: "rgba(255,255,255,0.09)", visible: true, timeVisible: true },
       width: fw,
       height: 88,
     });
@@ -105,7 +107,7 @@ const TradingChart = (() => {
       priceScaleId: "vol",
     });
     mainChart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
+      scaleMargins: { top: 0.74, bottom: 0 },
     });
 
     fundingSeries = fundingChart.addHistogramSeries({
@@ -364,6 +366,13 @@ const TradingChart = (() => {
     if (wrap) wrap.classList.toggle("hidden", !visible);
   }
 
+  function _toggleFundingEmpty(empty) {
+    const note = document.getElementById("fundingEmpty");
+    const cont = document.getElementById("fundingChartContainer");
+    if (note) note.classList.toggle("hidden", !empty);
+    if (cont) cont.style.display = empty ? "none" : "";
+  }
+
   async function loadPair(pair, market, interval) {
     const m = market || "crypto";
     const tf = interval || "1h";
@@ -387,7 +396,15 @@ const TradingChart = (() => {
         `/api/funding-history?pair=${encodeURIComponent(pair)}&market=${m}&limit=90`
       );
       const fJson = await fRes.json();
-      if (fJson.ok) setFundingHistory(fJson.points);
+      const pts = fJson.ok && fJson.points ? fJson.points : [];
+      if (pts.length) {
+        setFundingHistory(pts);
+        _toggleFundingEmpty(false);
+      } else {
+        // Нет фандинга (обычно крипто-фолбэк на Yahoo) — поясняем, а не пустой график.
+        if (fundingSeries) fundingSeries.setData([]);
+        _toggleFundingEmpty(true);
+      }
     } else {
       setFundingVisible(false);
       if (fundingSeries) fundingSeries.setData([]);
@@ -478,6 +495,14 @@ const TradingChart = (() => {
     entryZoneLines = [];
   }
 
+  function setEntryColors(colors) {
+    if (!colors) return;
+    ["longEntry", "shortEntry", "longEntryApprox", "shortEntryApprox"].forEach((k) => {
+      if (colors[k]) COLORS[k] = colors[k];
+    });
+    drawEntryZones();
+  }
+
   function _addEntryLine(price, color, style, title, labelVisible, width) {
     if (!price || price <= 0) return;
     entryZoneLines.push(
@@ -508,14 +533,22 @@ const TradingChart = (() => {
       const c = _cfg("L" + (i + 1));
       if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
       if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
-      if (c.entry) _addEntryLine(z.price, COLORS.longEntry, dash, "▲ " + (window.I18N ? I18N.tr("ЛОНГ") : "ЛОНГ") + " " + (i + 1), true, 2);
+      if (c.entry) {
+        const col = z.approx ? COLORS.longEntryApprox : COLORS.longEntry;
+        const lbl = (window.I18N ? I18N.tr("ЛОНГ") : "ЛОНГ") + " " + (i + 1) + (z.approx ? " ~" : "");
+        _addEntryLine(z.price, col, z.approx ? dot : dash, "▲ " + lbl, true, 2);
+      }
     });
 
     shorts.forEach((z, i) => {
       const c = _cfg("S" + (i + 1));
       if (c.stop) _addEntryLine(z.stop, COLORS.stop, dot, "", false, 1);
       if (c.take) _addEntryLine(z.take, COLORS.tp, dot, "", false, 1);
-      if (c.entry) _addEntryLine(z.price, COLORS.shortEntry, dash, "▼ " + (window.I18N ? I18N.tr("ШОРТ") : "ШОРТ") + " " + (i + 1), true, 2);
+      if (c.entry) {
+        const col = z.approx ? COLORS.shortEntryApprox : COLORS.shortEntry;
+        const lbl = (window.I18N ? I18N.tr("ШОРТ") : "ШОРТ") + " " + (i + 1) + (z.approx ? " ~" : "");
+        _addEntryLine(z.price, col, z.approx ? dot : dash, "▼ " + lbl, true, 2);
+      }
     });
   }
 
@@ -550,7 +583,7 @@ const TradingChart = (() => {
   }
 
   const CHART_THEMES = {
-    dark: { bg: "#0b0f14", text: "#8b9cb3", grid: "#1a2330", border: "#243044" },
+    dark: { bg: "#0f1623", text: "#8b9cb3", grid: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.09)" },
     light: { bg: "#ffffff", text: "#5e6b80", grid: "#e7ecf4", border: "#d7deea" },
   };
   let curTheme = "dark";
@@ -593,5 +626,6 @@ const TradingChart = (() => {
     setEntryConfig,
     setImbalances,
     toggleImbalances,
+    setEntryColors,
   };
 })();

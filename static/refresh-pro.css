@@ -1,0 +1,843 @@
+/* ============================================================
+   REFRESH PRO — флагманская полировка интерфейса
+   Верхний визуальный слой поверх style.css + terminal.css.
+   Цель: материалы, типографика и микро-взаимодействия уровня
+   продуктовых команд Apple / Nvidia / Linear / Сбер.
+   Только визуал (цвет, тень, шрифт, движение) — без правок раскладки.
+   ============================================================ */
+
+:root {
+  /* Усиленная палитра акцента и нейтралей */
+  --accent: #6d6dfb;
+  --accent2: #b45cff;
+  --accent-soft: rgba(109, 109, 251, 0.16);
+  --grad: linear-gradient(135deg, #6d6dfb 0%, #8b5cf6 50%, #b45cff 100%);
+
+  /* Премиальные многослойные тени: контактная + мягкая + цветной ambient */
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 8px 24px -8px rgba(0,0,0,.55);
+  --shadow-lg: 0 1px 2px rgba(0,0,0,.5), 0 24px 56px -16px rgba(0,0,0,.7);
+  --shadow-accent: 0 8px 28px -8px rgba(109,109,251,.55);
+
+  /* Единое «дорогое» замедление */
+  --ease: cubic-bezier(.22,.61,.36,1);
+  --ease-out: cubic-bezier(.16,1,.3,1);
+
+  /* Фокус-кольцо чуть выразительнее */
+  --ring: 0 0 0 3px rgba(109,109,251,.35);
+
+  /* Шкала отступов (8px-grid) — для будущих правок */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-8: 32px;
+}
+
+/* Сглаживание шрифта + цифры моноширинной ширины (цены не «прыгают») */
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+body { font-feature-settings: "cv11", "ss01"; letter-spacing: -0.011em; }
+.price, .verdict-conf .vc-num, .accuracy-grade, .mover-change, .scr-change,
+.instrument-badge, td, .stat-value, .metric-value, .kpi-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---- Премиальный фон: многослойная aurora + матовое зерно ---- */
+.terminal-body {
+  background:
+    radial-gradient(1100px 620px at 8% -10%, rgba(109,109,251,.16), transparent 58%),
+    radial-gradient(900px 560px at 102% -4%, rgba(180,92,255,.12), transparent 55%),
+    radial-gradient(700px 700px at 50% 120%, rgba(99,102,241,.08), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+.terminal-body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: .035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.app { position: relative; z-index: 1; }
+
+/* ---- Топбар / навигация: глубже стекло + saturate ---- */
+.topbar, .main-nav {
+  background: rgba(13, 19, 32, 0.66);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.topbar {
+  box-shadow: 0 1px 0 rgba(255,255,255,.04), 0 12px 40px -24px rgba(0,0,0,.8);
+}
+
+/* Логотип-вордмарк — насыщенный градиент + плотная посадка */
+.topbar .logo h1 {
+  background: linear-gradient(135deg, #eef1ff 0%, #b7b9ff 55%, #c79bff 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+/* ---- Заголовки: уверенная, плотная типографика ---- */
+h1, h2, h3, .card h3, .panel h2, .panel h3 {
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+/* ---- Карточки/панели: hairline-граница + верхний блик + слоистая тень ---- */
+.card, .panel, .persona-card, .macro-card, .corr-panel,
+.fundamentals-panel, .imbalance-panel, .patterns-panel, .movers-panel,
+.screener-panel, .journal-panel, .news-panel, .portfolio-panel {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 38%),
+    var(--surface);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+/* Тонкий световой кант сверху (как на «стекле» Apple) */
+.card::before, .panel::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 40%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+.card {
+  transition: transform .25s var(--ease), border-color .25s var(--ease), box-shadow .25s var(--ease);
+}
+.card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255,255,255,.14);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Главная карта вердикта — мягкое акцентное свечение фона
+   (информативный верхний штрих бык/медведь оставляем из terminal.css) */
+.verdict-card {
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(109,109,251,.12), transparent 45%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 38%),
+    var(--surface) !important;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---- Первичная кнопка: градиент + внутренний блик + мягкое нажатие ---- */
+.btn-primary {
+  background: var(--grad) !important;
+  border: none !important;
+  color: #fff !important;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: transform .18s var(--ease-out), box-shadow .18s var(--ease-out), filter .18s var(--ease-out);
+}
+.btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 12px 32px -8px rgba(109,109,251,.65), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn-primary:active { transform: translateY(0) scale(.985); }
+
+/* Вторичные/иконки — мягкое стекло */
+.btn-secondary, .btn-icon {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 11px;
+  transition: border-color .18s var(--ease), background .18s var(--ease), color .18s var(--ease), transform .18s var(--ease);
+}
+.btn-secondary:hover, .btn-icon:hover { border-color: rgba(255,255,255,.18); background: rgba(255,255,255,.07); }
+.btn-secondary:active, .btn-icon:active { transform: scale(.97); }
+
+/* ---- Доступный фокус только с клавиатуры ---- */
+:focus { outline: none; }
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 10px;
+}
+
+/* ---- Сегменты/таблетки: активный — мягкая подсветка ---- */
+.nav-tab { border-radius: 11px; transition: background .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease); }
+.nav-tab.active { background: var(--grad); border-color: transparent; box-shadow: var(--shadow-accent); }
+.seg, .mode-toggle, .interval-group { border-radius: 999px; background: rgba(255,255,255,.04); }
+.seg button, .interval-group .btn-interval, .mode-toggle button { border-radius: 999px; transition: background .18s var(--ease), color .18s var(--ease); }
+.mode-toggle button.active, .seg button.active { box-shadow: 0 4px 14px -4px rgba(109,109,251,.6); }
+
+/* Переключатель языка — пилюля в тон акценту */
+.lang-toggle {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04);
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.lang-toggle:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Бейдж текущего инструмента */
+.instrument-badge { border-radius: 999px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); font-weight: 650; }
+
+/* ---- Поле поиска — стеклянное, с акцентным фокусом ---- */
+.search-field { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); border-radius: 13px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease); }
+.search-field:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+
+/* Инпуты */
+input[type="text"], input[type="number"], input[type="search"], input[type="password"], select, textarea {
+  border-radius: 11px;
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+}
+
+/* ---- Строки/карточки списков — приподнятие на ховере ---- */
+.instrument-item, .mover-card, .scr-row, .wl-row, .corr-row {
+  transition: transform .16s var(--ease), border-color .16s var(--ease), box-shadow .16s var(--ease), background .16s var(--ease);
+}
+.instrument-item:hover, .mover-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: rgba(255,255,255,.14); }
+.scr-row:hover, .wl-row:hover, .corr-row:hover { background: rgba(255,255,255,.04); }
+
+/* ---- Модалки — мягче и глубже ---- */
+.modal { box-shadow: var(--shadow-lg); border-radius: 20px; border: 1px solid rgba(255,255,255,.08); }
+.modal-overlay { backdrop-filter: blur(8px) saturate(120%); -webkit-backdrop-filter: blur(8px) saturate(120%); background: rgba(6,9,16,.55); }
+
+/* ---- Выделение текста в тон бренду ---- */
+::selection { background: rgba(109,109,251,.35); color: #fff; }
+
+/* ---- Деликатная анимация появления панелей анализа ---- */
+@keyframes rp-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.view.active .panel, .view.active .card { animation: rp-rise .42s var(--ease-out) both; }
+.view.active .card:nth-child(2) { animation-delay: .04s; }
+.view.active .card:nth-child(3) { animation-delay: .08s; }
+.view.active .card:nth-child(4) { animation-delay: .12s; }
+
+/* ---- Зелёный/красный чуть «дороже» (как в финтехе) ---- */
+.up, .positive, .mover-change.up, .scr-change.up { color: #34d399; }
+.down, .negative, .mover-change.down, .scr-change.down { color: #fb7185; }
+
+/* ============================================================
+   #1 ГЕРО-ВЕРДИКТ — главный фокус правой колонки
+   ============================================================ */
+.verdict-card {
+  padding: 22px 24px !important;
+  border-radius: 18px !important;
+}
+.verdict-card .verdict-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 18px;
+}
+/* Бейдж и кольцо — в один ряд, заголовок — отдельной строкой во всю ширину */
+.verdict-card .verdict-badge { order: 1; }
+.verdict-card .verdict-conf  { order: 2; margin-left: auto; }
+.verdict-card .verdict-text  { order: 3; flex: 1 1 100%; }
+/* Бейдж сигнала — крупнее, с лёгким свечением */
+.verdict-card .verdict-badge {
+  font-size: 1.02rem;
+  font-weight: 800;
+  padding: 12px 18px;
+  border-radius: 13px;
+  letter-spacing: .03em;
+}
+.verdict-card .verdict-badge.buy  { box-shadow: 0 6px 20px -6px rgba(52,211,153,.6); }
+.verdict-card .verdict-badge.sell { box-shadow: 0 6px 20px -6px rgba(251,113,133,.6); }
+.verdict-card .verdict-badge.wait { box-shadow: 0 6px 20px -6px rgba(245,158,11,.5); }
+/* Заголовок сигнала — крупнее и плотнее */
+.verdict-card .verdict-text strong { font-size: 1.24rem; font-weight: 750; letter-spacing: -0.01em; }
+.verdict-card .verdict-reason { font-size: .92rem; line-height: 1.5; margin-top: 14px; color: var(--text2); }
+
+/* Кольцо-прогресс согласованности */
+.verdict-conf {
+  --pct: 0;
+  --ring-color: var(--accent);
+  width: 96px; height: 96px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  position: relative;
+  background:
+    conic-gradient(var(--ring-color) calc(var(--pct) * 1%), rgba(255,255,255,.08) 0);
+  transition: background .6s var(--ease-out);
+}
+.verdict-conf::before {
+  content: "";
+  position: absolute; inset: 7px;
+  border-radius: 50%;
+  background: #141b2b;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.5);
+}
+.verdict-conf .vc-ring {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; line-height: 1;
+}
+.verdict-conf .vc-num {
+  display: block;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.verdict-conf .vc-label {
+  font-size: .6rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 3px;
+}
+/* Цвет кольца и тинт карточки по сигналу */
+.verdict-conf.v-buy  { --ring-color: #34d399; }
+.verdict-conf.v-sell { --ring-color: #fb7185; }
+.verdict-conf.v-wait { --ring-color: #f59e0b; }
+.verdict-card.v-buy  { box-shadow: var(--shadow-lg), 0 0 0 1px rgba(52,211,153,.18), 0 18px 50px -20px rgba(52,211,153,.4); }
+.verdict-card.v-sell { box-shadow: var(--shadow-lg), 0 0 0 1px rgba(251,113,133,.18), 0 18px 50px -20px rgba(251,113,133,.4); }
+.verdict-card.v-wait { box-shadow: var(--shadow-lg), 0 0 0 1px rgba(245,158,11,.16), 0 18px 50px -20px rgba(245,158,11,.35); }
+
+/* ============================================================
+   #2 ТУЛБАР ГРАФИКА — единый аккуратный бар + строка-статус
+   ============================================================ */
+.chart-toolbar {
+  align-items: center;
+  gap: 8px 9px;
+  padding: 10px 16px !important;
+  background: rgba(255,255,255,.015) !important;
+}
+/* Бейдж «Свечи · символ» */
+.tv-badge { font-size: .82rem; gap: 7px; }
+.tv-badge strong { color: var(--text) !important; font-weight: 700; }
+.tv-badge #tvSymbolLabel { color: var(--muted); }
+
+/* Единое семейство компактных контролов */
+.chart-toolbar .btn-tv-link,
+.chart-toolbar .chart-timer,
+.chart-toolbar .btn-entrypoints {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px !important;
+  border-radius: 9px !important;
+  border: 1px solid rgba(255,255,255,.1) !important;
+  background: rgba(255,255,255,.04) !important;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text2) !important;
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease), color .16s var(--ease);
+}
+.chart-toolbar .btn-tv-link:hover,
+.chart-toolbar .chart-timer:hover,
+.chart-toolbar .btn-entrypoints:hover {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  color: var(--text) !important;
+}
+/* Активные тумблеры (Точки входа / Имбаланс / В список) */
+.chart-toolbar .btn-entrypoints.active {
+  border-color: transparent !important;
+  background: var(--grad) !important;
+  color: #fff !important;
+  box-shadow: 0 5px 16px -6px rgba(109,109,251,.6);
+}
+.chart-timer { color: var(--muted) !important; }
+
+/* Сегмент таймфреймов — настоящая капсула с градиентной активной */
+.interval-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  margin-left: auto;
+}
+.interval-group .btn-interval {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 999px !important;
+  padding: 6px 14px !important;
+  font-size: .78rem;
+  font-weight: 650;
+  color: var(--muted) !important;
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.interval-group .btn-interval:hover { color: var(--text) !important; background: rgba(255,255,255,.06) !important; }
+.interval-group .btn-interval.active {
+  background: var(--grad) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px -4px rgba(109,109,251,.6);
+}
+
+/* Строка-статус (Тренд / HTF Bias / Сводка) — отдельной строкой, с разделителями */
+.chart-trend-bar {
+  flex: 1 1 100% !important;
+  justify-content: flex-start !important;
+  align-items: stretch;
+  gap: 0 !important;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.chart-trend-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 2px 18px;
+  border-right: 1px solid rgba(255,255,255,.07);
+}
+.chart-trend-item:first-child { padding-left: 2px; }
+.chart-trend-item.wide { flex: 1; border-right: none; min-width: 180px; }
+.ct-label { font-size: .62rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+.ct-value { font-size: .98rem; font-weight: 750; letter-spacing: -0.01em; color: var(--text); }
+.ct-summary { font-size: .84rem; line-height: 1.4; color: var(--text2); }
+.ct-value.bias-long, .ct-value.bias-up { color: #34d399; }
+.ct-value.bias-short, .ct-value.bias-down { color: #fb7185; }
+.ct-value.bias-neutral { color: var(--muted); }
+
+/* ============================================================
+   #3 КАРТОЧКИ MOVERS И AI-ПЕРСОНЫ — крупнее цифры, ховеры, мера силы
+   ============================================================ */
+.mover-card {
+  position: relative;
+  overflow: hidden;
+  gap: 5px;
+  padding: 13px 13px 17px !important;
+  border-radius: 13px !important;
+}
+.mc-name { font-size: .95rem; }
+.mc-sub { font-size: .72rem; }
+/* Крупная процентная дельта со стрелкой */
+.mc-chg {
+  font-size: 1.45rem !important;
+  font-weight: 800;
+  line-height: 1.05;
+  margin-top: 3px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.mc-chg.up::before  { content: "▲"; font-size: .62em; }
+.mc-chg.down::before { content: "▼"; font-size: .62em; }
+.mc-price { font-size: .82rem; }
+/* Мини-полоса силы движения (ширина = интенсивность --i) */
+.mover-card::after {
+  content: "";
+  position: absolute;
+  left: 13px; right: 13px; bottom: 9px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+}
+.mover-card.up::after   { background: linear-gradient(90deg, #34d399 calc(var(--i, 0) * 100%), rgba(255,255,255,.08) 0); }
+.mover-card.down::after { background: linear-gradient(90deg, #fb7185 calc(var(--i, 0) * 100%), rgba(255,255,255,.08) 0); }
+/* Чёткий ховер с тинтом по направлению */
+.mover-card.up:hover   { border-color: rgba(52,211,153,.6) !important; box-shadow: 0 12px 30px -12px rgba(52,211,153,.45); }
+.mover-card.down:hover { border-color: rgba(251,113,133,.6) !important; box-shadow: 0 12px 30px -12px rgba(251,113,133,.45); }
+
+/* --- AI-персоны: карточные чипы с акцентным активным --- */
+.persona-chips { gap: 10px; }
+.persona-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 96px;
+  padding: 14px 16px !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid rgba(255,255,255,.09) !important;
+  transition: transform .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease), box-shadow .16s var(--ease);
+}
+.persona-chip:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.2) !important; background: rgba(255,255,255,.07) !important; }
+.persona-chip.active {
+  border-color: transparent !important;
+  background: linear-gradient(180deg, var(--accent-soft), rgba(255,255,255,.03)) !important;
+  box-shadow: inset 0 0 0 1.5px var(--accent), var(--shadow-accent);
+}
+.pc-emoji { font-size: 1.5rem; }
+.pc-name { font-size: .86rem; font-weight: 700; }
+.persona-chip small { font-size: .68rem; }
+
+/* ============================================================
+   ШАПКА — чистая раскладка с воздухом (фикс наложений)
+   ============================================================ */
+.topbar {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  min-height: 64px;
+  padding: 12px 22px !important;
+  row-gap: 10px;
+}
+/* Логотип не сжимается и не переносится */
+.topbar .logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.topbar .logo-icon { display: inline-flex; flex: 0 0 auto; }
+.topbar .logo-text { display: flex; flex-direction: column; justify-content: center; }
+.topbar .logo h1 {
+  white-space: nowrap;
+  font-size: 1.22rem;
+  line-height: 1.1;
+  margin: 0;
+}
+.topbar .logo p {
+  white-space: nowrap;
+  font-size: .76rem;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+/* Центр — поиск растягивается, занимает свободное место */
+.topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 320px;
+  min-width: 260px;
+}
+.topbar-center .search-field { flex: 1 1 auto; min-width: 0; }
+.topbar-center .btn-primary { flex: 0 0 auto; padding: 10px 22px; }
+/* Правый блок действий */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+/* Гайд / AI-ключ — компактные пилюли в тон */
+.topbar-actions .brand-link {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: .86rem;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .18s var(--ease), background .18s var(--ease), color .18s var(--ease);
+}
+.topbar-actions .brand-link:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+/* Прячем подзаголовок на узких экранах, чтобы шапка дышала */
+@media (max-width: 1180px) { .topbar .logo p { display: none; } }
+@media (max-width: 880px) {
+  .topbar-center { order: 3; flex-basis: 100%; }
+}
+
+/* ============================================================
+   ФУТЕР — аккуратная строка со ссылками
+   ============================================================ */
+.terminal-body .footer {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 18px 22px;
+  margin-top: 28px;
+  font-size: .85rem;
+}
+.footer-note { color: var(--muted); }
+.footer-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.footer-link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: .85rem;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 4px 2px;
+  transition: color .16s var(--ease);
+}
+.footer-link:hover { color: var(--text); }
+.footer-link-support:hover { color: #fb7185; }
+
+/* ============================================================
+   Скринер: колонка «Балл согласованности» + сортировка
+   ============================================================ */
+.scr-row { grid-template-columns: 2.2fr 1fr 0.8fr 0.7fr 0.6fr 1fr 1.3fr !important; }
+.scr-score { font-weight: 800; font-variant-numeric: tabular-nums; text-align: left; }
+.scr-score.good { color: #34d399; }
+.scr-score.mid  { color: var(--text2); }
+.scr-score.weak { color: #fb7185; }
+@media (max-width: 760px) {
+  /* На узких экранах оставляем: Инструмент · Цена · Δ% · Балл */
+  .scr-row { grid-template-columns: 2fr 1fr 0.8fr 0.7fr !important; }
+  .scr-row > :nth-child(4) { display: block !important; }
+  .scr-row > :nth-child(5),
+  .scr-row > :nth-child(6),
+  .scr-row > :nth-child(7) { display: none !important; }
+}
+
+/* ============================================================
+   Модалка «Поддержать»
+   ============================================================ */
+.support-highlight {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-soft), rgba(180,92,255,.1));
+  border: 1px solid rgba(109,109,251,.3);
+  font-size: .98rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+.support-highlight b { color: #c7b6ff; }
+.support-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.support-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 26px !important;
+  font-size: 1rem;
+  text-decoration: none;
+  border-radius: 12px;
+}
+.support-btn-alt {
+  font-size: .86rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .16s var(--ease);
+}
+.support-btn-alt:hover { color: var(--text); }
+
+/* ============================================================
+   Красивая загрузка — фирменный лоадер (логотип + кольцо)
+   ============================================================ */
+.loading-overlay {
+  background: rgba(8, 11, 18, 0.66) !important;
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  animation: rp-fade .28s var(--ease-out);
+}
+.loader-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 30px 38px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0)), var(--surface);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--shadow-lg);
+}
+.loader-spin { position: relative; width: 88px; height: 88px; }
+/* Градиентное кольцо (донат через mask), вращается */
+.loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--accent) 130deg, var(--accent2) 250deg, transparent 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px));
+  animation: rp-spin .95s linear infinite;
+}
+/* Лёгкое второе кольцо-подсветка */
+.loader-spin::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 36px -6px rgba(109,109,251,.55);
+  animation: rp-pulse 1.8s var(--ease-out) infinite;
+}
+/* Логотип в центре — НЕ вращается, мягко пульсирует */
+.loader-logo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  animation: rp-logo-pulse 1.8s var(--ease-out) infinite;
+}
+.loader-text {
+  color: var(--text2);
+  font-weight: 600;
+  font-size: .95rem;
+  letter-spacing: .01em;
+}
+.loader-dots i {
+  display: inline-block;
+  animation: rp-blink 1.4s infinite both;
+}
+.loader-dots i:nth-child(2) { animation-delay: .2s; }
+.loader-dots i:nth-child(3) { animation-delay: .4s; }
+
+@keyframes rp-spin { to { transform: rotate(360deg); } }
+@keyframes rp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rp-pulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+@keyframes rp-logo-pulse { 0%,100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.08); opacity: 1; } }
+@keyframes rp-blink { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* ============================================================
+   Кнопка «Поддержать» в шапке — выделенная (rose/heart)
+   ============================================================ */
+.btn-support-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: .86rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid rgba(251,113,133,.55);
+  background: linear-gradient(135deg, #fb7185, #f43f5e 60%, #e11d48);
+  box-shadow: 0 6px 18px -6px rgba(244,63,94,.6), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: transform .16s var(--ease-out), box-shadow .16s var(--ease-out), filter .16s var(--ease-out);
+}
+.btn-support-top:hover { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 10px 26px -6px rgba(244,63,94,.7), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn-support-top:active { transform: translateY(0) scale(.97); }
+
+/* Кнопка «Дивиденды» — янтарный тон (денежная тема) */
+.topbar-actions .brand-link-dividends {
+  border-color: rgba(245,158,11,.45);
+  color: #fcd34d;
+}
+.topbar-actions .brand-link-dividends:hover {
+  border-color: #f59e0b;
+  background: rgba(245,158,11,.14);
+  color: #fde68a;
+}
+
+/* Кнопка «🎨 Цвета» — выделенная радужным градиентом */
+.chart-toolbar .btn-colors {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: .8rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  background: linear-gradient(90deg, #2dd4bf, #6d6dfb 45%, #c4b5fd 75%, #fb7185);
+  background-size: 220% 100%;
+  background-position: 0 0;
+  box-shadow: 0 5px 16px -6px rgba(109,109,251,.65), inset 0 1px 0 rgba(255,255,255,.25);
+  transition: background-position .4s var(--ease), transform .16s var(--ease-out), box-shadow .16s var(--ease-out);
+}
+.chart-toolbar .btn-colors:hover { background-position: 100% 0; transform: translateY(-1px); box-shadow: 0 9px 22px -6px rgba(109,109,251,.75); }
+.chart-toolbar .btn-colors:active { transform: translateY(0) scale(.97); }
+
+/* Модалка выбора цветов */
+.color-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 10px;
+}
+.color-row > span { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.color-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(255,255,255,.12); }
+.color-row input[type="color"] {
+  width: 48px; height: 30px;
+  border: 1px solid rgba(255,255,255,.15);
+  background: none; border-radius: 8px; cursor: pointer; padding: 2px;
+}
+.colors-actions { display: flex; gap: 10px; margin-top: 14px; }
+.colors-actions .btn-primary { flex: 1; justify-content: center; }
+
+/* Сообщение «фандинг недоступен» (крипто-фолбэк на Yahoo) */
+.funding-empty {
+  margin: 6px 2px 0;
+  padding: 10px 14px;
+  border-radius: 11px;
+  background: rgba(245,158,11,.08);
+  border: 1px solid rgba(245,158,11,.25);
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+/* Кнопка «Очистить журнал» — деструктивный акцент на ховере */
+.btn-journal-clear:hover {
+  border-color: rgba(251,113,133,.6) !important;
+  background: rgba(251,113,133,.12) !important;
+  color: #fb7185 !important;
+}
+
+/* ============================================================
+   Модалка «Записать сигнал»
+   ============================================================ */
+.jadd-side {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.jadd-side button {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.04);
+  color: var(--text2);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background .16s var(--ease), color .16s var(--ease);
+}
+.jadd-side button:hover { border-color: rgba(255,255,255,.2); }
+.jadd-side button[data-side="long"].active { border-color: rgba(52,211,153,.6); background: rgba(52,211,153,.14); color: #34d399; }
+.jadd-side button[data-side="short"].active { border-color: rgba(251,113,133,.6); background: rgba(251,113,133,.14); color: #fb7185; }
+.jadd-entry-field { margin-bottom: 14px; }
+#jaddConfirm { width: 100%; justify-content: center; margin-top: 14px; }
+
+/* ============================================================
+   Модалка калькулятора дивидендов
+   ============================================================ */
+.div-stock { font-size: 1.1rem; font-weight: 750; letter-spacing: -0.01em; margin-bottom: 10px; }
+.div-market { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+.dm-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: .9rem; padding: 3px 0; }
+.dm-row span { color: var(--muted); }
+.dm-row b { font-variant-numeric: tabular-nums; }
+.div-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+@media (max-width: 480px) { .div-form { grid-template-columns: 1fr; } }
+.div-field { display: flex; flex-direction: column; gap: 6px; font-size: .82rem; color: var(--text2); }
+.div-field input {
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.div-field input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.div-results { display: flex; flex-direction: column; gap: 6px; }
+.dr-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 10px 14px; border-radius: 11px;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07);
+  font-size: .92rem;
+}
+.dr-row span { color: var(--text2); }
+.dr-row b { font-weight: 750; font-variant-numeric: tabular-nums; }
+.dr-row.good { background: rgba(52,211,153,.1); border-color: rgba(52,211,153,.3); }
+.dr-row.good b { color: #34d399; }
+.dr-row.bad { background: rgba(251,113,133,.1); border-color: rgba(251,113,133,.3); }
+.dr-row.bad b { color: #fb7185; }
+
+/* ---- Уважение к настройке «меньше движения» ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}

@@ -99,6 +99,55 @@ def fetch_fundamentals(pair: str, market: str, lang: str = "ru") -> dict:
     }
 
 
+def _num(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f else None  # отбрасываем NaN
+
+
+def fetch_dividend_info(pair: str, market: str) -> dict:
+    """Числовые данные для калькулятора дивидендов: цена, дивиденд на акцию, доходность.
+
+    Только акции. Дивиденд на акцию — годовой (trailingAnnualDividendRate, в валюте
+    бумаги). Если Yahoo не отдал что-то одно — досчитываем из доходности и цены.
+    """
+    if market != "stock":
+        return {"available": False, "reason": "only_stocks"}
+    if yf is None:
+        return {"available": False, "reason": "no_yfinance"}
+
+    from instruments_catalog import get_instrument, resolve_yf_symbol
+
+    yf_sym = resolve_yf_symbol(pair, market)
+    inst = get_instrument(pair, market)
+    try:
+        info = retry_call(lambda: yf.Ticker(yf_sym).info, source=f"Yahoo info ({yf_sym})", max_retries=2)
+    except Exception:
+        info = None
+    if not info or not isinstance(info, dict):
+        return {"available": False, "reason": "no_data"}
+
+    price = _num(info.get("currentPrice")) or _num(info.get("regularMarketPrice")) or _num(info.get("previousClose"))
+    dps = _num(info.get("trailingAnnualDividendRate"))
+    dyield = _num(info.get("trailingAnnualDividendYield"))
+    if dps is None and dyield is not None and price:
+        dps = round(price * dyield, 4)
+    if dyield is None and dps is not None and price:
+        dyield = dps / price
+
+    name = (inst.name if inst else None) or info.get("shortName") or pair
+    return {
+        "available": True,
+        "name": name,
+        "currency": info.get("currency") or "",
+        "price": price,
+        "dividend_per_share": dps,
+        "dividend_yield": dyield,
+    }
+
+
 def fundamentals_line(pair: str, market: str, lang: str = "ru") -> str:
     """Однострочная сводка для подмешивания в AI-персону. Пусто при отсутствии."""
     data = fetch_fundamentals(pair, market, lang)

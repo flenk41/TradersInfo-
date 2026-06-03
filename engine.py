@@ -48,6 +48,20 @@ def _apply_funding_verdict(funding, verdict) -> None:
     funding.summary = verdict.summary
 
 
+def cached_analysis(pair: str, market: str | None = None) -> "MarketAnalysis":
+    """Анализ через тот же кэш, что и эндпоинт /api/analyze.
+
+    Ключ совпадает с web_app (`analyze:{market|auto}:{PAIR}`), поэтому балл
+    согласованности в скринере и в Обзоре берётся из ОДНОГО результата —
+    числа идентичны, а клик по инструменту после скринера почти мгновенный
+    (результат уже в кэше). TTL общий (data_cache, 50с).
+    """
+    from data_cache import get_cached
+
+    key = f"analyze:{market or 'auto'}:{pair.upper()}"
+    return get_cached(key, lambda: analyze_pair(pair, market=market))
+
+
 def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     m = detect_market(pair, market)
     symbol, display = normalize_pair(pair, m)
@@ -145,9 +159,12 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     # Зоны входа и имбалансы для каждого ТФ: масштабируются под таймфрейм
     # (на 5m уже, на 1D шире). Данные по ТФ уже загружены — без новых запросов.
     from imbalance import find_imbalances, imbalance_summary
+    from candle_patterns import detect_patterns, next_candle_outlook
 
     entry_zones_by_tf: dict = {}
     imbalances_by_tf: dict = {}
+    patterns_by_tf: dict = {}
+    pattern_outlook_by_tf: dict = {}
     for tf_key in ("5m", "15m", "1h", "4h", "1d"):
         df_tf = klines_map.get(tf_key)
         if df_tf is None or len(df_tf) < 20:
@@ -158,19 +175,27 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
             continue
         if not atr_tf or atr_tf <= 0:
             continue
-        lz, sz = build_entry_zones(price, support, resistance, fib, bias, trade, scalp, atr_tf, volatility)
+        lz, sz = build_entry_zones(price, support, resistance, fib, bias, trade, scalp, atr_tf, volatility, df=df_tf)
         entry_zones_by_tf[tf_key] = {"long": lz, "short": sz}
         try:
             imbalances_by_tf[tf_key] = find_imbalances(df_tf, price)
         except Exception:
             imbalances_by_tf[tf_key] = []
+        try:
+            pats = detect_patterns(df_tf)
+            patterns_by_tf[tf_key] = pats
+            pattern_outlook_by_tf[tf_key] = next_candle_outlook(df_tf, pats)
+        except Exception:
+            patterns_by_tf[tf_key] = []
+            pattern_outlook_by_tf[tf_key] = {}
 
     default_zones = entry_zones_by_tf.get("1h")
     if default_zones:
         long_entry, short_entry = default_zones["long"], default_zones["short"]
     else:
         long_entry, short_entry = build_entry_zones(
-            price, support, resistance, fib, bias, trade, scalp, atr, volatility
+            price, support, resistance, fib, bias, trade, scalp, atr, volatility,
+            df=klines_map.get("1h") or klines_map.get("4h"),
         )
 
     signals = build_signals(tf_analyses, volatility, funding, bias)
@@ -245,6 +270,9 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
         imbalances=imbalances_by_tf.get("1h", []),
         imbalances_by_tf=imbalances_by_tf,
         imbalance_summary=imbalance_summary(imbalances_by_tf.get("1h", []), price),
+        patterns=patterns_by_tf.get("1h", []),
+        patterns_by_tf=patterns_by_tf,
+        pattern_outlook_by_tf=pattern_outlook_by_tf,
     )
 
     deep = build_deep_analysis(
@@ -274,6 +302,22 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
         partial.news = sentiment_counts(news_items)
     except Exception:
         partial.news = None
+
+    # Инсайдерский / «умные деньги» фактор: только для акций (US — SEC Form 4,
+    # РФ — доли держателей). Кэш 6ч: SEC EDGAR медленный, данные меняются редко.
+    partial.insider = None
+    if m == "stock":
+        try:
+            from data_cache import get_cached as _gc
+            from insider_provider import insider_signal
+
+            partial.insider = _gc(
+                f"insider:{pair.upper()}",
+                lambda: insider_signal(pair, m),
+                ttl=21600,
+            )
+        except Exception:
+            partial.insider = None
 
     partial.accuracy = build_accuracy_metrics(partial, klines_4h)
     if partial.accuracy:

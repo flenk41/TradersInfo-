@@ -134,6 +134,16 @@ def _evaluate(record: dict, fetch_klines) -> bool:
     tp = record["take_profit"]
     risk = abs(entry - stop) or 1e-9
 
+    # Защита от рассинхрона пары и уровней: если entry несопоставим с ценами
+    # инструмента (напр. уровни BTC ~$71k записаны для INJ ~$1.9), любое касание
+    # тейка/стопа было бы ложным — не закрываем такую битую запись.
+    if candles:
+        lo = min(c["low"] for c in candles)
+        hi = max(c["high"] for c in candles)
+        if hi > 0 and lo > 0 and (entry > hi * 5 or entry < lo / 5):
+            record["evaluated_ts"] = int(time.time())
+            return False
+
     touch = _first_touch(side, entry, stop, tp, candles)
     now = int(time.time())
     if touch:

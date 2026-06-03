@@ -67,6 +67,15 @@ def fetch_klines_yf(symbol: str, interval: str = "1h", limit: int = 200) -> pd.D
     if interval == "4h" and yf_interval == "1h":
         df = _resample_4h(df)
 
+    # Yahoo для крипты часто отдаёт нулевой ВНУТРИДНЕВНОЙ объём «через раз»
+    # (артефакт источника) — гистограмма объёма из-за этого выглядит сломанной.
+    # Если нулей много, сглаживаем их интерполяцией соседних баров. На Binance
+    # объём всегда есть, а сюда попадают только данные Yahoo, так что Binance не трогаем.
+    vol = df["volume"].astype(float)
+    if len(vol) and (vol == 0).mean() > 0.2:
+        df["volume"] = vol.where(vol > 0).interpolate(limit_direction="both").fillna(0.0)
+        df["quote_volume"] = df["close"] * df["volume"]
+
     return df[["open_time", "open", "high", "low", "close", "volume", "quote_volume"]]
 
 
