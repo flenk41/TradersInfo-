@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from analyzer import MarketAnalysis
-from position_calculator import (
+from tis.analysis.analyzer import MarketAnalysis
+from tis.analysis.position_calculator import (
     MIN_RR,
     PositionInput,
     calculate_position,
     liquidation_price,
+    zone_stop_take,
 )
 
 
@@ -103,3 +104,38 @@ class TestCalculatePosition:
         )
         assert pos.stop_loss < 100
         assert pos.stop_loss <= 97.0
+
+
+class TestZoneStopTake:
+    """Единая методология стоп/тейк (используется графиком и расчётом позиции)."""
+
+    def test_long_order_and_min_rr(self):
+        stop, tp = zone_stop_take("long", 100.0, supports=[96.0], resistances=[110.0],
+                                  fib_prices=[], atr=2.0)
+        assert stop < 100.0 < tp
+        rr = (tp - 100.0) / (100.0 - stop)
+        assert rr >= MIN_RR - 1e-6
+
+    def test_short_order_and_min_rr(self):
+        stop, tp = zone_stop_take("short", 100.0, supports=[90.0], resistances=[104.0],
+                                  fib_prices=[], atr=2.0)
+        assert tp < 100.0 < stop
+        rr = (100.0 - tp) / (stop - 100.0)
+        assert rr >= MIN_RR - 1e-6
+
+    def test_min_stop_distance_when_level_too_close(self):
+        # поддержка вплотную к входу (99.99) → стоп отодвигается на min_stop×ATR,
+        # чтобы шум не выбивал позицию (а не лепится к 99.99)
+        stop, _tp = zone_stop_take("long", 100.0, supports=[99.99], resistances=[110.0],
+                                   fib_prices=[], atr=2.0)
+        assert stop < 99.0  # отодвинут заметно ниже близкого уровня
+
+    def test_matches_calculate_position_direction(self):
+        # zone_stop_take и calculate_position дают согласованные знаки уровней
+        stop, tp = zone_stop_take("long", 100.0, supports=[96.0], resistances=[110.0],
+                                  fib_prices=[], atr=2.0)
+        pos = calculate_position(
+            _analysis(100, supports=[96.0], resistances=[110.0]),
+            PositionInput(100, 100, 10, "long"),
+        )
+        assert (stop < 100 < tp) and (pos.stop_loss < 100 < pos.take_profit)

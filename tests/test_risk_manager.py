@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from risk_manager import RiskInput, calculate_risk_plan
+from tis.analysis.risk_manager import RiskInput, calculate_risk_plan
 
 
 class TestValidation:
