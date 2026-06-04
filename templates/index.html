@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/terminal.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/refresh-pro.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/theme-refresh.css?v={{ asset_version }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,14 +16,14 @@
 </head>
 <body class="terminal-body">
   <div class="app">
-    <header class="topbar">
-      <div class="logo">
+    <nav class="side-nav" id="mainNav" aria-label="Навигация">
+      <div class="side-brand">
         <span class="logo-icon" aria-hidden="true">
-          <svg class="tis-logo" viewBox="0 0 64 64" width="36" height="36">
+          <svg class="tis-logo" viewBox="0 0 64 64" width="34" height="34">
             <defs>
               <linearGradient id="tisG" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0" stop-color="#cfe0ff"/>
-                <stop offset="1" stop-color="#3b82f6"/>
+                <stop offset="1" stop-color="#6d6dfb"/>
               </linearGradient>
             </defs>
             <path d="M32 4 L56 12 V30 C56 46 45 56 32 60 C19 56 8 46 8 30 V12 Z" fill="none" stroke="url(#tisG)" stroke-width="3"/>
@@ -38,6 +39,23 @@
           <p>TIS · аналитика рынков</p>
         </div>
       </div>
+      <div class="nav-group nav-markets">
+        <span class="nav-label">Рынок</span>
+        <button type="button" class="nav-tab active" data-view="market" data-market="crypto"><span class="nav-ic">₿</span><span>Крипта</span></button>
+        <button type="button" class="nav-tab" data-view="market" data-market="stock"><span class="nav-ic">🏛️</span><span>Акции</span></button>
+        <button type="button" class="nav-tab" data-view="market" data-market="forex"><span class="nav-ic">💱</span><span>Валюта</span></button>
+      </div>
+      <div class="nav-group nav-views">
+        <span class="nav-label">Разделы</span>
+        <button type="button" class="nav-tab" data-view="movers"><span class="nav-ic">🌐</span><span>Обзор рынка</span></button>
+        <button type="button" class="nav-tab" data-view="screener"><span class="nav-ic">📊</span><span>Скринер</span></button>
+        <button type="button" class="nav-tab" data-view="portfolio"><span class="nav-ic">💼</span><span>Портфель</span></button>
+        <button type="button" class="nav-tab" data-view="news"><span class="nav-ic">📰</span><span>Новости</span></button>
+        <button type="button" class="nav-tab" data-view="journal"><span class="nav-ic">📒</span><span>Журнал</span></button>
+      </div>
+    </nav>
+    <div class="app-main">
+    <header class="topbar">
       <div class="topbar-center">
         <label class="search-field" for="customPair">
           <span class="search-icon" aria-hidden="true">⌕</span>
@@ -82,20 +100,6 @@
     </div>
     <div class="error hidden error-toast" id="error"></div>
 
-    <nav class="main-nav" id="mainNav">
-      <div class="nav-group nav-markets">
-        <button type="button" class="nav-tab active" data-view="market" data-market="crypto">Крипта</button>
-        <button type="button" class="nav-tab" data-view="market" data-market="stock">Акции</button>
-        <button type="button" class="nav-tab" data-view="market" data-market="forex">Валюта</button>
-      </div>
-      <div class="nav-group nav-views">
-        <button type="button" class="nav-tab" data-view="movers">Обзор рынка</button>
-        <button type="button" class="nav-tab" data-view="screener">Скринер</button>
-        <button type="button" class="nav-tab" data-view="portfolio">Портфель</button>
-        <button type="button" class="nav-tab" data-view="news">Новости</button>
-        <button type="button" class="nav-tab" data-view="journal">Журнал</button>
-      </div>
-    </nav>
 
     <div class="app-view active" id="view-market">
       <div class="instrument-strip">
@@ -563,7 +567,10 @@
           <div class="journal-actions">
             <button type="button" class="btn-primary" id="btnJournalAdd">+ Записать сигнал</button>
             <button type="button" class="btn-secondary" id="btnJournalRefresh" title="Пересчитать исходы">↻</button>
+            <button type="button" class="btn-secondary" id="btnJournalImport" title="Загрузить журнал из .json (заменит текущий)">📥 Импорт</button>
+            <button type="button" class="btn-secondary" id="btnJournalExport" title="Скачать журнал в .json (бэкап)">📤 Экспорт</button>
             <button type="button" class="btn-secondary btn-journal-clear" id="btnJournalClear" title="Удалить все записи журнала">🗑 Очистить</button>
+            <input type="file" id="journalImportFile" accept="application/json,.json" hidden>
           </div>
         </div>
         <p class="journal-note">Фиксируем сигнал и автоматически проверяем по истории цены, что сработало первым — тейк или стоп. Так копится реальный винрейт вместо эвристики.</p>
@@ -612,6 +619,7 @@
         <a class="footer-link" href="https://t.me/TradingInfoStats" target="_blank" rel="noopener" title="Telegram-канал @TradingInfoStats">✈ Telegram</a>
       </nav>
     </footer>
+    </div>
   </div>
 
   <div class="modal-overlay hidden" id="modalOverlay">

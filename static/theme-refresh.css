@@ -1,0 +1,284 @@
+/* ============================================================================
+   theme-refresh.css — финальный слой рефреша темы (подключается ПОСЛЕДНИМ).
+   Намеренный override-слой: !important на ключевых свойствах, чтобы перебить
+   более специфичные правила terminal.css/refresh-pro.css (вкл. ID-селекторы).
+   Биржевой уровень в духе OKX на ВАШЕЙ индиго/фиолет айдентике. Слой обратимый.
+   ========================================================================== */
+
+:root {
+  --bg: #06080f;
+  --surface: #0e1320;
+  --surface2: #151c2c;
+  --surface3: #0a0e18;
+  --border: rgba(255, 255, 255, 0.07);
+  --border2: rgba(255, 255, 255, 0.15);
+  --text: #f5f8ff;
+  --text2: #c4cde0;
+  --muted: #8390a8;
+  --green: #1fd984;
+  --red: #ff5470;
+  --radius: 16px;
+  --accent: #6d6dfb;
+  --accent2: #b45cff;
+  --grad: linear-gradient(135deg, #6d6dfb 0%, #8b5cf6 50%, #b45cff 100%);
+  --glow: 0 0 0 1px rgba(109,109,251,.4), 0 12px 36px -8px rgba(109,109,251,.6);
+  --glow-soft: 0 8px 30px -10px rgba(124,92,255,.5);
+  --up-soft: rgba(31, 217, 132, 0.16);
+  --down-soft: rgba(255, 84, 112, 0.16);
+}
+
+body.terminal-body {
+  background:
+    radial-gradient(1200px 560px at 82% -12%, rgba(180,92,255,.11), transparent 60%),
+    radial-gradient(1000px 500px at -10% 0%, rgba(109,109,251,.10), transparent 60%),
+    var(--bg) !important;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ====================== ТИПОГРАФИКА ====================== */
+h1, h2, h3, #verdictTitle, .verdict-title, .market-name {
+  letter-spacing: -0.025em !important;
+  font-weight: 800 !important;
+}
+.price, .price-big, .stat-value, .change, td, th, .vc-num,
+.movers-change, .j-r, .kpi .v, .instrument-badge,
+[class*="price"], [class*="value"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ====================== ЛОГОТИП ====================== */
+.logo-text h1 {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+  background: linear-gradient(92deg, #ffffff 0%, #cdd0ff 50%, #c79bff 105%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  color: transparent !important;
+}
+.logo-text p { color: var(--muted) !important; letter-spacing: .02em; }
+.logo-icon { filter: drop-shadow(0 4px 16px rgba(109,109,251,.55)); }
+
+/* ====================== ТОПБАР + ПОИСК ====================== */
+.topbar {
+  background: color-mix(in srgb, var(--bg) 80%, transparent) !important;
+  backdrop-filter: saturate(1.5) blur(16px);
+  -webkit-backdrop-filter: saturate(1.5) blur(16px);
+  border-bottom: 1px solid var(--border) !important;
+}
+.search-field {
+  background: var(--surface3) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.search-field:focus-within {
+  border-color: var(--accent) !important;
+  background: var(--surface) !important;
+  box-shadow: 0 0 0 4px rgba(109,109,251,.2) !important;
+}
+
+/* ====================== КНОПКИ ====================== */
+.btn-primary {
+  font-weight: 700 !important;
+  letter-spacing: .01em;
+  background: var(--grad) !important;
+  border: none !important;
+  box-shadow: var(--glow-soft) !important;
+  transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s ease, filter .16s ease;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: var(--glow) !important; filter: brightness(1.07); }
+.btn-primary:active { transform: translateY(0); }
+
+/* ====================== НАВИГАЦИЯ ====================== */
+.nav-tab {
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 9px 17px !important;
+  border-radius: 12px !important;
+  color: var(--text2) !important;
+  border: 1px solid transparent !important;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.nav-tab:hover { background: rgba(255,255,255,.05) !important; color: var(--text) !important; }
+.nav-tab.active {
+  background: var(--grad) !important;
+  color: #fff !important;
+  box-shadow: var(--glow-soft) !important;
+}
+.instrument-badge {
+  font-weight: 800 !important;
+  letter-spacing: .02em;
+  color: #dfe2ff !important;
+  background: rgba(109,109,251,.15) !important;
+  border: 1px solid rgba(109,109,251,.4) !important;
+  border-radius: 999px !important;
+}
+
+/* ====================== КАРТОЧКИ / ПАНЕЛИ ====================== */
+.panel, .card, .persona-card, .macro-card, .corr-panel {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.028), rgba(255,255,255,0) 130px),
+    var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 18px 44px -22px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.05) !important;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.panel:hover, .card:hover {
+  border-color: rgba(109,109,251,.42) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 26px 60px -20px rgba(0,0,0,.9), var(--glow-soft) !important;
+}
+
+/* Заголовки панелей — акцентная вертикальная черта (реальная разметка: .panel > h2/h3). */
+.panel > h2, .panel > h3 {
+  position: relative;
+  padding-left: 14px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em;
+}
+.panel > h2::before, .panel > h3::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0.12em; bottom: 0.12em;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--grad);
+}
+
+/* ====================== ГЕО-ВЕРДИКТ (главный экран) ====================== */
+.verdict-card {
+  padding: 26px 28px !important;
+  border-radius: 20px !important;
+  border: 1px solid var(--border2) !important;
+  background:
+    radial-gradient(130% 150% at 100% 0%, rgba(109,109,251,.12), transparent 55%),
+    var(--surface) !important;
+  box-shadow: 0 26px 64px -26px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+#verdictTitle, .verdict-title { font-size: clamp(22px, 2.6vw, 32px) !important; }
+.verdict-badge {
+  font-weight: 800 !important;
+  letter-spacing: .05em !important;
+  text-transform: uppercase;
+  font-size: 12px !important;
+  padding: 6px 13px !important;
+  border-radius: 999px !important;
+}
+.vc-num { font-size: clamp(28px, 3vw, 42px) !important; font-weight: 800 !important; }
+.verdict-reason { color: var(--text2) !important; font-size: 15px !important; }
+
+.verdict-card.v-buy {
+  background: radial-gradient(130% 150% at 100% 0%, rgba(31,217,132,.16), transparent 55%), var(--surface) !important;
+  box-shadow: 0 26px 64px -26px rgba(0,0,0,.9), inset 0 0 0 1px rgba(31,217,132,.45) !important;
+}
+.verdict-card.v-sell {
+  background: radial-gradient(130% 150% at 100% 0%, rgba(255,84,112,.16), transparent 55%), var(--surface) !important;
+  box-shadow: 0 26px 64px -26px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,84,112,.45) !important;
+}
+.verdict-card.v-buy .verdict-badge { background: var(--up-soft) !important; color: var(--green) !important; }
+.verdict-card.v-sell .verdict-badge { background: var(--down-soft) !important; color: var(--red) !important; }
+
+/* ====================== ТАБЛИЦЫ (биржевой вид) ====================== */
+.panel table { border-collapse: collapse; width: 100%; }
+.panel table th {
+  text-transform: uppercase !important;
+  font-size: 11px !important;
+  letter-spacing: .06em !important;
+  font-weight: 700 !important;
+  color: var(--muted) !important;
+  border-bottom: 1px solid var(--border2) !important;
+  background: var(--surface3) !important;
+  position: sticky; top: 0; z-index: 1;
+}
+.panel table td { border-bottom: 1px solid var(--border) !important; }
+.panel table tbody tr { transition: background .12s ease; }
+.panel table tbody tr:hover { background: rgba(109,109,251,.07) !important; }
+
+.up, .positive, .pos, .bull, .change.up { color: var(--green) !important; }
+.down, .negative, .neg, .bear, .change.down { color: var(--red) !important; }
+
+/* ====================== КОЛЬЦО СОГЛАСОВАННОСТИ (fix) ====================== */
+/* Внутренний кружок — под новую тему (был хардкод #141b2b), чуть толще обод. */
+.verdict-conf::before {
+  background: var(--surface2) !important;
+  inset: 8px !important;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55) !important;
+}
+/* Свечение обода по сигналу + читаемые число/подпись. */
+.verdict-conf.v-buy  { box-shadow: 0 0 28px -8px rgba(31, 217, 132, 0.55) !important; }
+.verdict-conf.v-sell { box-shadow: 0 0 28px -8px rgba(255, 84, 112, 0.60) !important; }
+.verdict-conf.v-wait { box-shadow: 0 0 28px -8px rgba(245, 158, 11, 0.50) !important; }
+.verdict-conf .vc-num { color: #ffffff !important; font-size: 1.75rem !important; line-height: 1 !important; }
+.verdict-conf .vc-label { color: var(--muted) !important; letter-spacing: 0.1em !important; }
+
+/* ====================== ПОЛИРОВКА КОМПОНЕНТОВ (весь интерфейс) ====================== */
+/* Вторичные/иконочные кнопки — единый стиль с hover-акцентом. */
+.btn-secondary, .btn-icon {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text2) !important;
+  border-radius: 11px !important;
+  font-weight: 600 !important;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+.btn-secondary:hover, .btn-icon:hover {
+  border-color: var(--accent) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+/* Текстовые бренд-ссылки в шапке. */
+.brand-link {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  transition: background .16s ease, color .16s ease;
+}
+.brand-link:hover { background: rgba(109, 109, 251, 0.12) !important; color: var(--text) !important; }
+
+/* Сегмент-тогглы (режим/таймфреймы) — пилюля-контейнер + мягкий активный. */
+.seg, .mode-toggle, .interval-group {
+  background: var(--surface3) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 999px !important;
+}
+.seg button, .mode-toggle button, .interval-group .btn-interval {
+  border: none !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  transition: background .16s ease, color .16s ease;
+}
+.seg button:hover, .mode-toggle button:hover, .interval-group .btn-interval:hover { color: var(--text) !important; }
+.seg button.active, .mode-toggle button.active, .interval-group .btn-interval.active {
+  background: rgba(109, 109, 251, 0.20) !important;
+  color: #e6e8ff !important;
+}
+
+/* Под-вкладки панели (Обзор/Анализ/Паттерны). */
+.panel-tabs button { font-weight: 600 !important; color: var(--muted) !important; transition: color .16s ease; }
+.panel-tabs button:hover { color: var(--text2) !important; }
+.panel-tabs button.active { color: var(--text) !important; }
+
+/* Строки movers/корреляций — аккуратный hover. */
+.mover, [class*="corr-row"], [class*="corr-item"] {
+  border-radius: 12px !important;
+  transition: background .14s ease, border-color .14s ease;
+}
+.mover:hover, [class*="corr-row"]:hover, [class*="corr-item"]:hover {
+  background: rgba(109, 109, 251, 0.06) !important;
+}
+
+/* Чипы. */
+.chip { border-radius: 999px !important; }
+
+/* ====================== СКРОЛЛБАРЫ / МЕЛОЧИ ====================== */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(109,109,251,.5); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+::selection { background: rgba(109,109,251,.4); color: #fff; }

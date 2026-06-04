@@ -356,12 +356,11 @@ function renderJournal(data) {
   if (!statsEl || !list) return;
   const s = data.stats || {};
   statsEl.innerHTML =
-    `<div class="jstat"><span>Сделок закрыто</span><strong>${s.closed || 0}</strong></div>` +
-    `<div class="jstat"><span>Винрейт</span><strong class="${(s.win_rate || 0) >= 50 ? "good" : "bad"}">${s.win_rate || 0}%</strong></div>` +
-    `<div class="jstat"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${s.avg_r || 0}</strong></div>` +
-    `<div class="jstat"><span>Профит-фактор</span><strong>${s.profit_factor || 0}</strong></div>` +
-    `<div class="jstat"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
-    `<div class="jstat"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
+    `<div class="jstat hero"><span>Винрейт</span><strong class="${(s.win_rate || 0) >= 50 ? "good" : "bad"}">${s.win_rate || 0}%</strong><em>${s.closed || 0} закрытых</em></div>` +
+    `<div class="jstat hero"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${(s.avg_r || 0) > 0 ? "+" : ""}${s.avg_r || 0}R</strong><em>на сделку</em></div>` +
+    `<div class="jstat hero"><span>Профит-фактор</span><strong class="${(s.profit_factor || 0) >= 1 ? "good" : ""}">${s.profit_factor || 0}</strong><em>прибыль / убыток</em></div>` +
+    `<div class="jstat mini"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
+    `<div class="jstat mini"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
 
   const sigs = data.signals || [];
   if (!sigs.length) {
@@ -607,6 +606,28 @@ function moverIconHtml(m) {
   return `<span class="inst-fallback" style="${style}">${fb}</span>`;
 }
 
+function sparklineSvg(spark, up, cls) {
+  if (!spark || spark.length < 2) return "";
+  const w = 100, h = 30;
+  let min = Infinity, max = -Infinity;
+  for (const v of spark) { if (v < min) min = v; if (v > max) max = v; }
+  const range = max - min || 1;
+  const pts = spark.map((v, i) => {
+    const x = (i / (spark.length - 1)) * w;
+    const y = h - ((v - min) / range) * (h - 3) - 1.5;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  });
+  const col = up ? "#34d399" : "#fb7185";
+  const gid = "spg_" + Math.random().toString(36).slice(2, 8);
+  return `<svg class="${cls || "mc-spark"}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${col}" stop-opacity="0.28"/>` +
+    `<stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>` +
+    `<polygon points="0,${h} ${pts.join(" ")} ${w},${h}" fill="url(#${gid})"/>` +
+    `<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `</svg>`;
+}
+
 function moverCard(m) {
   const up = m.change_pct >= 0;
   const cur = moverCurrency(m);
@@ -620,6 +641,7 @@ function moverCard(m) {
       `<span class="mc-titles"><span class="mc-name">${m.name}</span>` +
       `<span class="mc-sub">${m.subtitle || m.id}</span></span>` +
     `</span>` +
+    sparklineSvg(m.spark, up) +
     `<span class="mc-chg ${up ? "up" : "down"}">${up ? "+" : ""}${m.change_pct}%</span>` +
     `<span class="mc-price">${cur}${formatPrice(m.price)}</span>`;
   btn.addEventListener("click", () => {
@@ -649,10 +671,13 @@ function renderMovers(data) {
       if (!m) return "";
       const cur = moverCurrency(m);
       return `<div class="mover-big ${kind}">
-        <span class="mb-label">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>
-        <span class="mb-name">${m.name}</span>
-        <span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>
-        <span class="mb-price">${cur}${formatPrice(m.price)}</span>
+        <span class="mb-info">
+          <span class="mb-label">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>
+          <span class="mb-name">${m.name}</span>
+          <span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>
+          <span class="mb-price">${cur}${formatPrice(m.price)}</span>
+        </span>
+        ${sparklineSvg(m.spark, kind === "up", "mb-spark")}
       </div>`;
     };
     top.innerHTML = big(data.top_gainer, "up") + big(data.top_loser, "down");
@@ -1880,6 +1905,65 @@ $("btnJournalClear")?.addEventListener("click", () => {
   if (!confirm("Удалить ВСЕ записи журнала? Действие необратимо.")) return;
   jSave([]);
   loadJournal();
+});
+
+// ---- Экспорт журнала в .json (бэкап; журнал хранится только в localStorage) ----
+$("btnJournalExport")?.addEventListener("click", () => {
+  const arr = jLoad();
+  if (!arr.length) { showError("Журнал пуст — нечего экспортировать"); return; }
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `signal_journal_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ---- Импорт журнала из .json (массив записей; заменяет текущий после подтверждения) ----
+function jValidImport(arr) {
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  for (const r of arr) {
+    if (!r || (r.side !== "long" && r.side !== "short")) continue;
+    const entry = +r.entry, stop = +r.stop, tp = +r.take_profit;
+    if (!(entry > 0) || !(stop > 0) || !(tp > 0)) continue;
+    out.push({
+      id: r.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      created_ts: r.created_ts || Math.floor(Date.now() / 1000),
+      pair: r.pair || "", market: r.market || "", display: r.display || r.pair || "",
+      side: r.side, entry, stop, take_profit: tp,
+      take_profit_2: r.take_profit_2 != null ? +r.take_profit_2 : null,
+      rr: r.rr != null ? +r.rr : null, accuracy_pct: r.accuracy_pct ?? null,
+      status: r.status || "open", exit_price: r.exit_price ?? null,
+      outcome_ts: r.outcome_ts ?? null, r_multiple: r.r_multiple ?? null,
+      evaluated_ts: r.evaluated_ts ?? null,
+    });
+  }
+  return out;
+}
+$("btnJournalImport")?.addEventListener("click", () => $("journalImportFile")?.click());
+$("journalImportFile")?.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch (err) { showError("Не удалось прочитать файл: неверный JSON"); e.target.value = ""; return; }
+    const recs = jValidImport(parsed);
+    if (!recs || !recs.length) { showError("В файле нет корректных записей сигналов"); e.target.value = ""; return; }
+    const cur = jLoad();
+    const msg = cur.length
+      ? `Импортировать ${recs.length} записей? Текущие ${cur.length} будут ЗАМЕНЕНЫ.`
+      : `Импортировать ${recs.length} записей в журнал?`;
+    if (confirm(msg)) {
+      jSave(recs);
+      switchView("journal");
+      loadJournal();
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
 });
 
 let entryConfig = {};

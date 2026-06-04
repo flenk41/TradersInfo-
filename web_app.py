@@ -531,6 +531,24 @@ def api_movers():
         return jsonify({"ok": False, "error": f"Не удалось загрузить движения: {e}"}), 500
 
 
+@app.route("/api/strip-quotes")
+@rate_limit(40, 60)
+def api_strip_quotes():
+    """Цена/изменение/спарклайн для видимых карточек верхней полосы (батч, кэш 60с)."""
+    market = _market_param() or "crypto"
+    ids = [x.strip() for x in request.args.get("ids", "").split(",") if x.strip()][:16]
+    if not ids:
+        return jsonify({"ok": True, "quotes": {}})
+    try:
+        from tis.features.movers_provider import strip_quotes
+
+        key = f"strip:{market}:" + ",".join(sorted(ids))
+        data = get_cached(key, lambda: strip_quotes(market, ids), ttl=60)
+        return jsonify({"ok": True, "quotes": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/correlations")
 @rate_limit(20, 60)
 def api_correlations():
