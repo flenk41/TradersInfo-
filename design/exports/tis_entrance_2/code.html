@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Обзор рынка | TRADING INFO STATS</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0e17;
+            overflow-x: hidden;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .aurora-blur {
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        .glass-card {
+            background: rgba(19, 26, 40, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Hero Cards Interaction */
+        .hero-card:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+        .hero-card .aurora-shift {
+            transition: all 0.8s ease;
+        }
+        .hero-card:hover .aurora-shift {
+            transform: scale(1.5) translate(-10%, -10%);
+            opacity: 0.3;
+        }
+
+        /* Coin Card Interactions */
+        .coin-card {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .coin-card:hover {
+            transform: translateY(-4px);
+            border-color: currentColor;
+        }
+        .coin-card.up:hover {
+            background: rgba(74, 222, 128, 0.08);
+            color: #4ade80;
+            box-shadow: 0 10px 30px -10px rgba(74, 222, 128, 0.2);
+        }
+        .coin-card.down:hover {
+            background: rgba(248, 113, 113, 0.08);
+            color: #f87171;
+            box-shadow: 0 10px 30px -10px rgba(248, 113, 113, 0.2);
+        }
+        
+        .sparkline-svg {
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100;
+            transition: stroke-dashoffset 1s ease-out;
+        }
+        .coin-card:hover .sparkline-svg {
+            stroke-dashoffset: 0;
+        }
+
+        /* Entrance Animations */
+        @keyframes revealUp {
+            from {
+                opacity: 0;
+                transform: scale(0.98) translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .animate-reveal {
+            opacity: 0;
+            animation: revealUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: var(--delay, 0ms);
+        }
+
+        .hero-reveal {
+            opacity: 0;
+            animation: revealUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: var(--delay, 0ms);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#0a0e17",
+                        "inverse-primary": "#4b49d8",
+                        "primary-fixed-dim": "#c1c1ff",
+                        "on-background": "#dfe2ef",
+                        "surface-dim": "#0f131c",
+                        "surface-container-high": "#262a34",
+                        "on-surface-variant": "#c7c4d7",
+                        "outline-variant": "#464554",
+                        "error-container": "#93000a",
+                        "secondary": "#d0bcff",
+                        "secondary-fixed-dim": "#d0bcff",
+                        "on-secondary-fixed-variant": "#5516be",
+                        "outline": "#908fa0",
+                        "surface-bright": "#353943",
+                        "on-primary-container": "#120094",
+                        "surface": "#0f131c",
+                        "surface-container-low": "#181b25",
+                        "on-secondary-container": "#c4abff",
+                        "tertiary-container": "#ba6bff",
+                        "primary-container": "#8283ff",
+                        "inverse-surface": "#dfe2ef",
+                        "surface-container-highest": "#31353f",
+                        "on-surface": "#dfe2ef",
+                        "background": "#0f131c",
+                        "secondary-container": "#571bc1",
+                        "surface-tint": "#c1c1ff",
+                        "on-primary-fixed": "#0a006b",
+                        "on-tertiary-fixed": "#2d004f",
+                        "on-error": "#690005",
+                        "on-tertiary-container": "#41006f",
+                        "on-secondary": "#3c0091",
+                        "primary": "#c1c1ff",
+                        "tertiary": "#dfb7ff",
+                        "tertiary-fixed": "#f1daff",
+                        "secondary-fixed": "#e9ddff",
+                        "on-primary": "#1600a8",
+                        "surface-variant": "#31353f",
+                        "inverse-on-surface": "#2c303a",
+                        "on-error-container": "#ffdad6",
+                        "primary-fixed": "#e2dfff",
+                        "on-tertiary-fixed-variant": "#6b00b0",
+                        "on-tertiary": "#4b007e",
+                        "tertiary-fixed-dim": "#dfb7ff",
+                        "surface-container": "#1c1f29",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#312cc0",
+                        "on-secondary-fixed": "#23005c",
+                        "success": "#4ade80",
+                        "danger": "#f87171"
+                    },
+                    "spacing": {
+                        "input-padding": "12px 16px",
+                        "unit": "4px",
+                        "section-gap": "32px",
+                        "gutter": "16px",
+                        "container-margin": "24px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "title-md": ["Inter"],
+                        "display-xl": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "data-mono": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "display-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "data-mono": ["14px", {"lineHeight": "20px", "fontWeight": "500"}]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface-container-lowest text-on-surface selection:bg-primary/30">
+<!-- Aurora Backgrounds -->
+<div class="fixed inset-0 overflow-hidden -z-10">
+<div class="aurora-blur absolute -top-40 -left-40 w-[600px] h-[600px] bg-primary rounded-full"></div>
+<div class="aurora-blur absolute top-1/2 -right-40 w-[500px] h-[500px] bg-secondary rounded-full"></div>
+</div>
+<div class="flex min-h-screen">
+<!-- Side Navigation -->
+<aside class="hidden md:flex fixed left-0 top-0 h-full w-[280px] bg-surface-dim/80 backdrop-blur-2xl border-r border-white/10 flex-col py-6 z-50">
+<div class="px-6 mb-10">
+<span class="font-title-md text-title-md text-primary">TRADING INFO</span>
+</div>
+<nav class="flex-1 px-4 space-y-2">
+<a class="flex items-center gap-4 px-4 py-3 bg-primary-container/20 text-primary border-r-4 border-primary transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="leaderboard">leaderboard</span>
+<span class="font-label-caps text-label-caps">Терминал</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="filter_alt">filter_alt</span>
+<span class="font-label-caps text-label-caps">Скринер</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="import_contacts">import_contacts</span>
+<span class="font-label-caps text-label-caps">Журнал</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="sensors">sensors</span>
+<span class="font-label-caps text-label-caps">Сигналы</span>
+</a>
+</nav>
+<div class="mt-auto px-4 space-y-2">
+<div class="px-4 py-4 mb-4 flex items-center gap-3 bg-white/5 rounded-xl">
+<div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+<span class="material-symbols-outlined text-primary" data-icon="account_circle">account_circle</span>
+</div>
+<div>
+<p class="text-sm font-semibold text-on-surface">Аналитик</p>
+<p class="text-xs text-on-surface-variant">Premium Plan</p>
+</div>
+</div>
+<a class="flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-label-caps text-label-caps">Помощь</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label-caps text-label-caps">Выход</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 md:ml-[280px] min-h-screen px-container-margin py-8">
+<!-- Top Bar -->
+<header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
+<div class="animate-reveal" style="--delay: 100ms">
+<h1 class="font-headline-lg text-headline-lg mb-2">Обзор рынка</h1>
+<p class="text-on-surface-variant font-body-sm">Мониторинг лидеров роста и падения в реальном времени</p>
+</div>
+<div class="flex items-center gap-4 self-stretch md:self-auto animate-reveal" style="--delay: 200ms">
+<div class="flex bg-surface-container-low p-1 rounded-xl border border-white/5">
+<button class="px-4 py-2 rounded-lg bg-primary text-on-primary font-label-caps text-label-caps shadow-lg transition-all duration-300 active:scale-95">Крипта</button>
+<button class="px-4 py-2 rounded-lg text-on-surface-variant hover:text-on-surface font-label-caps text-label-caps transition-colors">Акции</button>
+<button class="px-4 py-2 rounded-lg text-on-surface-variant hover:text-on-surface font-label-caps text-label-caps transition-colors">Валюта</button>
+</div>
+<div class="flex bg-surface-container-low p-1 rounded-xl border border-white/5">
+<button class="px-4 py-2 rounded-lg bg-surface-container-highest text-on-surface font-label-caps text-label-caps transition-all duration-300 active:scale-95">День</button>
+<button class="px-4 py-2 rounded-lg text-on-surface-variant hover:text-on-surface font-label-caps text-label-caps transition-colors">Месяц</button>
+</div>
+</div>
+</header>
+<!-- Hero Section: Top Movers -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+<!-- Top Gainer -->
+<div class="glass-card hero-card relative overflow-hidden rounded-3xl p-8 group hero-reveal" style="--delay: 300ms">
+<div class="aurora-shift absolute -right-12 -top-12 w-48 h-48 bg-success/10 blur-3xl rounded-full"></div>
+<div class="flex justify-between items-start mb-6 relative z-10">
+<div class="flex items-center gap-4">
+<div class="w-14 h-14 rounded-2xl bg-success/20 flex items-center justify-center border border-success/30 group-hover:scale-110 transition-transform duration-500">
+<span class="material-symbols-outlined text-success text-3xl" data-icon="trending_up">trending_up</span>
+</div>
+<div>
+<span class="text-success font-label-caps text-label-caps px-2 py-1 bg-success/10 rounded-md">Лидер роста</span>
+<h2 class="text-2xl font-bold mt-1">Solana (SOL)</h2>
+</div>
+</div>
+<div class="text-right">
+<p class="text-on-surface-variant font-label-caps text-label-caps mb-1">ТЕКУЩАЯ ЦЕНА</p>
+<p class="text-3xl font-bold font-data-mono">$142.64</p>
+</div>
+</div>
+<div class="flex items-end justify-between relative z-10">
+<div class="font-display-xl text-display-xl text-success transition-transform duration-500 group-hover:scale-105 origin-left">+18.42%</div>
+<div class="h-16 w-32">
+<canvas class="w-full h-full opacity-60 group-hover:opacity-100 transition-opacity duration-500" id="hero-chart-gain"></canvas>
+</div>
+</div>
+</div>
+<!-- Top Loser -->
+<div class="glass-card hero-card relative overflow-hidden rounded-3xl p-8 group hero-reveal" style="--delay: 450ms">
+<div class="aurora-shift absolute -right-12 -top-12 w-48 h-48 bg-danger/10 blur-3xl rounded-full"></div>
+<div class="flex justify-between items-start mb-6 relative z-10">
+<div class="flex items-center gap-4">
+<div class="w-14 h-14 rounded-2xl bg-danger/20 flex items-center justify-center border border-danger/30 group-hover:scale-110 transition-transform duration-500">
+<span class="material-symbols-outlined text-danger text-3xl" data-icon="trending_down">trending_down</span>
+</div>
+<div>
+<span class="text-danger font-label-caps text-label-caps px-2 py-1 bg-danger/10 rounded-md">Лидер падения</span>
+<h2 class="text-2xl font-bold mt-1">Arbitrum (ARB)</h2>
+</div>
+</div>
+<div class="text-right">
+<p class="text-on-surface-variant font-label-caps text-label-caps mb-1">ТЕКУЩАЯ ЦЕНА</p>
+<p class="text-3xl font-bold font-data-mono">$0.923</p>
+</div>
+</div>
+<div class="flex items-end justify-between relative z-10">
+<div class="font-display-xl text-display-xl text-danger transition-transform duration-500 group-hover:scale-105 origin-left">-12.15%</div>
+<div class="h-16 w-32">
+<canvas class="w-full h-full opacity-60 group-hover:opacity-100 transition-opacity duration-500" id="hero-chart-loss"></canvas>
+</div>
+</div>
+</div>
+</section>
+<!-- Market Grid Header -->
+<div class="mb-6 flex items-center justify-between animate-reveal" style="--delay: 600ms">
+<h3 class="font-title-md text-title-md">Активность рынка</h3>
+<div class="flex gap-4">
+<span class="flex items-center gap-1 text-xs text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-success shadow-[0_0_8px_rgba(74,222,128,0.5)]"></span> Рост
+        </span>
+<span class="flex items-center gap-1 text-xs text-on-surface-variant">
+<span class="w-2 h-2 rounded-full bg-danger shadow-[0_0_8px_rgba(248,113,113,0.5)]"></span> Падение
+        </span>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4" id="bubbles-grid">
+<!-- Bubble cards will be rendered here by JS -->
+</div>
+</main>
+</div>
+<!-- Mobile Navigation -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full bg-surface-dim/80 backdrop-blur-xl border-t border-white/5 px-6 py-3 flex justify-between items-center z-[100] shadow-2xl">
+<button class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined" data-icon="leaderboard">leaderboard</span>
+<span class="text-[10px] font-semibold uppercase">Рынки</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="filter_alt">filter_alt</span>
+<span class="text-[10px] font-semibold uppercase">Скринер</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="sensors">sensors</span>
+<span class="text-[10px] font-semibold uppercase">Сигналы</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="text-[10px] font-semibold uppercase">Профиль</span>
+</button>
+</nav>
+<script>
+    const coins = [
+        { name: "Bitcoin", ticker: "BTC", price: "64,231.50", change: "+2.45", trend: "up", strength: 80 },
+        { name: "Ethereum", ticker: "ETH", price: "3,452.12", change: "+1.12", trend: "up", strength: 65 },
+        { name: "Ripple", ticker: "XRP", price: "0.621", change: "-0.85", trend: "down", strength: 40 },
+        { name: "Cardano", ticker: "ADA", price: "0.456", change: "+5.12", trend: "up", strength: 90 },
+        { name: "Polkadot", ticker: "DOT", price: "7.12", change: "-2.34", trend: "down", strength: 30 },
+        { name: "Chainlink", ticker: "LINK", price: "18.45", change: "+3.22", trend: "up", strength: 75 },
+        { name: "Avalanche", ticker: "AVAX", price: "36.78", change: "-1.15", trend: "down", strength: 45 },
+        { name: "Litecoin", ticker: "LTC", price: "88.21", change: "+0.45", trend: "up", strength: 55 },
+        { name: "Polygon", ticker: "MATIC", price: "0.72", change: "-4.21", trend: "down", strength: 20 },
+        { name: "Cosmos", ticker: "ATOM", price: "9.34", change: "+2.11", trend: "up", strength: 68 },
+        { name: "Near", ticker: "NEAR", price: "6.82", change: "+8.92", trend: "up", strength: 95 },
+        { name: "Sui", ticker: "SUI", price: "1.12", change: "-5.45", trend: "down", strength: 15 },
+        { name: "Celestia", ticker: "TIA", price: "12.45", change: "+1.45", trend: "up", strength: 60 },
+        { name: "Optimism", ticker: "OP", price: "2.56", change: "-3.12", trend: "down", strength: 35 },
+        { name: "Render", ticker: "RNDR", price: "9.82", change: "+11.23", trend: "up", strength: 98 }
+    ];
+
+    function renderGrid() {
+        const grid = document.getElementById('bubbles-grid');
+        // Initial delay after hero cards (which end at 450ms + 800ms dur or header 600ms)
+        const baseDelay = 700; 
+        
+        grid.innerHTML = coins.map((coin, index) => {
+            const isUp = coin.trend === 'up';
+            const colorClass = isUp ? 'text-success' : 'text-danger';
+            
+            // Staggered delay based on index for grid effect
+            const delay = baseDelay + (index * 60);
+            
+            return `
+                <div class="glass-card coin-card animate-reveal ${coin.trend} rounded-2xl p-5 flex flex-col h-full relative overflow-hidden group cursor-pointer" style="--delay: ${delay}ms">
+                    <div class="flex justify-between items-start mb-4 relative z-10">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10 group-hover:border-current transition-colors">
+                                <span class="material-symbols-outlined text-on-surface-variant group-hover:text-current transition-colors text-xl">${isUp ? 'rocket_launch' : 'trending_down'}</span>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-sm leading-none group-hover:text-on-surface transition-colors">${coin.name}</h4>
+                                <span class="text-xs text-on-surface-variant uppercase tracking-wider">${coin.ticker}</span>
+                            </div>
+                        </div>
+                        <div class="${colorClass} flex items-center text-sm font-bold">
+                            <span class="material-symbols-outlined text-sm font-bold">${isUp ? 'arrow_drop_up' : 'arrow_drop_down'}</span>
+                            ${coin.change}%
+                        </div>
+                    </div>
+                    
+                    <div class="mt-auto relative z-10">
+                        <div class="flex items-end justify-between mb-3">
+                            <div class="flex items-baseline gap-1">
+                                <span class="text-xs text-on-surface-variant">$</span>
+                                <span class="text-lg font-bold font-data-mono group-hover:text-on-surface transition-colors">${coin.price}</span>
+                            </div>
+                            <div class="h-6 w-16 overflow-hidden">
+                                <svg class="sparkline-svg w-full h-full overflow-visible" viewBox="0 0 100 20" preserveAspectRatio="none">
+                                    <path d="M 0 ${10 + Math.random()*10} L 20 ${5 + Math.random()*10} L 40 ${12 + Math.random()*8} L 60 ${2 + Math.random()*10} L 80 ${8 + Math.random()*10} L 100 ${5 + Math.random()*10}" 
+                                          fill="none" 
+                                          stroke="currentColor" 
+                                          stroke-width="2" 
+                                          stroke-linecap="round" 
+                                          stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <!-- Strength Bar -->
+                        <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                            <div class="h-full rounded-full transition-all duration-700 ease-out group-hover:scale-x-105 origin-left ${isUp ? 'bg-success shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-danger shadow-[0_0_8px_rgba(248,113,113,0.5)]'}" 
+                                 style="width: ${coin.strength}%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Hover Aurora Effect for coin cards -->
+                    <div class="absolute -bottom-8 -right-8 w-24 h-24 rounded-full transition-all duration-700 opacity-0 group-hover:opacity-20 blur-2xl ${isUp ? 'bg-success' : 'bg-danger'}"></div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function drawMiniChart(canvasId, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        
+        let x = 0;
+        let y = height / 2;
+        ctx.moveTo(x, y);
+        
+        for(let i = 0; i < 15; i++) {
+            x += width / 14;
+            y = (height * 0.3) + Math.random() * (height * 0.4);
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderGrid();
+        // Set canvas resolution for sharper lines
+        const gainCanvas = document.getElementById('hero-chart-gain');
+        const lossCanvas = document.getElementById('hero-chart-loss');
+        [gainCanvas, lossCanvas].forEach(c => {
+            const rect = c.getBoundingClientRect();
+            c.width = rect.width;
+            c.height = rect.height;
+        });
+        
+        drawMiniChart('hero-chart-gain', '#4ade80');
+        drawMiniChart('hero-chart-loss', '#f87171');
+    });
+</script>
+</body></html>

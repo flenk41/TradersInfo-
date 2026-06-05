@@ -133,7 +133,166 @@ function renderVerdict(d) {
   }
   // Блок «позиции» (Вход/Стоп/Тейк/R:R/Ликвидация) убран: уровни входа со
   // стопом и тейком показываются на графике.
+  renderScenario(d);
   applyI18n();
+}
+
+// ── Интерактивный сценарий «Что будет, если войти» ──────────────────────────
+// Показывается, когда есть направленный сигнал (лонг/шорт). Наглядно объясняет,
+// сколько пользователь заработает на тейке и потеряет на стопе при заданной
+// сумме/плече. Уровни считает тот же бэкенд (/api/position → zone_stop_take),
+// что рисует вход на графике, поэтому цифры совпадают с линиями на чарте.
+const scState = { side: "long", timer: 0, reqId: 0, pair: null, rec: null };
+
+// Зона входа выбранной стороны, ближайшая к текущей цене (как на графике).
+function scenarioZonePrice(d, side) {
+  const z = (typeof zonesForTf === "function") ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const arr = side === "long" ? z.long : z.short;
+  if (!arr || !arr.length) return null;
+  const cur = d.price || 0;
+  return arr.reduce((best, x) => (Math.abs(x.price - cur) < Math.abs(best.price - cur) ? x : best)).price;
+}
+
+function renderScenario(d) {
+  const card = $("scenarioCard");
+  if (!card) return;
+  const rec = d.accuracy && d.accuracy.recommended_side;
+  const z = (typeof zonesForTf === "function") ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const hasLong = (z.long || []).length > 0;
+  const hasShort = (z.short || []).length > 0;
+  // Показываем, если есть направленная рекомендация ИЛИ на графике нарисована
+  // зона входа (в лонг/шорт) — тогда сценарий объясняет вход «по графику».
+  if (rec !== "long" && rec !== "short" && !hasLong && !hasShort && !d.trade) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  scState.rec = rec;
+
+  // Поля и сторону инициализируем только при СМЕНЕ инструмента — иначе
+  // авто-refresh (раз в ~45с) затирал бы выбор и введённые суммы.
+  const pair = d.pair || activePair;
+  if (scState.pair !== pair) {
+    scState.pair = pair;
+    scState.side = (rec === "long" || rec === "short") ? rec : (hasLong ? "long" : "short");
+    const savedMargin = parseFloat(localStorage.getItem("sc_margin"));
+    const savedLev = parseInt(localStorage.getItem("sc_lev"), 10);
+    $("scMargin").value = !isNaN(savedMargin) && savedMargin > 0 ? savedMargin : 100;
+    const lev = !isNaN(savedLev) && savedLev >= 1 ? savedLev : 10;
+    $("scLev").value = lev;
+    $("scLevVal").textContent = lev + "×";
+    const zp = scenarioZonePrice(d, scState.side);
+    $("scEntry").value = zp != null ? zp : (d.price != null ? d.price : "");
+  }
+  updateScenarioSideUI(d);
+  scenarioRecalc();
+}
+
+// Обновляет заголовок/переключатель/бейдж согласия под ВЫБРАННУЮ сторону.
+// «Согласие» — балл именно этой стороны (long_score/short_score), а не общий.
+function updateScenarioSideUI(d) {
+  const isLong = scState.side === "long";
+  $("scenarioTitle").textContent = isLong
+    ? "Что будет, если войти в ЛОНГ 📈"
+    : "Что будет, если войти в ШОРТ 📉";
+  document.querySelectorAll("#scSide button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.side === scState.side)
+  );
+
+  const trade = d.trade;
+  let score = trade ? (isLong ? trade.long_score : trade.short_score) : null;
+  if (score == null && d.accuracy) score = d.accuracy.overall_pct;
+  score = score != null ? Math.round(score) : 0;
+  scState.verdict = trade ? (isLong ? trade.long_verdict : trade.short_verdict) : "";
+
+  const agree = $("scenarioAgree");
+  agree.textContent = `Согласие за ${isLong ? "ЛОНГ" : "ШОРТ"}: ${score}%`;
+  agree.classList.toggle("sc-strong", score > 60);
+  agree.classList.toggle("sc-weak", score <= 60);
+}
+
+function scenarioScheduleRecalc() {
+  clearTimeout(scState.timer);
+  scState.timer = setTimeout(scenarioRecalc, 280);
+}
+
+async function scenarioRecalc() {
+  const card = $("scenarioCard");
+  if (!card || card.classList.contains("hidden") || !lastAnalysisData) return;
+  const entry = parseFloat($("scEntry").value);
+  const margin = parseFloat($("scMargin").value);
+  const lev = parseInt($("scLev").value, 10);
+  $("scLevVal").textContent = (isNaN(lev) ? "—" : lev) + "×";
+  if (isNaN(margin) || margin > 0) localStorage.setItem("sc_margin", margin);
+  if (!isNaN(lev)) localStorage.setItem("sc_lev", lev);
+
+  const lead = $("scenarioLead");
+  if (isNaN(entry) || entry <= 0 || isNaN(margin) || margin <= 0 || isNaN(lev) || lev < 1) {
+    lead.textContent = "Укажите корректные цену входа, сумму и плечо.";
+    return;
+  }
+
+  const pair = lastAnalysisData.pair || activePair;
+  const market = lastAnalysisData.market || activeMarket;
+  const myReq = ++scState.reqId;
+  lead.textContent = "Считаю сценарий…";
+  try {
+    const r = await fetch("/api/position", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair, market, entry, side: scState.side, margin, leverage: lev }),
+    });
+    const j = await r.json();
+    if (myReq !== scState.reqId) return; // пришёл ответ на устаревший запрос
+    if (!j.ok || !j.position) {
+      lead.textContent = j.error || "Не удалось рассчитать сценарий.";
+      return;
+    }
+    scenarioPaint(j.position, entry);
+  } catch (e) {
+    if (myReq === scState.reqId) lead.textContent = "Ошибка сети — попробуйте ещё раз.";
+  }
+}
+
+function scenarioPaint(p, entry) {
+  const isLong = scState.side === "long";
+  const tpPct = entry ? Math.abs((p.take_profit - entry) / entry * 100) : 0;
+  const slPct = entry ? Math.abs((p.stop_loss - entry) / entry * 100) : 0;
+  const win = Math.abs(p.pnl_tp_usdt);
+  const loss = Math.abs(p.pnl_sl_usdt);
+
+  $("scTpPrice").textContent = `${money(p.take_profit)} (${isLong ? "+" : "−"}${tpPct.toFixed(2)}%)`;
+  $("scTpPnl").textContent = `+${win.toFixed(2)} USDT (+${Math.abs(p.pnl_tp_pct).toFixed(0)}% к сумме)`;
+  $("scSlPrice").textContent = `${money(p.stop_loss)} (${isLong ? "−" : "+"}${slPct.toFixed(2)}%)`;
+  $("scSlPnl").textContent = `−${loss.toFixed(2)} USDT (−${Math.abs(p.pnl_sl_pct).toFixed(0)}% к сумме)`;
+
+  // Полоса риск↔прибыль (наглядно, кто больше).
+  const tot = win + loss || 1;
+  $("scBarRisk").style.flexBasis = (loss / tot * 100) + "%";
+  $("scBarReward").style.flexBasis = (win / tot * 100) + "%";
+
+  const meta = $("scMeta");
+  const liq =
+    p.liquidation_price != null
+      ? `<span class="sc-meta-it sc-warn">💥 Ликвидация: ${money(p.liquidation_price)} (${p.liquidation_distance_pct}% от входа)</span>`
+      : "";
+  meta.innerHTML =
+    `<span class="sc-meta-it">⚖ Риск/прибыль: <b>1:${p.risk_reward}</b></span>` +
+    `<span class="sc-meta-it">📦 Объём позиции: <b>${money(p.position_notional_usdt)} USDT</b></span>` +
+    liq;
+
+  const verb = isLong ? "вырастет" : "упадёт";
+  // Оговорка, если пользователь смотрит сторону, которую движок НЕ советует.
+  let caveat = "";
+  if (scState.rec && scState.rec !== scState.side && (scState.rec === "long" || scState.rec === "short")) {
+    const recRu = scState.rec === "long" ? "ЛОНГ" : "ШОРТ";
+    caveat = `<b class="down">⚠ Движок советует ${recRu}.</b> Это сценарий, если вы всё же войдёте в ${isLong ? "лонг" : "шорт"}. `;
+  }
+  $("scenarioLead").innerHTML =
+    caveat +
+    `Если цена <b>${verb}</b> до тейка — заработаете <b class="up">+${win.toFixed(2)} USDT</b>. ` +
+    `Если развернётся к стопу — потеряете <b class="down">−${loss.toFixed(2)} USDT</b>. ` +
+    `Вы рискуете <b>${loss.toFixed(2)}</b> ради <b>${win.toFixed(2)}</b> (R:R 1:${p.risk_reward}).`;
 }
 
 const NEWS_LABEL = { good: "Позитив", bad: "Негатив", neutral: "Нейтрально" };
@@ -1880,6 +2039,25 @@ $("scrRefresh")?.addEventListener("click", () => loadScreener(true));
 ["scrTrend", "scrSignal", "scrRsiMax", "scrRsiMin", "scrChgMin"].forEach((id) => {
   $(id)?.addEventListener("input", () => applyScreenerFilters());
   $(id)?.addEventListener("change", () => applyScreenerFilters());
+});
+
+["scEntry", "scMargin"].forEach((id) =>
+  $(id)?.addEventListener("input", () => scenarioScheduleRecalc())
+);
+document.querySelectorAll("#scSide button").forEach((b) =>
+  b.addEventListener("click", () => {
+    if (!lastAnalysisData) return;
+    scState.side = b.dataset.side;
+    updateScenarioSideUI(lastAnalysisData);
+    // Подставляем цену зоны входа выбранной стороны (как на графике).
+    const zp = scenarioZonePrice(lastAnalysisData, scState.side);
+    if (zp != null) $("scEntry").value = zp;
+    scenarioRecalc();
+  })
+);
+$("scLev")?.addEventListener("input", () => {
+  $("scLevVal").textContent = $("scLev").value + "×";
+  scenarioScheduleRecalc();
 });
 
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());

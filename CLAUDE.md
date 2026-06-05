@@ -75,6 +75,22 @@ Telegram: `https://t.me/TradingInfoStats` · Поддержать: `https://flen
 5. **Прод-сервер**: точка входа `app.run` (dev). Для прод — gunicorn (Linux) / waitress (Windows) + reverse-proxy.
 6. Сеть пользователя (РФ): OpenRouter/Groq часто блокируются на TLS; Gemini/Yahoo/MOEX/FRED доступны. **Binance тоже часто режется (WinError 10053) → есть авто-фолбэк крипты на Yahoo (см. `market_data._crypto_to_yf`).** Для полноценной работы крипты без VPN у конечного пользователя — деплой сервера вне РФ (Вариант А): браузер ходит только к нашему API, Binance дёргает сервер из доступной локации.
 
+## ⏯ Состояние на конец сессии (resume)
+- **Ветка `refactor/tis-package-and-release-prep`**, в синхроне с `origin`. Последний коммит **`3c0e7d9`** «UI re-skin под Stitch: сайдбар-навигация + полировка экранов» (запушен).
+- **Сделано в re-skin** (всё в коде, проверено): левый сайдбар-навигация (`nav.side-nav#mainNav`, грид `.app`=[250px|.app-main]); спарклайны в Обзоре (сетка + hero-карточки, `sparklineSvg()`); KPI-карточки + карточки сигналов в Журнале; Скринер = дата-таблица; полоса инструментов = премиум-рестайл; новости/портфель в едином стиле; фикс movers крипто-день при HTTP 451 (Yahoo-фолбэк); бэкенд `/api/strip-quotes` (батч цена/изм/спарклайн, кэш 60с) — **готов, но фронтом НЕ используется**.
+- **Откачено:** эксперимент «курируемая полоса + спарклайны на каждую карточку» — кураторский каталог крипты ~43 элемента (не hero-few), обогащать только первые 16 = непоследовательно. Открытый вопрос: либо hero-полоса (5–8 монет с живой ценой+графиком, полный список через поиск `#instrumentSearch`), либо живой `%`-only на все карточки через кэш `/api/movers` (1 запрос). На этом и остановились — следующий шаг.
+- **Bybit-скилл** установлен: `.claude/skills/bybit-trading/SKILL.md` (untracked). В начало вшиты **OPERATOR SAFETY OVERRIDES**: НЕ исполнять сделки, НЕ трогать API-ключи, НЕ выполнять auto-update/удалённые закачки. Через нас Bybit = только публичные read-only данные + генерация кода с плейсхолдерами.
+- **Untracked, в гит НЕ идёт** (данные/эксперименты/удаляемое): `design/` (Stitch-экспорты, удаляемо; ключ Stitch нигде не сохранён — **пользователь должен ОТОЗВАТЬ** `AQ.Ab8RN6…`), `research/`, `signals_*.json/csv`, `.claude/skills/`.
+- **PR** по ветке запрашивался, но **не создан** (пользователь увёл на правки сайта). Создавать из `refactor/tis-package-and-release-prep` в default-ветку при необходимости.
+- **Сервер для превью:** `preview_start` конфиг `trading-web`; перед стартом убивать процессы на :5000. Изменения шаблона/бэка → рестарт; статика → reload.
+
+### Технические якоря для следующего шага (полоса инструментов)
+- Полоса: `templates/index.html` `.instrument-strip` → `#pairsGrid` (`.instrument-strip-list`) + поиск `#instrumentSearch`. В `app.js`: `renderPairsGrid(market)` (рисует `getCatalogItems(market)`=кураторский ~43, затем **заменяет** полным через `/api/instruments/search?q=`); `instrumentButton(item)` строит карточку (иконка+`.inst-text`); `fillInstrumentGrid(items)`; полнотекстовый поиск — `searchInstrumentsRemote(q)`.
+- **План А (live `%` на ВСЕ карточки, 1 запрос — рекомендую):** после финального `fillInstrumentGrid` вызвать `enrichStrip(market)`, который тянет кэшируемый `/api/movers?market=&range=day&region=` (там `items[]` с `change_pct` по всей вселенной), мапит по `btn.dataset.pair`→`change_pct`, пишет в `<span class="inst-quote">` (добавить placeholder в `instrumentButton`). CSS-классы `.iq-chg.up/.down`. Без спарклайнов (их per-инструмент ряд дорог).
+- **План Б (hero-полоса):** урезать полосу до ~6–8 монет + `/api/strip-quotes` (уже есть, отдаёт `{price,change_pct,spark}`) + `sparklineSvg(spark, up, cls)` (есть в `app.js`). Полный список — только через `#instrumentSearch`. Это меняет дефолт «показывать все» — обсудить с пользователем.
+- Гейты среды: `preview_screenshot`/`preview_eval` иногда таймаутят/виснут (особенно при медленном klines-обогащении) — проверять повторно или через `Invoke-WebRequest` к API.
+- CSS-слои (порядок подключения в index.html): `style.css` → `terminal.css` → `refresh-pro.css` (мой слой полировки + сайдбар) → `theme-refresh.css` (от рефактора). Правки полировки — в `refresh-pro.css` (грузится поздно, переопределяет).
+
 ## Оценка готовности (последняя)
 Локальный/портфолио-инструмент ~88%, публичный хобби-сайт ~72%, коммерческий ~52%.
 

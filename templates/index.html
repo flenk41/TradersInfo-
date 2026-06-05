@@ -182,6 +182,52 @@
             <p class="verdict-reason" id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
           </section>
 
+          <section class="scenario-card hidden" id="scenarioCard">
+            <div class="scenario-head">
+              <h3 id="scenarioTitle">Что будет, если войти?</h3>
+              <span class="scenario-agree" id="scenarioAgree">—</span>
+            </div>
+            <div class="scenario-side" id="scSide">
+              <button type="button" data-side="long" class="active">ЛОНГ 📈</button>
+              <button type="button" data-side="short">ШОРТ 📉</button>
+            </div>
+
+            <p class="scenario-lead" id="scenarioLead">—</p>
+
+            <div class="scenario-controls">
+              <label class="sc-ctl">Вход
+                <input type="number" id="scEntry" step="any" inputmode="decimal" />
+              </label>
+              <label class="sc-ctl">Сумма, USDT
+                <input type="number" id="scMargin" value="100" min="1" step="any" inputmode="decimal" />
+              </label>
+              <label class="sc-ctl sc-ctl-lev">Плечо <b id="scLevVal">10×</b>
+                <input type="range" id="scLev" min="1" max="50" value="10" step="1" />
+              </label>
+            </div>
+
+            <div class="scenario-outcomes" id="scOutcomes">
+              <div class="sc-out sc-win">
+                <div class="sc-out-top"><span class="sc-out-ico">✅</span><span class="sc-out-cap">Цена дойдёт до тейка</span></div>
+                <div class="sc-out-price" id="scTpPrice">—</div>
+                <div class="sc-out-pnl up" id="scTpPnl">—</div>
+              </div>
+              <div class="sc-out sc-lose">
+                <div class="sc-out-top"><span class="sc-out-ico">⛔</span><span class="sc-out-cap">Цена дойдёт до стопа</span></div>
+                <div class="sc-out-price" id="scSlPrice">—</div>
+                <div class="sc-out-pnl down" id="scSlPnl">—</div>
+              </div>
+            </div>
+
+            <div class="scenario-bar" id="scBar" title="Соотношение риск/прибыль">
+              <div class="sc-bar-risk" id="scBarRisk"></div>
+              <div class="sc-bar-reward" id="scBarReward"></div>
+            </div>
+
+            <div class="scenario-meta" id="scMeta"></div>
+            <p class="scenario-note">⚠ Это не гарантия. «Согласие рынка» — оценка согласованности сигналов (таймфреймы, индикаторы, история), а не вероятность прибыли. Рынок может пойти против сигнала.</p>
+          </section>
+
           <section class="persona-card" id="personaCard">
             <div class="persona-head">
               <h3>🧠 AI-мнения инвесторов</h3>
