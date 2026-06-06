@@ -70,22 +70,6 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
     # Источник крипто-данных: "bybit" → публичный Bybit V5, иначе авто (Binance→Yahoo).
     src = (source or "").strip().lower() if m == "crypto" else None
 
-    # Тикер сам по себе валидирует инструмент — отдельный validate_symbol не делаем,
-    # чтобы не дублировать сетевой запрос (особенно к MOEX/Yahoo).
-    try:
-        ticker = fetch_ticker_24h(pair, m, source=src)
-        price = float(ticker["lastPrice"])
-    except MarketDataError:
-        raise
-    except Exception:
-        raise MarketDataError(
-            f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
-        )
-    if price <= 0:
-        raise MarketDataError(
-            f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
-        )
-
     klines_map: dict[str, object] = {}
     intervals = [
         *[(tf, 250) for tf in DEFAULT_TIMEFRAMES],
@@ -95,14 +79,42 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
     def _load(interval: str, limit: int):
         return fetch_klines(pair, interval=interval, limit=limit, market=m, source=src)
 
-    with ThreadPoolExecutor(max_workers=min(6, len(intervals))) as pool:
-        futures = {pool.submit(_load, tf, lim): tf for tf, lim in intervals}
-        for fut in as_completed(futures):
-            tf = futures[fut]
+    # Тикер + фандинг + OI грузим ПАРАЛЛЕЛЬНО со свечами (один пул) — они
+    # независимы; иначе на медленной сети тикер/фандинг сериализуют загрузку.
+    # Тикер по-прежнему валидирует инструмент (отдельный validate_symbol не делаем).
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        fut_ticker = pool.submit(fetch_ticker_24h, pair, m, src)
+        fut_funding = pool.submit(get_funding_rate, pair, m, src)
+        fut_oi = pool.submit(get_open_interest, pair, m, src)
+        kfutures = {pool.submit(_load, tf, lim): tf for tf, lim in intervals}
+        for fut in as_completed(kfutures):
+            tf = kfutures[fut]
             try:
                 klines_map[tf] = fut.result()
             except Exception:
                 pass
+        try:
+            ticker = fut_ticker.result()
+            price = float(ticker["lastPrice"])
+        except MarketDataError:
+            raise
+        except Exception:
+            raise MarketDataError(
+                f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
+            )
+        try:
+            funding_data = fut_funding.result()
+        except Exception:
+            funding_data = None
+        try:
+            open_interest = fut_oi.result() if funding_data else None
+        except Exception:
+            open_interest = None
+
+    if price <= 0:
+        raise MarketDataError(
+            f"Инструмент '{pair}' не найден. Примеры: BTC/USDT, AAPL, EUR/USD"
+        )
 
     klines_1h = klines_map.get("1h")
     klines_4h = klines_map.get("4h")
@@ -121,8 +133,6 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
             tf_analyses.append(analyze_timeframe(df, tf))
 
     volatility = calculate_volatility(klines_1h, ticker)
-    funding_data = get_funding_rate(pair, m, source=src)
-    open_interest = get_open_interest(pair, m, source=src) if funding_data else None
     funding = analyze_funding(funding_data, open_interest)
 
     funding_verdict = evaluate_funding(funding)
