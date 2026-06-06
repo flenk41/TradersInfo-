@@ -2275,6 +2275,7 @@ const AIA_ACTION = {
 };
 async function runAiAnalyst(level) {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  clearInterval(_localConclTimer);  // остановить авто-обновление «Без ИИ», чтобы не затирало AI-результат
   const box = $("aiAnalystResult");
   if (!getAiCfg().key) {
     showError("Нужен AI-ключ — вставьте свой бесплатный ключ в открывшемся окне.");
@@ -2283,12 +2284,27 @@ async function runAiAnalyst(level) {
   }
   const cfg = getAiCfg();
   const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
-  // Для «Полного» подкладываем открытые позиции Bybit по этому инструменту (если есть).
-  const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
   // Открываем отдельное окно с результатом.
   const ttl = $("aiAnalystModalTitle");
   if (ttl) ttl.textContent = level === "full" ? "🤖 AI-анализ (+Bybit)" : "🤖 AI-анализ";
   $("aiAnalystOverlay")?.classList.remove("hidden");
+  document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
+  // Для «Полного»: если ключ Bybit сохранён, но позиции ещё не загружены —
+  // автоматически подтягиваем их (read-only), чтобы ИИ видел твою позицию.
+  if (level === "full" && !(window._bybitPositions && window._bybitPositions.length)) {
+    const bc = bybitCfg();
+    if (bc.key && bc.secret) {
+      box.innerHTML = '<p class="aia-loading">Получаю доступ к позициям Bybit…</p>';
+      try {
+        const acc = await (await fetch("/api/bybit/account", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: bc.key, secret: bc.secret }),
+        })).json();
+        if (acc.ok) window._bybitPositions = acc.positions || [];
+      } catch (e) { /* без позиций — анализ всё равно сработает */ }
+    }
+  }
+  const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
   box.innerHTML = '<p class="aia-loading">ИИ анализирует' + (level === "full" ? " (наш анализ + Bybit)…" : "…") + '</p>';
   document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
   try {
