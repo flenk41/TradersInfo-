@@ -2201,6 +2201,7 @@ async function bybitFetchAccount() {
       body: JSON.stringify({ key, secret }),
     })).json();
     if (!j.ok) { box.innerHTML = `<p class="dr-row bad"><span>${j.error || "Ошибка"}</span></p>`; return; }
+    window._bybitPositions = j.positions || [];
     renderBybitAccount(j.balance, j.positions);
   } catch (e) {
     box.innerHTML = '<p class="dr-row bad"><span>Не удалось подключиться к серверу</span></p>';
@@ -2233,6 +2234,67 @@ function renderBybitAccount(bal, positions) {
   }
   box.innerHTML = html;
 }
+// ── AI-аналитик (заключение ИИ по нашему анализу + данные Bybit) ────────────
+const AIA_ACTION = {
+  long: { label: "ЛОНГ 📈", cls: "buy" },
+  short: { label: "ШОРТ 📉", cls: "sell" },
+  wait: { label: "ЖДАТЬ ⏳", cls: "wait" },
+};
+async function runAiAnalyst(level) {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  const box = $("aiAnalystResult");
+  if (!getAiCfg().key) {
+    box.innerHTML = '<p class="aia-need">Нужен AI-ключ. Нажмите «🔑 AI-ключ» в шапке и вставьте свой бесплатный ключ.</p>';
+    if (typeof openAiKeyModal === "function") openAiKeyModal();
+    return;
+  }
+  const cfg = getAiCfg();
+  const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
+  // Для «Полного» подкладываем открытые позиции Bybit по этому инструменту (если есть).
+  const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
+  box.innerHTML = '<p class="aia-loading">ИИ анализирует' + (level === "full" ? " (наш анализ + Bybit)…" : "…") + '</p>';
+  document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
+  try {
+    const j = await (await fetch("/api/ai-analyst", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pair: lastAnalysisData.pair || activePair,
+        market: lastAnalysisData.market || activeMarket,
+        source: cryptoSource(), level, lang,
+        ai_key: cfg.key || "", ai_base: cfg.base || "", ai_model: cfg.model || "",
+        positions,
+      }),
+    })).json();
+    if (!j.ok || !j.analyst) { box.innerHTML = `<p class="aia-need">${j.error || "Не удалось получить ответ ИИ"}</p>`; return; }
+    renderAiAnalyst(j.analyst, level);
+  } catch (e) {
+    box.innerHTML = '<p class="aia-need">Ошибка сети — попробуйте ещё раз.</p>';
+  } finally {
+    document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = false));
+  }
+}
+function renderAiAnalyst(r, level) {
+  const a = AIA_ACTION[r.action] || AIA_ACTION.wait;
+  const li = (arr) => (arr || []).map((x) => `<li>${x}</li>`).join("");
+  const lvlTag = level === "full" ? "Полный +Bybit" : "Простой";
+  $("aiAnalystResult").innerHTML =
+    `<div class="aia-card">` +
+      `<div class="aia-top">` +
+        `<span class="aia-badge ${a.cls}">${a.label}</span>` +
+        `<span class="aia-conf">Уверенность ИИ: <b>${r.confidence}%</b></span>` +
+        (r.horizon ? `<span class="aia-horizon">${r.horizon}</span>` : "") +
+        `<span class="aia-lvl">${lvlTag}</span>` +
+      `</div>` +
+      `<p class="aia-summary">${r.summary || "—"}</p>` +
+      (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
+      (r.risks && r.risks.length ? `<div class="aia-block"><h4>Риски</h4><ul class="aia-risks">${li(r.risks)}</ul></div>` : "") +
+      (r.plan ? `<p class="aia-plan">📋 ${r.plan}</p>` : "") +
+      `<p class="aia-foot">ИИ-заключение поверх нашего анализа${level === "full" ? " + данные Bybit" : ""} · модель ${r.model || "—"}. Не финансовый совет.</p>` +
+    `</div>`;
+}
+$("btnAiSimple")?.addEventListener("click", () => runAiAnalyst("simple"));
+$("btnAiFull")?.addEventListener("click", () => runAiAnalyst("full"));
+
 $("linkBybitKey")?.addEventListener("click", openBybitKey);
 $("bybitKeyClose")?.addEventListener("click", closeBybitKey);
 $("bybitKeyOverlay")?.addEventListener("click", (e) => { if (e.target === $("bybitKeyOverlay")) closeBybitKey(); });

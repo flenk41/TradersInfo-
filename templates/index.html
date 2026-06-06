@@ -350,6 +350,17 @@
 
         <div id="tab-analysis" class="tab-panel">
           <main class="results" id="results">
+            <section class="panel aianalyst-panel" id="aiAnalystPanel">
+              <div class="aia-head">
+                <h2>🤖 AI-аналитик</h2>
+                <small id="aiAnalystHint">Заключение ИИ по нашему анализу. «Полный» добавляет данные Bybit (фандинг/OI) и ваши позиции · нужен AI-ключ</small>
+              </div>
+              <div class="aia-actions">
+                <button type="button" class="btn-secondary" id="btnAiSimple" data-level="simple">⚡ Простой</button>
+                <button type="button" class="btn-primary" id="btnAiFull" data-level="full">🧠 Полный +Bybit</button>
+              </div>
+              <div class="aia-result" id="aiAnalystResult"></div>
+            </section>
             <section class="panel deep-panel" id="deepPanel">
               <h2>🔬 Глубокий анализ</h2>
               <p class="deep-summary" id="deepSummary">—</p>

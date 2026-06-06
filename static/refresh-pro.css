@@ -1265,3 +1265,27 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .bybit-pos-head { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,.08); }
 .bybit-pos { border-bottom: 1px solid rgba(255,255,255,.05); }
 .bp-sym em { font-size: .66rem; font-weight: 700; font-style: normal; margin-left: 4px; }
+
+/* AI-аналитик (вкладка «Анализ») */
+.aianalyst-panel .aia-head { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+.aianalyst-panel .aia-head small { color: var(--muted); font-size: .76rem; }
+.aia-actions { display: flex; gap: 10px; margin-bottom: 12px; }
+.aia-actions button { flex: 1; }
+.aia-loading, .aia-need { font-size: .85rem; color: var(--muted); padding: 8px 2px; }
+.aia-need { color: #fbbf24; }
+.aia-card { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 14px 16px; background: rgba(255,255,255,.03); }
+.aia-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.aia-badge { padding: 4px 12px; border-radius: 999px; font-size: .8rem; font-weight: 800; }
+.aia-badge.buy  { background: rgba(52,211,153,.18); color: #34d399; }
+.aia-badge.sell { background: rgba(251,113,133,.18); color: #fb7185; }
+.aia-badge.wait { background: rgba(245,158,11,.18); color: #f59e0b; }
+.aia-conf { font-size: .8rem; color: var(--text2); } .aia-conf b { color: var(--text); font-variant-numeric: tabular-nums; }
+.aia-horizon { font-size: .72rem; padding: 2px 9px; border-radius: 7px; background: rgba(255,255,255,.06); color: var(--muted); }
+.aia-lvl { margin-left: auto; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.aia-summary { font-size: .9rem; line-height: 1.5; margin: 0 0 10px; }
+.aia-block { margin-bottom: 8px; }
+.aia-block h4 { margin: 0 0 4px; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.aia-pts, .aia-risks { margin: 0; padding-left: 18px; font-size: .82rem; line-height: 1.5; }
+.aia-pts li { color: var(--text2); } .aia-risks li { color: #fca5a5; }
+.aia-plan { font-size: .84rem; font-weight: 600; margin: 8px 0 6px; padding: 8px 10px; border-radius: 10px; background: rgba(99,102,241,.12); }
+.aia-foot { font-size: .68rem; color: var(--muted); margin: 4px 0 0; }

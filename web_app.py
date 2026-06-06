@@ -514,6 +514,61 @@ def api_ai_persona():
         return jsonify({"ok": False, "error": f"Ошибка AI-персоны: {e}"}), 500
 
 
+@app.route("/api/ai-analyst", methods=["POST"])
+@rate_limit(15, 60)
+def api_ai_analyst():
+    """AI-аналитик: ИИ-заключение по нашему анализу (+ данные Bybit на full)."""
+    body = request.get_json(silent=True) or {}
+    pair = (body.get("pair") or "").strip()
+    market = (body.get("market") or "").strip().lower() or None
+    if market not in ("crypto", "stock", "forex"):
+        market = None
+    source = (body.get("source") or "").strip().lower()
+    source = "bybit" if source == "bybit" else None
+    lang = "en" if (body.get("lang") or "ru").lower() == "en" else "ru"
+    level = "simple" if (body.get("level") or "full").lower() == "simple" else "full"
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+
+    ai_key = (body.get("ai_key") or "").strip() or None
+    ai_base = (body.get("ai_base") or "").strip() or None
+    ai_model = (body.get("ai_model") or "").strip() or None
+
+    from tis.ai.ai_analyst import AnalystError, analyze_market, build_analyst_snapshot
+    from tis.ai.ai_news import is_configured
+
+    if not ai_key and not is_configured():
+        return jsonify({
+            "ok": False, "need_key": True,
+            "error": "AI не настроен: нажмите «🔑 AI-ключ» и вставьте свой бесплатный ключ.",
+        }), 200
+
+    # Открытые позиции пользователя на этом инструменте (если переданы фронтом).
+    positions = body.get("positions") if isinstance(body.get("positions"), list) else None
+    if positions:
+        sym = pair.replace("/", "").upper()
+        positions = [p for p in positions if str(p.get("symbol", "")).upper().startswith(sym[:6])][:3]
+
+    try:
+        cache_key = f"analyze:{market or 'auto'}:{source or 'def'}:{pair.upper()}"
+        analysis = get_cached(cache_key, lambda: analyze_pair(pair, market=market, source=source))
+        snapshot = build_analyst_snapshot(
+            analysis_to_dict(analysis, pair=pair), lang, level, source, positions
+        )
+        has_pos = bool(positions)
+        result = analyze_market(
+            snapshot, lang, level, has_pos,
+            api_key=ai_key, base_url=ai_base, model=ai_model,
+        )
+        return jsonify({"ok": True, "analyst": result})
+    except MarketDataError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except AnalystError as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка AI-аналитика: {e}"}), 500
+
+
 @app.route("/api/macro", methods=["GET", "POST"])
 @rate_limit(30, 60)
 def api_macro():
