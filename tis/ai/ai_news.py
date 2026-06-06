@@ -152,9 +152,21 @@ def request_chat(base: str, key: str, model: str, prompt: str, temperature: floa
             ) from e
         if resp.status_code == 200:
             try:
-                return resp.json()["choices"][0]["message"]["content"]
+                msg = resp.json()["choices"][0]["message"]
             except (KeyError, ValueError, TypeError) as e:
                 raise AIChatError(f"Не удалось разобрать ответ модели: {e}") from e
+            # Часть free-моделей кладёт текст не в content, а в reasoning,
+            # либо возвращает пустой content (модерация/обрыв). Берём, что есть.
+            content = (msg.get("content") or "").strip()
+            if not content:
+                content = (msg.get("reasoning") or msg.get("reasoning_content") or "").strip()
+            if content:
+                return content
+            # Пустой ответ — на OpenRouter пробуем следующую free-модель.
+            last = resp
+            if is_or:
+                continue
+            raise AIChatError("Модель вернула пустой ответ. Выберите другую модель в «🔑 AI-ключ».")
         last = resp
         # на OpenRouter перебираем дальше при перегрузке (429), «модель недоступна»
         # (404 No endpoints) И при сбое апстрим-провайдера (5xx, напр. 502) —
