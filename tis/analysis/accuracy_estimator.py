@@ -202,15 +202,18 @@ def build_accuracy_metrics(
     if trade:
         best_side = "long" if trade.long_score >= trade.short_score else "short"
         best_verdict = trade.long_verdict if best_side == "long" else trade.short_verdict
+        best_side_score = trade.long_score if best_side == "long" else trade.short_score
         spread = abs(trade.long_score - trade.short_score)
-        # Доп. фильтры качества (поднимают долю удачных при R:R 1:2):
+        # Фильтры качества (поднимают долю удачных при R:R 1:2):
+        #  • высокий балл стороны (≥78) и явный отрыв (≥12) — только сильные сетапы;
         #  • не против HTF-bias — контртренд при тейке 2R чаще выбивает стопом;
         #  • не в глубоком флэте (ADX<18) — в боковике цена редко доходит до 2R.
         # ADX неизвестен (0) — не блокируем (нет данных ≠ флэт).
         avg_adx = _avg_adx(analysis.timeframes)
         not_counter_trend = bias_dir in (best_side, "neutral")
         not_flat = avg_adx == 0 or avg_adx >= 18
-        if best_verdict == VERDICT_ENTER and spread >= 8 and not_counter_trend and not_flat:
+        strong = best_side_score >= 78 and spread >= 12
+        if best_verdict == VERDICT_ENTER and strong and not_counter_trend and not_flat:
             rec_side = best_side
 
     tf_align = _timeframe_alignment(analysis.timeframes, bias_dir)
