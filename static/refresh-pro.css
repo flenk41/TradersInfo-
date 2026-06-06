@@ -1193,8 +1193,10 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .sc-tk-mark.sl i { background: #f87171; } .sc-tk-mark.sl span { color: #f87171; }
 .sc-tk-mark.tp i { background: #4ade80; } .sc-tk-mark.tp span { color: #4ade80; }
 .sc-tk-mark.en i { background: #cbd5e1; } .sc-tk-mark.en span { color: var(--text, #f1f5f9); }
-.sc-tk-mark.sl { align-items: flex-start; } .sc-tk-mark.sl span { margin-left: -2px; }
-.sc-tk-mark.tp { align-items: flex-end; }   .sc-tk-mark.tp span { margin-right: -2px; }
+/* Крайние метки выравниваем по краю дорожки (по ПОЛОЖЕНИЮ, не по роли) —
+   чтобы подписи не обрезались; корректно и для лонга, и для шорта. */
+.sc-tk-mark.at-start { transform: none; align-items: flex-start; }
+.sc-tk-mark.at-end { transform: none; align-items: flex-end; }
 .sc-tk-cur { position: absolute; top: 8px; width: 2px; height: 34px; background: var(--accent2, #a855f7); transform: translateX(-50%); box-shadow: 0 0 6px rgba(168,85,247,.8); }
 .sc-tk-cur::before { content: "сейчас"; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 700; color: var(--accent2, #a855f7); white-space: nowrap; }
 

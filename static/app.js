@@ -242,13 +242,20 @@ function scenarioPaintTrack(p, entry) {
   // Красный сегмент — от входа к стопу, зелёный — от входа к тейку.
   const redL = Math.min(enP, slP), redW = Math.abs(enP - slP);
   const grL = Math.min(enP, tpP), grW = Math.abs(enP - tpP);
+  // Крайние метки прижимаем к краю дорожки (по положению, не по роли) —
+  // иначе подпись обрезается; стиль (left/right) задаём здесь.
+  const mark = (cls, p, label) => {
+    if (p <= 6) return `<div class="sc-tk-mark ${cls} at-start" style="left:0"><i></i><span>${label}</span></div>`;
+    if (p >= 94) return `<div class="sc-tk-mark ${cls} at-end" style="left:auto;right:0"><i></i><span>${label}</span></div>`;
+    return `<div class="sc-tk-mark ${cls}" style="left:${p}%"><i></i><span>${label}</span></div>`;
+  };
   track.innerHTML =
     `<div class="sc-tk-base"></div>` +
     `<div class="sc-tk-fill red" style="left:${redL}%;width:${redW}%"></div>` +
     `<div class="sc-tk-fill green" style="left:${grL}%;width:${grW}%"></div>` +
-    `<div class="sc-tk-mark sl" style="left:${slP}%"><i></i><span>Стоп ${money(sl)}</span></div>` +
-    `<div class="sc-tk-mark en" style="left:${enP}%"><i></i><span>Вход ${money(entry)}</span></div>` +
-    `<div class="sc-tk-mark tp" style="left:${tpP}%"><i></i><span>Тейк ${money(tp)}</span></div>` +
+    mark("sl", slP, `Стоп ${money(sl)}`) +
+    mark("en", enP, `Вход ${money(entry)}`) +
+    mark("tp", tpP, `Тейк ${money(tp)}`) +
     `<div class="sc-tk-cur" style="left:${curP}%" title="Сейчас: ${money(cur)}"></div>`;
 }
 
