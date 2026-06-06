@@ -160,13 +160,14 @@ function renderScenario(d) {
   const z = (typeof zonesForTf === "function") ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
   const hasLong = (z.long || []).length > 0;
   const hasShort = (z.short || []).length > 0;
-  // Показываем, если есть направленная рекомендация ИЛИ на графике нарисована
-  // зона входа (в лонг/шорт) — тогда сценарий объясняет вход «по графику».
-  if (rec !== "long" && rec !== "short" && !hasLong && !hasShort && !d.trade) {
-    card.classList.add("hidden");
-    return;
+  // Карточка живёт в модалке; здесь только готовим данные и состояние кнопки.
+  const btn = $("btnScenario");
+  const ready = rec === "long" || rec === "short" || hasLong || hasShort || !!d.trade;
+  if (btn) {
+    btn.disabled = !ready;
+    btn.classList.toggle("ready", ready);
   }
-  card.classList.remove("hidden");
+  if (!ready) return;
   scState.rec = rec;
 
   // Поля и сторону инициализируем только при СМЕНЕ инструмента — иначе
@@ -2221,6 +2222,74 @@ $("scLev")?.addEventListener("input", () => {
   scenarioScheduleRecalc();
 });
 $("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
+
+// Открытие сценария входа в отдельном окне
+$("btnScenario")?.addEventListener("click", () => {
+  if ($("btnScenario").disabled || !lastAnalysisData) return;
+  $("scenarioOverlay")?.classList.remove("hidden");
+  scenarioRecalc();  // освежить расчёт при открытии
+});
+$("scenarioClose")?.addEventListener("click", () => $("scenarioOverlay")?.classList.add("hidden"));
+$("scenarioOverlay")?.addEventListener("click", (e) => { if (e.target === $("scenarioOverlay")) $("scenarioOverlay").classList.add("hidden"); });
+
+// ── Калькулятор риска: безопасное плечо и размер позиции под риск ────────────
+let rcSide = "long", _rcTimer = 0;
+function openRiskCalc() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  rcSide = (lastAnalysisData.accuracy && lastAnalysisData.accuracy.recommended_side) || "long";
+  if (rcSide !== "long" && rcSide !== "short") rcSide = "long";
+  document.querySelectorAll("#rcSide button").forEach((b) => b.classList.toggle("active", b.dataset.side === rcSide));
+  $("riskCalcOverlay")?.classList.remove("hidden");
+  computeRiskCalc();
+}
+async function computeRiskCalc() {
+  const box = $("rcResults"), note = $("rcNote");
+  const deposit = parseFloat($("rcDeposit").value);
+  const riskPct = parseFloat($("rcRisk").value);
+  if (isNaN(deposit) || deposit <= 0 || isNaN(riskPct) || riskPct <= 0) {
+    box.innerHTML = ""; note.textContent = "Введите корректные депозит и риск."; return;
+  }
+  const pair = lastAnalysisData.pair || activePair, market = lastAnalysisData.market || activeMarket;
+  const entry = lastAnalysisData.price;
+  note.textContent = "Считаю стоп/тейк из анализа…";
+  try {
+    const j = await (await fetch("/api/position", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair, market, entry, side: rcSide, margin: 100, leverage: 10 }),
+    })).json();
+    if (!j.ok || !j.position) { box.innerHTML = ""; note.textContent = j.error || "Не удалось получить уровни."; return; }
+    const p = j.position;
+    const stopDist = Math.abs(entry - p.stop_loss) / entry;       // доля
+    if (stopDist <= 0) { box.innerHTML = ""; note.textContent = "Стоп слишком близко."; return; }
+    const riskUSD = deposit * riskPct / 100;
+    const notional = riskUSD / stopDist;                          // объём позиции, чтобы убыток на стопе = riskUSD
+    const maxLev = Math.max(1, Math.floor(70 / (stopDist * 100))); // стоп раньше ликвидации
+    const margin = notional / maxLev;
+    const tpDist = Math.abs(p.take_profit - entry) / entry;
+    const rewardUSD = notional * tpDist;
+    const f = (v) => money(v);
+    box.innerHTML =
+      `<div class="dr-row"><span>Сторона / вход</span><b>${rcSide === "long" ? "ЛОНГ" : "ШОРТ"} · ${f(entry)}</b></div>` +
+      `<div class="dr-row bad"><span>Стоп (−${(stopDist*100).toFixed(2)}%)</span><b>${f(p.stop_loss)}</b></div>` +
+      `<div class="dr-row good"><span>Тейк (+${(tpDist*100).toFixed(2)}%)</span><b>${f(p.take_profit)}</b></div>` +
+      `<div class="dr-row"><span>Рискуете на сделке</span><b>${f(riskUSD)} USDT (${riskPct}%)</b></div>` +
+      `<div class="dr-row"><span>Безопасное плечо</span><b>≤ ${maxLev}x</b></div>` +
+      `<div class="dr-row"><span>Размер позиции</span><b>${f(notional)} USDT</b></div>` +
+      `<div class="dr-row"><span>Маржа (при ${maxLev}x)</span><b>${f(margin)} USDT</b></div>` +
+      `<div class="dr-row good"><span>Прибыль на тейке</span><b>+${f(rewardUSD)} USDT</b></div>` +
+      `<div class="dr-row"><span>R:R</span><b>1:${p.risk_reward}</b></div>`;
+    note.textContent = `Если цена дойдёт до стопа — потеряете ${f(riskUSD)} (${riskPct}% депозита). Плечо ≤ ${maxLev}x держит стоп раньше ликвидации.`;
+  } catch (e) {
+    box.innerHTML = ""; note.textContent = "Ошибка сети — попробуйте ещё раз.";
+  }
+}
+$("btnRiskCalc")?.addEventListener("click", () => openRiskCalc());
+$("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
+$("riskCalcOverlay")?.addEventListener("click", (e) => { if (e.target === $("riskCalcOverlay")) $("riskCalcOverlay").classList.add("hidden"); });
+document.querySelectorAll("#rcSide button").forEach((b) =>
+  b.addEventListener("click", () => { rcSide = b.dataset.side; document.querySelectorAll("#rcSide button").forEach((x) => x.classList.toggle("active", x === b)); computeRiskCalc(); })
+);
+["rcDeposit", "rcRisk"].forEach((id) => $(id)?.addEventListener("input", () => { clearTimeout(_rcTimer); _rcTimer = setTimeout(computeRiskCalc, 300); }));
 
 // ── Сентимент Bybit: Long/Short ratio + дисбаланс стакана (публично) ─────────
 async function loadBybitSentiment(pair) {
