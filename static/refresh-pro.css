@@ -1323,3 +1323,15 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .ctrl-text strong { font-size: .98rem; }
 .ctrl-text small { font-size: .76rem; color: var(--muted); line-height: 1.4; }
 .ctrl-card.ctrl-support .ctrl-ic { background: rgba(251,113,133,.14); border-color: rgba(251,113,133,.28); }
+
+/* Рекомендованные модели в модалке AI-ключа */
+.ai-model-rec { margin: 6px 0 10px; }
+.ai-rec-label { display: block; font-size: .72rem; color: var(--muted); margin-bottom: 6px; }
+.ai-model-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-model-chip {
+  cursor: pointer; padding: 5px 10px; border-radius: 8px; font-size: .76rem; font-weight: 600;
+  background: rgba(255,255,255,.04); color: var(--text2, #c7c4d7);
+  border: 1px solid rgba(255,255,255,.1); transition: background .14s var(--ease), color .14s var(--ease), border-color .14s var(--ease);
+}
+.ai-model-chip:hover { color: var(--text); border-color: rgba(255,255,255,.25); }
+.ai-model-chip.active { background: var(--accent, #6366f1); color: #fff; border-color: transparent; }

@@ -2898,6 +2898,22 @@ const AI_PROVIDERS = {
   openai: { label: "OpenAI — платно", base: "https://api.openai.com/v1", model: "gpt-4o-mini", url: "https://platform.openai.com/api-keys" },
 };
 
+// Рекомендованные модели по провайдеру — стабильно отдают валидный JSON.
+// Для OpenRouter — бесплатные (:free), проверенные на формат ответа.
+const RECOMMENDED_MODELS = {
+  openrouter: [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "google/gemini-2.0-flash-exp:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+  ],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-flash"],
+  openai: ["gpt-4o-mini", "gpt-4o"],
+  ollama: ["llama3.1", "qwen2.5"],
+};
+
 // Определяем провайдера по префиксу ключа — чтобы бесплатный ключ всегда ушёл
 // на правильный эндпоинт, даже если в списке выбран не тот провайдер.
 function detectProviderByKey(key) {
@@ -2943,6 +2959,7 @@ function openAiKeyModal() {
     `<a class="ai-getkey" id="aiGetKey" target="_blank" rel="noopener">${T.get}</a>` +
     `<label class="ai-field"><span>${T.key}</span><input type="password" id="aiKeyInput" placeholder="••••••••" autocomplete="off"></label>` +
     `<label class="ai-field"><span>${T.model}</span><input type="text" id="aiModelInput"></label>` +
+    `<div class="ai-model-rec"><span class="ai-rec-label">${en ? "Recommended (stable JSON):" : "Рекомендованные (стабильный JSON):"}</span><div class="ai-model-chips" id="aiModelChips"></div></div>` +
     `<div class="ai-actions"><button type="button" class="btn-primary" id="aiSave">${T.save}</button>` +
     `<button type="button" class="btn-secondary" id="aiClear">${T.clear}</button>` +
     `<span class="ai-status" id="aiStatus">${cfg.key ? T.saved : T.none}</span></div>` +
@@ -2952,11 +2969,33 @@ function openAiKeyModal() {
   if (cfg.key) keyInput.value = cfg.key;
   modelInput.value = cfg.model || AI_PROVIDERS[prov].model;
   getLink.href = AI_PROVIDERS[prov].url;
+
+  // Чипы рекомендованных моделей: клик подставляет модель в поле.
+  function renderModelChips(p) {
+    const box = $("aiModelChips");
+    if (!box) return;
+    const list = RECOMMENDED_MODELS[p] || [];
+    box.innerHTML = list.map((m) => {
+      const short = m.split("/").pop().replace(":free", "");
+      const active = modelInput.value.trim() === m ? " active" : "";
+      return `<button type="button" class="ai-model-chip${active}" data-model="${m}" title="${m}">${short}</button>`;
+    }).join("");
+    box.querySelectorAll(".ai-model-chip").forEach((c) =>
+      c.addEventListener("click", () => {
+        modelInput.value = c.dataset.model;
+        box.querySelectorAll(".ai-model-chip").forEach((x) => x.classList.toggle("active", x === c));
+      })
+    );
+  }
+  renderModelChips(prov);
+
   provSel.addEventListener("change", () => {
     const p = AI_PROVIDERS[provSel.value];
     modelInput.value = p.model;
     getLink.href = p.url;
+    renderModelChips(provSel.value);
   });
+  modelInput.addEventListener("input", () => renderModelChips(provSel.value));
   // Авто-подстройка провайдера по введённому ключу.
   keyInput.addEventListener("input", () => {
     const det = detectProviderByKey(keyInput.value);
@@ -2964,6 +3003,7 @@ function openAiKeyModal() {
       provSel.value = det;
       modelInput.value = AI_PROVIDERS[det].model;
       getLink.href = AI_PROVIDERS[det].url;
+      renderModelChips(det);
     }
   });
   $("aiSave").addEventListener("click", () => {
