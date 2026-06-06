@@ -1973,10 +1973,9 @@ function render(data) {
 
 // Источник крипто-данных для анализа: bybit (публичный V5) или авто (Binance→Yahoo).
 // Только для крипты; хранится в localStorage. Bybit полезен, когда Binance режут в РФ.
-function cryptoSource() {
-  if (activeMarket !== "crypto") return null;
-  try { return localStorage.getItem("crypto_source") === "bybit" ? "bybit" : null; } catch (e) { return null; }
-}
+// Анализ всегда на стандартном источнике (Binance→Yahoo). Bybit оставлен
+// только для просмотра аккаунта (кнопка «🔑 Bybit»), не как источник анализа.
+function cryptoSource() { return null; }
 function sourceParam() {
   const s = cryptoSource();
   return s ? "&source=" + s : "";
@@ -2286,17 +2285,14 @@ async function runAiAnalyst(level) {
   const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
   // Открываем отдельное окно с результатом.
   const ttl = $("aiAnalystModalTitle");
-  if (ttl) ttl.textContent = level === "full" ? "🤖 AI-анализ (+Bybit)" : "🤖 AI-анализ";
+  if (ttl) ttl.textContent = level === "full" ? "🤖 AI-анализ (полный)" : "🤖 AI-анализ";
   $("aiAnalystOverlay")?.classList.remove("hidden");
   document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
-  // Для «Полного»: если ключ Bybit сохранён, но позиции ещё не загружены —
-  // автоматически подтягиваем их (read-only), чтобы ИИ видел твою позицию.
-  if (level === "full") {
-    box.innerHTML = '<p class="aia-loading">Получаю доступ к позициям Bybit…</p>';
-    await ensureBybitPositions();
-  }
-  const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
-  box.innerHTML = '<p class="aia-loading">ИИ анализирует' + (level === "full" ? " (наш анализ + Bybit)…" : "…") + '</p>';
+  // Позиции Bybit учитываются, только если ты их уже открыл во вкладке «🔑 Bybit»
+  // (Bybit — для просмотра аккаунта). Сам анализ их не запрашивает.
+  const positions = level === "full" && Array.isArray(window._bybitPositions) && window._bybitPositions.length
+    ? window._bybitPositions : null;
+  box.innerHTML = '<p class="aia-loading">ИИ анализирует…</p>';
   document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
   try {
     const j = await (await fetch("/api/ai-analyst", {
@@ -2455,10 +2451,8 @@ let _localConclTimer = 0;
 async function runLocalConclusion() {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
   const ttl = $("aiAnalystModalTitle");
-  if (ttl) ttl.textContent = "📋 Заключение (+Bybit, без ИИ)";
+  if (ttl) ttl.textContent = "📋 Заключение (без ИИ)";
   $("aiAnalystOverlay")?.classList.remove("hidden");
-  $("aiAnalystResult").innerHTML = '<p class="aia-loading">Собираю заключение' + (bybitCfg().key ? " и позиции Bybit…" : "…") + '</p>';
-  await ensureBybitPositions();  // подтянуть твою позицию, если ключ Bybit сохранён
   renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
   // Пока окно открыто — переобновляем заключение свежими данными (анализ освежается поллингом графика).
   clearInterval(_localConclTimer);

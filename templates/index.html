@@ -128,10 +128,6 @@
           <button type="button" class="btn-entrypoints" id="btnImbalance" title="Имбаланс (Fair Value Gap) — незаполненные разрывы цены">▦ Имбаланс</button>
           <button type="button" class="btn-entrypoints" id="btnWatch" title="Добавить в список наблюдения">☆ В список</button>
           <button type="button" class="btn-colors" id="btnColors" title="Настроить цвета линий входа">🎨 Цвета</button>
-          <div class="seg source-seg" id="cryptoSourceSeg" title="Источник крипто-данных для анализа (публичные данные, без ключа)">
-            <button type="button" class="active" data-source="auto">Binance</button>
-            <button type="button" data-source="bybit">Bybit</button>
-          </div>
           <div class="interval-group" id="tvIntervals">
             <button type="button" class="btn-interval" data-interval="5">5m</button>
             <button type="button" class="btn-interval" data-interval="15">15m</button>
@@ -353,13 +349,13 @@
           <main class="results" id="results">
             <section class="panel aianalyst-panel" id="aiAnalystPanel">
               <div class="aia-head">
-                <h2>🧭 Аналитик</h2>
-                <small id="aiAnalystHint">«Анализ Bybit» — заключение на живых данных Bybit (цена, фандинг/OI, ваша позиция), без ИИ и без ключа, работает всегда. Кнопки ИИ — «живой» пересказ поверх (нужен AI-ключ).</small>
+                <h2>🤖 AI-аналитик</h2>
+                <small id="aiAnalystHint">Заключение ИИ по нашему анализу · нужен AI-ключ. «Без ИИ» — то же заключение от движка, если AI недоступен.</small>
               </div>
               <div class="aia-actions">
-                <button type="button" class="btn-primary" id="btnAiLocal" title="Заключение на данных Bybit/анализа — без ИИ, без ключа, всегда работает">📊 Анализ Bybit (без ИИ)</button>
-                <button type="button" class="btn-secondary" id="btnAiSimple" data-level="simple">⚡ ИИ кратко</button>
-                <button type="button" class="btn-secondary" id="btnAiFull" data-level="full">🧠 ИИ полный</button>
+                <button type="button" class="btn-secondary" id="btnAiSimple" data-level="simple">⚡ Простой</button>
+                <button type="button" class="btn-primary" id="btnAiFull" data-level="full">🧠 Полный</button>
+                <button type="button" class="btn-secondary" id="btnAiLocal" title="Заключение от движка без ИИ — работает всегда, без ключа">📋 Без ИИ</button>
               </div>
             </section>
             <section class="panel deep-panel" id="deepPanel">
