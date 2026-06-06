@@ -29,6 +29,16 @@ def _fmt(v, suffix=""):
     return f"{v}{suffix}" if v is not None else "—"
 
 
+def _clean_text(text: str) -> str:
+    """Очистка свободного ответа модели: убираем <think>…</think>, ```fences``` и хвосты."""
+    import re
+
+    t = text or ""
+    t = re.sub(r"<think>.*?</think>", "", t, flags=re.DOTALL | re.IGNORECASE)
+    t = t.replace("```json", "").replace("```", "")
+    return t.strip()
+
+
 def build_analyst_snapshot(a: dict, lang: str, level: str, source: str | None, positions: list | None) -> str:
     """Текстовый снимок анализа для модели. Для full — максимально подробный."""
     L = (lambda ru, en: en if lang == "en" else ru)
@@ -146,11 +156,31 @@ def analyze_market(
     prompt = _build_prompt(snapshot, lang, level, has_positions)
     try:
         content = request_chat(base, key, model, prompt, temperature=0.3)
-        parsed = json.loads(_extract_json(content))
     except AIChatError as e:
         raise AnalystError(str(e)) from e
-    except (ValueError, TypeError) as e:
-        raise AnalystError(f"Не удалось разобрать ответ модели: {e}") from e
+
+    # Часть бесплатных моделей игнорирует «строгий JSON» и отдаёт текст (или
+    # вовсе пустой ответ). Пытаемся распарсить JSON; если не вышло — не падаем,
+    # а используем текст модели как заключение.
+    parsed = None
+    try:
+        parsed = json.loads(_extract_json(content))
+        if not isinstance(parsed, dict):
+            parsed = None
+    except (ValueError, TypeError):
+        parsed = None
+
+    if parsed is None:
+        txt = _clean_text(content)
+        if not txt:
+            raise AnalystError(
+                "Модель вернула пустой ответ. Попробуйте ещё раз или выберите другую модель в «🔑 AI-ключ»."
+            )
+        return {
+            "level": level, "action": "wait", "confidence": 0, "horizon": "",
+            "summary": txt[:700], "key_points": [], "risks": [], "plan": "",
+            "model": model, "freeform": True,
+        }
 
     action = str(parsed.get("action", "wait")).lower()
     if action not in ("long", "short", "wait"):

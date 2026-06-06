@@ -2306,14 +2306,18 @@ function renderAiAnalyst(r, level) {
   const a = AIA_ACTION[r.action] || AIA_ACTION.wait;
   const li = (arr) => (arr || []).map((x) => `<li>${x}</li>`).join("");
   const lvlTag = level === "full" ? "Полный +Bybit" : "Простой";
-  $("aiAnalystResult").innerHTML =
-    `<div class="aia-card">` +
-      `<div class="aia-top">` +
+  // freeform — модель не отдала JSON, показываем её текст без бейджа действия.
+  const topHtml = r.freeform
+    ? `<div class="aia-top"><span class="aia-horizon">Заключение ИИ</span><span class="aia-lvl">${lvlTag}</span></div>`
+    : `<div class="aia-top">` +
         `<span class="aia-badge ${a.cls}">${a.label}</span>` +
         `<span class="aia-conf">Уверенность ИИ: <b>${r.confidence}%</b></span>` +
         (r.horizon ? `<span class="aia-horizon">${r.horizon}</span>` : "") +
         `<span class="aia-lvl">${lvlTag}</span>` +
-      `</div>` +
+      `</div>`;
+  $("aiAnalystResult").innerHTML =
+    `<div class="aia-card">` +
+      topHtml +
       `<p class="aia-summary">${r.summary || "—"}</p>` +
       (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
       (r.risks && r.risks.length ? `<div class="aia-block"><h4>Риски</h4><ul class="aia-risks">${li(r.risks)}</ul></div>` : "") +
