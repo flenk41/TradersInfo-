@@ -2324,6 +2324,20 @@ function renderAiAnalyst(r, level) {
 $("btnAiSimple")?.addEventListener("click", () => runAiAnalyst("simple"));
 $("btnAiFull")?.addEventListener("click", () => runAiAnalyst("full"));
 
+// Центр управления — карточки открывают существующие модалки (без дублирования логики).
+document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
+  card.addEventListener("click", () => {
+    switch (card.dataset.ctrl) {
+      case "journal": openJournalAdd(); break;
+      case "dividends": openDividends(); break;
+      case "colors": openColorsModal(); break;
+      case "aikey": (typeof openAiKeyModal === "function") && openAiKeyModal(); break;
+      case "bybit": openBybitKey(); break;
+      case "support": openModal("support"); break;
+    }
+  })
+);
+
 $("linkBybitKey")?.addEventListener("click", openBybitKey);
 $("bybitKeyClose")?.addEventListener("click", closeBybitKey);
 $("bybitKeyOverlay")?.addEventListener("click", (e) => { if (e.target === $("bybitKeyOverlay")) closeBybitKey(); });

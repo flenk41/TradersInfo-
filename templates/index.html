@@ -52,6 +52,7 @@
         <button type="button" class="nav-tab" data-view="portfolio"><span class="nav-ic">💼</span><span>Портфель</span></button>
         <button type="button" class="nav-tab" data-view="news"><span class="nav-ic">📰</span><span>Новости</span></button>
         <button type="button" class="nav-tab" data-view="journal"><span class="nav-ic">📒</span><span>Журнал</span></button>
+        <button type="button" class="nav-tab" data-view="control"><span class="nav-ic">🎛️</span><span>Центр</span></button>
       </div>
     </nav>
     <div class="app-main">
@@ -660,6 +661,41 @@
         <div class="journal-stats" id="journalStats"></div>
         <div class="journal-list" id="journalList">
           <p class="news-empty">Пока нет записей. Откройте инструмент, нажмите «Анализ» и «Записать сигнал».</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="app-view hidden" id="view-control">
+      <section class="panel control-panel">
+        <div class="control-head">
+          <h2>🎛️ Центр управления</h2>
+          <p class="control-sub">Инструменты анализа и настройки в одном месте</p>
+        </div>
+        <div class="control-grid">
+          <button type="button" class="ctrl-card" data-ctrl="journal">
+            <span class="ctrl-ic">📝</span>
+            <span class="ctrl-text"><strong>Записать сигнал</strong><small>Зафиксировать вход/стоп/тейк в журнал — винрейт по реальной истории</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="dividends">
+            <span class="ctrl-ic">💰</span>
+            <span class="ctrl-text"><strong>Калькулятор дивидендов</strong><small>Доход и доходность по акции (для акций — откройте бумагу)</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="colors">
+            <span class="ctrl-ic">🎨</span>
+            <span class="ctrl-text"><strong>Цвета линий входа</strong><small>Настроить цвета лонг/шорт/приблизит. зон на графике</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="aikey">
+            <span class="ctrl-ic">🔑</span>
+            <span class="ctrl-text"><strong>AI-ключ</strong><small>Подключить свой бесплатный ключ для AI-аналитика и персон</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="bybit">
+            <span class="ctrl-ic">🟡</span>
+            <span class="ctrl-text"><strong>Аккаунт Bybit</strong><small>Ключ read-only: баланс и открытые позиции (без торговли)</small></span>
+          </button>
+          <button type="button" class="ctrl-card ctrl-support" data-ctrl="support">
+            <span class="ctrl-ic">❤️</span>
+            <span class="ctrl-text"><strong>Поддержать проект</strong><small>СБП / донат — помогает развивать и держать сервис</small></span>
+          </button>
         </div>
       </section>
     </div>
