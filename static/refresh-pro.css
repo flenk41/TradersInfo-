@@ -1289,3 +1289,13 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .aia-pts li { color: var(--text2); } .aia-risks li { color: #fca5a5; }
 .aia-plan { font-size: .84rem; font-weight: 600; margin: 8px 0 6px; padding: 8px 10px; border-radius: 10px; background: rgba(99,102,241,.12); }
 .aia-foot { font-size: .68rem; color: var(--muted); margin: 4px 0 0; }
+
+/* Живая дельта % на карточках полосы инструментов (enrichStrip) */
+.instrument-strip-list .instrument-item { position: relative; }
+.inst-quote {
+  margin-left: auto; align-self: center; flex-shrink: 0;
+  font-size: .78rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  padding: 2px 8px; border-radius: 7px; white-space: nowrap;
+}
+.inst-quote.up   { color: #34d399; background: rgba(52,211,153,.12); }
+.inst-quote.down { color: #fb7185; background: rgba(251,113,133,.12); }

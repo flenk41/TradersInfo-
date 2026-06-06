@@ -1584,6 +1584,7 @@ async function renderPairsGrid(market) {
   // пары Binance / все бумаги MOEX / расширенные США и форекс).
   fillInstrumentGrid(getCatalogItems(market));
   const seq = ++_listSeq;
+  enrichStrip(market);  // ранняя дельта по кураторскому списку (до полной загрузки)
   try {
     const region = market === "stock" ? activeStockRegion : "all";
     const json = await (await fetch(`/api/instruments/search?market=${market}&region=${region}&q=`)).json();
@@ -1592,6 +1593,34 @@ async function renderPairsGrid(market) {
     }
   } catch (e) {
     /* остаётся кураторский список */
+  }
+  enrichStrip(market);  // живая дельта % на верхних карточках (батч, кэш 60с)
+}
+
+// Живое изменение цены на первых ~12 карточках полосы инструментов.
+// 1 батч-запрос /api/strip-quotes (кэш 60с), только для видимых карточек.
+async function enrichStrip(market) {
+  const grid = $("pairsGrid");
+  if (!grid) return;
+  const btns = [...grid.querySelectorAll(".instrument-item")].slice(0, 12);
+  const ids = btns.map((b) => b.dataset.pair).filter(Boolean);
+  if (!ids.length) return;
+  const seq = _listSeq;
+  try {
+    const j = await (await fetch(`/api/strip-quotes?market=${encodeURIComponent(market)}&ids=${encodeURIComponent(ids.join(","))}`)).json();
+    if (seq !== _listSeq || !j.ok) return;  // список сменился — не пишем устаревшее
+    const q = j.quotes || {};
+    btns.forEach((b) => {
+      const d = q[b.dataset.pair];
+      if (!d || d.change_pct == null) return;
+      let el = b.querySelector(".inst-quote");
+      if (!el) { el = document.createElement("span"); el.className = "inst-quote"; b.appendChild(el); }
+      const up = d.change_pct >= 0;
+      el.className = "inst-quote " + (up ? "up" : "down");
+      el.textContent = (up ? "+" : "") + d.change_pct + "%";
+    });
+  } catch (e) {
+    /* тихо — полоса остаётся без дельты */
   }
 }
 
