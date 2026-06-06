@@ -2313,7 +2313,7 @@ async function runAiAnalyst(level) {
 function renderAiAnalyst(r, level) {
   const a = AIA_ACTION[r.action] || AIA_ACTION.wait;
   const li = (arr) => (arr || []).map((x) => `<li>${x}</li>`).join("");
-  const lvlTag = level === "full" ? "Полный +Bybit" : "Простой";
+  const lvlTag = r.local ? "Без ИИ" : level === "full" ? "Полный +Bybit" : "Простой";
   // freeform — модель не отдала JSON, показываем её текст без бейджа действия.
   const topHtml = r.freeform
     ? `<div class="aia-top"><span class="aia-horizon">Заключение ИИ</span><span class="aia-lvl">${lvlTag}</span></div>`
@@ -2330,9 +2330,73 @@ function renderAiAnalyst(r, level) {
       (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
       (r.risks && r.risks.length ? `<div class="aia-block"><h4>Риски</h4><ul class="aia-risks">${li(r.risks)}</ul></div>` : "") +
       (r.plan ? `<p class="aia-plan">📋 ${r.plan}</p>` : "") +
-      `<p class="aia-foot">ИИ-заключение поверх нашего анализа${level === "full" ? " + данные Bybit" : ""} · модель ${r.model || "—"}. Не финансовый совет.</p>` +
+      `<p class="aia-foot">${r.local ? "Заключение по нашему анализу (без ИИ), обновляется в реальном времени" : "ИИ-заключение поверх нашего анализа" + (level === "full" ? " + данные Bybit" : "") + " · модель " + (r.model || "—")}. Не финансовый совет.</p>` +
     `</div>`;
 }
+// Детерминированное заключение по НАШЕМУ анализу — без ИИ, без ключа, всегда работает.
+function buildLocalConclusion(d) {
+  const acc = d.accuracy || {}, trade = d.trade || {}, vol = d.volatility || {}, deep = d.deep || {};
+  const side = acc.recommended_side;
+  const action = side === "long" || side === "short" ? side : "wait";
+  const checks = acc.checks || [];
+  const good = checks.filter((c) => c.status === "good").map((c) => c.name + (c.detail ? ` — ${c.detail}` : ""));
+  const bad = checks.filter((c) => c.status === "bad").map((c) => c.name + (c.detail ? ` — ${c.detail}` : ""));
+  const warnings = trade.warnings || [];
+  const sideRu = action === "long" ? "ЛОНГ" : action === "short" ? "ШОРТ" : "ЖДАТЬ";
+
+  let summary;
+  if (action === "wait") {
+    summary = `Чёткого сигнала нет — лучше подождать. Тренд: ${d.overall_trend}. Балл согласованности ${acc.overall_pct ?? "—"}/100 (${acc.reliability_label || "—"}).`;
+  } else {
+    summary = `Движок за ${sideRu}. Тренд: ${d.overall_trend}. Балл согласованности ${acc.overall_pct ?? "—"}/100 (${acc.reliability_label || "—"}). HTF-bias: ${d.bias ? d.bias.summary : "—"}.`;
+  }
+
+  // Дедуп по «имени» (текст до « — »), чтобы волатильность не повторялась.
+  const dedup = (arr) => {
+    const seen = new Set(), out = [];
+    for (const s of arr) {
+      const key = s.split(" — ")[0].toLowerCase().replace(/\(.*?\)/g, "").trim();
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(s);
+    }
+    return out;
+  };
+  const key_points = dedup(good).slice(0, 5);
+  if (deep.market_regime) key_points.push(`Режим: ${deep.market_regime}, риск ${deep.risk_score}/100`);
+  const risks = dedup(bad.concat(warnings)).slice(0, 4);
+
+  let plan = "";
+  if (action !== "wait" && trade.entry_price_hint) {
+    plan = `Вход: ${trade.entry_price_hint} · Стоп: ${trade.stop_loss_hint} · Тейк: ${trade.take_profit_hint}`;
+  } else {
+    const sup = (d.support_levels || []).slice(0, 2).map(money).join(", ");
+    const res = (d.resistance_levels || []).slice(0, 2).map(money).join(", ");
+    plan = `Поддержки: ${sup || "—"} · Сопротивления: ${res || "—"} — ждать реакции у уровня`;
+  }
+
+  return {
+    local: true, action, confidence: acc.overall_pct ?? 0,
+    horizon: deep.market_regime || "",
+    summary, key_points, risks, plan, model: "наш анализ (без ИИ)",
+  };
+}
+let _localConclTimer = 0;
+function runLocalConclusion() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  const ttl = $("aiAnalystModalTitle");
+  if (ttl) ttl.textContent = "📋 Заключение (без ИИ)";
+  $("aiAnalystOverlay")?.classList.remove("hidden");
+  renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
+  // Пока окно открыто — переобновляем заключение свежими данными (анализ освежается поллингом графика).
+  clearInterval(_localConclTimer);
+  _localConclTimer = setInterval(() => {
+    const ov = $("aiAnalystOverlay");
+    if (!ov || ov.classList.contains("hidden")) { clearInterval(_localConclTimer); return; }
+    if (lastAnalysisData) renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
+  }, 3000);
+}
+
+$("btnAiLocal")?.addEventListener("click", () => runLocalConclusion());
 $("btnAiSimple")?.addEventListener("click", () => runAiAnalyst("simple"));
 $("btnAiFull")?.addEventListener("click", () => runAiAnalyst("full"));
 $("aiAnalystClose")?.addEventListener("click", () => $("aiAnalystOverlay")?.classList.add("hidden"));

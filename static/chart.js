@@ -22,7 +22,7 @@ const TradingChart = (() => {
   let liveTimer = null;
   let curSymbol = "$";
   let live = { pair: null, market: "crypto", interval: "1h" };
-  const LIVE_MS = 8000;
+  const LIVE_MS = 3000;
   const VOL_UP = "rgba(52, 211, 153, 0.7)";
   const VOL_DOWN = "rgba(251, 113, 133, 0.7)";
 
