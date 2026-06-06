@@ -156,9 +156,10 @@ def request_chat(base: str, key: str, model: str, prompt: str, temperature: floa
             except (KeyError, ValueError, TypeError) as e:
                 raise AIChatError(f"Не удалось разобрать ответ модели: {e}") from e
         last = resp
-        # на OpenRouter перебираем дальше при перегрузке (429) И при «модель
-        # недоступна» (404 No endpoints) — пропускаем мёртвые free-модели.
-        if not (is_or and (_is_rate_limited(resp) or resp.status_code == 404)):
+        # на OpenRouter перебираем дальше при перегрузке (429), «модель недоступна»
+        # (404 No endpoints) И при сбое апстрим-провайдера (5xx, напр. 502) —
+        # пропускаем мёртвые/перегруженные free-модели, пока одна не ответит.
+        if not (is_or and (_is_rate_limited(resp) or resp.status_code == 404 or resp.status_code >= 500)):
             break
     raise AIChatError(_provider_error(last, base))
 

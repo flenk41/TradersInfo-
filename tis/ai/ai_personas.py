@@ -152,11 +152,23 @@ def analyze_persona(
 
     try:
         content = request_chat(base, key, model, prompt, temperature=0.3)
-        parsed = json.loads(_extract_json(content))
     except AIChatError as e:
         raise PersonaError(str(e)) from e
-    except (ValueError, TypeError) as e:
-        raise PersonaError(f"Не удалось разобрать ответ модели: {e}") from e
+
+    # Бесплатные модели иногда не отдают JSON/пустой ответ — не падаем,
+    # используем текст как мнение (verdict=hold), а пустой → понятная ошибка.
+    parsed = None
+    try:
+        parsed = json.loads(_extract_json(content))
+        if not isinstance(parsed, dict):
+            parsed = None
+    except (ValueError, TypeError):
+        parsed = None
+    if parsed is None:
+        txt = (content or "").replace("```", "").strip()
+        if not txt:
+            raise PersonaError("Модель вернула пустой ответ. Попробуйте ещё раз или другую модель в «🔑 AI-ключ».")
+        parsed = {"verdict": "hold", "confidence": 0, "horizon": "", "summary": txt[:500], "pros": [], "cons": []}
 
     verdict = str(parsed.get("verdict", "hold")).lower()
     if verdict not in ("buy", "hold", "avoid"):
