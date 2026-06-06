@@ -883,17 +883,20 @@ function moverCard(m) {
     sparklineSvg(m.spark, up) +
     `<span class="mc-chg ${up ? "up" : "down"}">${up ? "+" : ""}${m.change_pct}%</span>` +
     `<span class="mc-price">${cur}${formatPrice(m.price)}</span>`;
-  btn.addEventListener("click", () => {
-    if (m.market === "stock") {
-      activeStockRegion = m.region || activeStockRegion;
-      document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
-        b.classList.toggle("active", b.dataset.region === activeStockRegion)
-      );
-    }
-    switchView("market", m.market);
-    analyze(m.id);
-  });
+  btn.addEventListener("click", () => moverOpen(m));
   return btn;
+}
+
+// Открыть инструмент из карточки/hero обзора рынка.
+function moverOpen(m) {
+  if (m.market === "stock") {
+    activeStockRegion = m.region || activeStockRegion;
+    document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
+      b.classList.toggle("active", b.dataset.region === activeStockRegion)
+    );
+  }
+  switchView("market", m.market);
+  analyze(m.id);
 }
 
 function renderMovers(data) {
@@ -906,20 +909,37 @@ function renderMovers(data) {
     return;
   }
   if (top) {
+    top.innerHTML = "";
     const big = (m, kind) => {
-      if (!m) return "";
+      if (!m) return;
       const cur = moverCurrency(m);
-      return `<div class="mover-big ${kind}">
-        <span class="mb-info">
-          <span class="mb-label">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>
-          <span class="mb-name">${m.name}</span>
-          <span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>
-          <span class="mb-price">${cur}${formatPrice(m.price)}</span>
-        </span>
-        ${sparklineSvg(m.spark, kind === "up", "mb-spark")}
-      </div>`;
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = `mover-big ${kind}`;
+      el.innerHTML =
+        `<span class="mb-glow"></span>` +
+        `<div class="mb-top">` +
+          `<div class="mb-id">` +
+            `<span class="mb-ico">${kind === "up" ? "📈" : "📉"}</span>` +
+            `<div class="mb-idtext">` +
+              `<span class="mb-label ${kind}">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>` +
+              `<span class="mb-name">${m.name}</span>` +
+            `</div>` +
+          `</div>` +
+          `<div class="mb-priceblock">` +
+            `<span class="mb-pricelabel">Текущая цена</span>` +
+            `<span class="mb-price">${cur}${formatPrice(m.price)}</span>` +
+          `</div>` +
+        `</div>` +
+        `<div class="mb-bottom">` +
+          `<span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>` +
+          sparklineSvg(m.spark, kind === "up", "mb-spark") +
+        `</div>`;
+      el.addEventListener("click", () => moverOpen(m));
+      top.appendChild(el);
     };
-    top.innerHTML = big(data.top_gainer, "up") + big(data.top_loser, "down");
+    big(data.top_gainer, "up");
+    big(data.top_loser, "down");
   }
   grid.innerHTML = "";
   data.items.forEach((m) => grid.appendChild(moverCard(m)));
