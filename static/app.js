@@ -551,6 +551,7 @@ const JOURNAL_STATUS = {
   open: { label: "Открыт", cls: "open" },
   tp: { label: "TP ✓", cls: "good" },
   sl: { label: "SL ✗", cls: "bad" },
+  be: { label: "Безубыток", cls: "neutral" },
   expired: { label: "Истёк", cls: "neutral" },
 };
 
@@ -575,18 +576,20 @@ const JKEY = "signal_journal";
 function jLoad() { try { return JSON.parse(localStorage.getItem(JKEY) || "[]"); } catch (e) { return []; } }
 function jSave(arr) { try { localStorage.setItem(JKEY, JSON.stringify(arr)); } catch (e) {} }
 function jStats(rows) {
-  const closed = rows.filter((r) => r.status === "tp" || r.status === "sl");
+  const closed = rows.filter((r) => r.status === "tp" || r.status === "sl" || r.status === "be");
   const wins = closed.filter((r) => r.status === "tp");
-  const n = closed.length;
+  const losses = closed.filter((r) => r.status === "sl");
+  const be = closed.filter((r) => r.status === "be");
+  const decided = wins.length + losses.length;  // винрейт без безубытков
   const rs = closed.map((r) => r.r_multiple).filter((v) => v != null);
   const gw = rs.filter((v) => v > 0).reduce((a, b) => a + b, 0);
   const gl = Math.abs(rs.filter((v) => v < 0).reduce((a, b) => a + b, 0));
   return {
     total: rows.length,
     open: rows.filter((r) => r.status === "open").length,
-    closed: n, wins: wins.length, losses: n - wins.length,
+    closed: closed.length, wins: wins.length, losses: losses.length, breakeven: be.length,
     expired: rows.filter((r) => r.status === "expired").length,
-    win_rate: n ? Math.round((wins.length / n) * 1000) / 10 : 0,
+    win_rate: decided ? Math.round((wins.length / decided) * 1000) / 10 : 0,
     avg_r: rs.length ? Math.round((rs.reduce((a, b) => a + b, 0) / rs.length) * 100) / 100 : 0,
     profit_factor: gl ? Math.round((gw / gl) * 100) / 100 : (gw ? Math.round(gw * 100) / 100 : 0),
   };
@@ -603,6 +606,7 @@ function renderJournal(data) {
     `<div class="jstat hero"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${(s.avg_r || 0) > 0 ? "+" : ""}${s.avg_r || 0}R</strong><em>на сделку</em></div>` +
     `<div class="jstat hero"><span>Профит-фактор</span><strong class="${(s.profit_factor || 0) >= 1 ? "good" : ""}">${s.profit_factor || 0}</strong><em>прибыль / убыток</em></div>` +
     `<div class="jstat mini"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
+    (s.breakeven ? `<div class="jstat mini"><span>Безубыток</span><strong>${s.breakeven}</strong></div>` : "") +
     `<div class="jstat mini"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
 
   const sigs = data.signals || [];

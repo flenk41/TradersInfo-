@@ -64,22 +64,39 @@ def build_record(payload: dict) -> dict:
 
 
 def _first_touch(side: str, entry: float, stop: float, tp: float, candles) -> tuple[str, float, int] | None:
-    """Возвращает (исход, цена выхода, ts) при первом касании стопа/тейка."""
+    """Первое касание стопа/тейка с переводом стопа в безубыток после +1R.
+
+    Реалистичное управление позицией: как только цена прошла +1R в нашу сторону
+    (на расстояние риска), стоп переносится в безубыток (на вход). Дальше:
+      • дошли до тейка → "tp";
+      • откатились к входу (после +1R) → "be" (0R, не убыток);
+      • выбило исходным стопом до +1R → "sl" (−1R).
+    Коллизия в одной свече — консервативно (ближний уровень первым).
+    """
+    risk = abs(entry - stop)
+    moved_be = False        # стоп уже в безубытке?
+    cur_stop = stop
     for c in candles:
-        high = c["high"]
-        low = c["low"]
+        high, low, ts = c["high"], c["low"], c["ts"]
+        # 1) фиксируем достижение +1R (перевод стопа в БУ на этой же свече)
+        reached_1r = (high >= entry + risk) if side == "long" else (low <= entry - risk)
+        if not moved_be and reached_1r:
+            moved_be = True
+            cur_stop = entry
+        # 2) касания относительно текущего стопа
         if side == "long":
-            hit_sl = low <= stop
+            hit_sl = low <= cur_stop
             hit_tp = high >= tp
         else:
-            hit_sl = high >= stop
+            hit_sl = high >= cur_stop
             hit_tp = low <= tp
         if hit_sl and hit_tp:
-            return "sl", stop, c["ts"]  # консервативно: стоп первым
+            # ближний уровень первым: стоп ближе входа, чем тейк (R:R≥1)
+            return ("be" if moved_be else "sl"), cur_stop, ts
         if hit_sl:
-            return "sl", stop, c["ts"]
+            return ("be" if moved_be else "sl"), cur_stop, ts
         if hit_tp:
-            return "tp", tp, c["ts"]
+            return "tp", tp, ts
     return None
 
 
@@ -129,7 +146,14 @@ def _evaluate(record: dict, fetch_klines) -> bool:
         record["status"] = outcome
         record["exit_price"] = round(exit_price, 8)
         record["outcome_ts"] = ts
-        record["r_multiple"] = round((abs(tp - entry) / risk) if outcome == "tp" else -1.0, 2)
+        # tp: +R:R; sl: −1R; be (безубыток после +1R): 0R.
+        if outcome == "tp":
+            r_mult = round(abs(tp - entry) / risk, 2)
+        elif outcome == "be":
+            r_mult = 0.0
+        else:
+            r_mult = -1.0
+        record["r_multiple"] = r_mult
         record["evaluated_ts"] = now
         return True
 
@@ -143,21 +167,23 @@ def _evaluate(record: dict, fetch_klines) -> bool:
 
 
 def _stats(rows: list[dict]) -> dict:
-    closed = [r for r in rows if r.get("status") in ("tp", "sl")]
+    closed = [r for r in rows if r.get("status") in ("tp", "sl", "be")]
     wins = [r for r in closed if r["status"] == "tp"]
     losses = [r for r in closed if r["status"] == "sl"]
-    n = len(closed)
+    breakeven = [r for r in closed if r["status"] == "be"]
+    decided = len(wins) + len(losses)  # винрейт считаем без безубытков
     rs = [r["r_multiple"] for r in closed if r.get("r_multiple") is not None]
     gross_win = sum(r for r in rs if r > 0)
     gross_loss = abs(sum(r for r in rs if r < 0))
     return {
         "total": len(rows),
         "open": sum(1 for r in rows if r.get("status") == "open"),
-        "closed": n,
+        "closed": len(closed),
         "wins": len(wins),
         "losses": len(losses),
+        "breakeven": len(breakeven),
         "expired": sum(1 for r in rows if r.get("status") == "expired"),
-        "win_rate": round(len(wins) / n * 100, 1) if n else 0.0,
+        "win_rate": round(len(wins) / decided * 100, 1) if decided else 0.0,
         "avg_r": round(sum(rs) / len(rs), 2) if rs else 0.0,
         "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else (round(gross_win, 2) if gross_win else 0.0),
     }
