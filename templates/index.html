@@ -360,7 +360,6 @@
                 <button type="button" class="btn-secondary" id="btnAiSimple" data-level="simple">⚡ Простой</button>
                 <button type="button" class="btn-primary" id="btnAiFull" data-level="full">🧠 Полный +Bybit</button>
               </div>
-              <div class="aia-result" id="aiAnalystResult"></div>
             </section>
             <section class="panel deep-panel" id="deepPanel">
               <h2>🔬 Глубокий анализ</h2>
@@ -790,6 +789,16 @@
         </div>
         <div class="bybit-result" id="bybitResult"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="aiAnalystOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="aiAnalystModalTitle">🤖 AI-анализ</h2>
+        <button type="button" class="modal-close" id="aiAnalystClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body"><div class="aia-result" id="aiAnalystResult"></div></div>
     </div>
   </div>
 

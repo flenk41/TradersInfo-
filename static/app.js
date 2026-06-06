@@ -2277,7 +2277,7 @@ async function runAiAnalyst(level) {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
   const box = $("aiAnalystResult");
   if (!getAiCfg().key) {
-    box.innerHTML = '<p class="aia-need">Нужен AI-ключ. Нажмите «🔑 AI-ключ» в шапке и вставьте свой бесплатный ключ.</p>';
+    showError("Нужен AI-ключ — вставьте свой бесплатный ключ в открывшемся окне.");
     if (typeof openAiKeyModal === "function") openAiKeyModal();
     return;
   }
@@ -2285,6 +2285,10 @@ async function runAiAnalyst(level) {
   const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
   // Для «Полного» подкладываем открытые позиции Bybit по этому инструменту (если есть).
   const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
+  // Открываем отдельное окно с результатом.
+  const ttl = $("aiAnalystModalTitle");
+  if (ttl) ttl.textContent = level === "full" ? "🤖 AI-анализ (+Bybit)" : "🤖 AI-анализ";
+  $("aiAnalystOverlay")?.classList.remove("hidden");
   box.innerHTML = '<p class="aia-loading">ИИ анализирует' + (level === "full" ? " (наш анализ + Bybit)…" : "…") + '</p>';
   document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
   try {
@@ -2331,6 +2335,8 @@ function renderAiAnalyst(r, level) {
 }
 $("btnAiSimple")?.addEventListener("click", () => runAiAnalyst("simple"));
 $("btnAiFull")?.addEventListener("click", () => runAiAnalyst("full"));
+$("aiAnalystClose")?.addEventListener("click", () => $("aiAnalystOverlay")?.classList.add("hidden"));
+$("aiAnalystOverlay")?.addEventListener("click", (e) => { if (e.target === $("aiAnalystOverlay")) $("aiAnalystOverlay").classList.add("hidden"); });
 
 // Центр управления — карточки открывают существующие модалки (без дублирования логики).
 document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
