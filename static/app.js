@@ -2318,10 +2318,22 @@ async function runAiAnalyst(level) {
         positions,
       }),
     })).json();
-    if (!j.ok || !j.analyst) { box.innerHTML = `<p class="aia-need">${j.error || "Не удалось получить ответ ИИ"}</p>`; return; }
-    renderAiAnalyst(j.analyst, level);
+    const a = j.ok ? j.analyst : null;
+    // ИИ-модель не дала ответа / вернула мусор (частая беда free-моделей) —
+    // не показываем пустоту, а откатываемся на наше заключение «Без ИИ».
+    const junk = a && a.freeform && (!a.summary || a.summary.replace(/[^a-zа-я0-9]/gi, "").length < 20);
+    if (!a || junk) {
+      if (j.need_key) { showError(j.error || "Нужен AI-ключ"); if (typeof openAiKeyModal === "function") openAiKeyModal(); return; }
+      const local = buildLocalConclusion(lastAnalysisData);
+      local._aiFailed = true;
+      renderAiAnalyst(local, "local");
+      return;
+    }
+    renderAiAnalyst(a, level);
   } catch (e) {
-    box.innerHTML = '<p class="aia-need">Ошибка сети — попробуйте ещё раз.</p>';
+    const local = buildLocalConclusion(lastAnalysisData);
+    local._aiFailed = true;
+    renderAiAnalyst(local, "local");
   } finally {
     document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = false));
   }
@@ -2339,8 +2351,12 @@ function renderAiAnalyst(r, level) {
         (r.horizon ? `<span class="aia-horizon">${r.horizon}</span>` : "") +
         `<span class="aia-lvl">${lvlTag}</span>` +
       `</div>`;
+  const failNote = r._aiFailed
+    ? `<p class="aia-need" style="margin:0 0 8px">⚠ ИИ не дал ответа (бесплатная модель перегружена/пуста) — показано заключение по нашему анализу. Для AI-текста выберите Gemini/Groq в «🔑 AI-ключ».</p>`
+    : "";
   $("aiAnalystResult").innerHTML =
     `<div class="aia-card">` +
+      failNote +
       topHtml +
       `<p class="aia-summary">${r.summary || "—"}</p>` +
       (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
@@ -2786,6 +2802,9 @@ const GUIDE_SLIDES = {
     { v: _GV.insider, t: "Инсайдеры / умные деньги", d: "Для акций США — живой сигнал по SEC Form 4: покупки инсайдеров (особенно топ-менеджмента/крупные/кластерные) бычьи и добавляют к баллу. Для РФ-акций — доли инсайдеров/институционалов. Виден в факторах согласованности." },
     { v: _GV.journal, t: "Журнал сигналов", d: "«Записать сигнал» → введите РЕАЛЬНУЮ цену входа (по умолчанию текущая) — стоп/тейк считаются от неё по той же методике, что на графике. Система сама проверит по истории, что сработало (тейк/стоп), и посчитает винрейт. Есть «🗑 Очистить»." },
     { v: _GV.aikey, t: "AI-ключ (свой, бесплатный)", d: "Для AI-разбора и мнений нажмите «🔑 AI-ключ» вверху и вставьте бесплатный ключ. Рекомендую OpenRouter ⭐ (openrouter.ai) — бесплатные модели, доступен из большинства регионов. Ключ хранится только в вашем браузере." },
+    { v: `<div class="gv-news"><span class="gv-nb good">Binance</span><span class="gv-nb">Bybit</span></div>`, t: "Источник данных Bybit", d: "В панели графика (для крипты) — переключатель Binance ⇄ Bybit. Bybit обычно доступен в РФ без VPN и отдаёт фандинг/открытый интерес. Анализ можно считать на данных Bybit — ключ для этого НЕ нужен." },
+    { v: `<div class="gv-aikey">🔑</div>`, t: "Аккаунт Bybit (только просмотр)", d: "Кнопка «🔑 Bybit» — вставьте read-only ключ Bybit: увидите баланс и открытые позиции. Ключ хранится только в браузере, торговать им нельзя. Создавайте на Bybit ключ с правами только на чтение." },
+    { v: `<div class="gv-aikey">🤖</div>`, t: "AI-аналитик и «Без ИИ»", d: "Вкладка «Анализ»: «📋 Без ИИ» — заключение по нашему анализу (работает всегда, без ключа); «⚡ Простой» и «🧠 Полный +Bybit» — заключение ИИ (нужен AI-ключ; «Полный» учитывает фандинг/OI Bybit и вашу позицию). Открывается в отдельном окне; если ИИ недоступен — автоматически показывается заключение «Без ИИ»." },
     { v: _GV.support, t: "Поддержать проект", d: "Кнопка «❤️ Поддержать» вверху. Для РФ — оплата через СБП (Ozon Банк). 100% средств идут на сервер для сайта и развитие проекта." },
   ],
   en: [
@@ -2804,6 +2823,9 @@ const GUIDE_SLIDES = {
     { v: _GV.insider, t: "Insiders / smart money", d: "US stocks — a live SEC Form 4 signal: insider buys (esp. executives/large/clustered) are bullish and add to the score. RU stocks — insider/institutional ownership. Shown in the agreement factors." },
     { v: `<div class="gv-stat"><span>Win rate</span><b class="up">62%</b><span>R:R</span><b>1:2</b></div>`, t: "Signal journal", d: "“Log signal” → enter your REAL entry price (defaults to current) — stop/take are computed from it with the same method as the chart. The system checks history for what hit first and computes a real win rate. There's a “🗑 Clear”." },
     { v: _GV.aikey, t: "AI key (your own, free)", d: "For the AI review and views, click “🔑 AI key” and paste a free key. Recommended: OpenRouter ⭐ (openrouter.ai) — free models, works in most regions. Stored only in your browser." },
+    { v: `<div class="gv-news"><span class="gv-nb good">Binance</span><span class="gv-nb">Bybit</span></div>`, t: "Bybit data source", d: "On the chart bar (for crypto) — a Binance ⇄ Bybit switch. Bybit is usually reachable without a VPN and provides funding/open interest. Analysis can run on Bybit data — no key needed for that." },
+    { v: `<div class="gv-aikey">🔑</div>`, t: "Bybit account (read-only)", d: "The “🔑 Bybit” button — paste a read-only Bybit key to see balance and open positions. The key is stored only in your browser; trading is not possible. Create a Read-Only key on Bybit." },
+    { v: `<div class="gv-aikey">🤖</div>`, t: "AI analyst & “No AI”", d: "Analysis tab: “📋 No AI” — a conclusion from our own analysis (always works, no key); “⚡ Simple” and “🧠 Full +Bybit” — an AI conclusion (needs an AI key; Full uses Bybit funding/OI and your position). Opens in a separate window; if AI is unavailable, the “No AI” conclusion is shown automatically." },
     { v: `<div class="gv-aikey">❤️</div>`, t: "Support the project", d: "The “❤️ Support” button at the top. For Russia — payment via SBP (Ozon Bank). 100% of funds go to the server and project development." },
   ],
 };
