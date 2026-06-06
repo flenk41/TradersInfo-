@@ -2291,18 +2291,9 @@ async function runAiAnalyst(level) {
   document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
   // Для «Полного»: если ключ Bybit сохранён, но позиции ещё не загружены —
   // автоматически подтягиваем их (read-only), чтобы ИИ видел твою позицию.
-  if (level === "full" && !(window._bybitPositions && window._bybitPositions.length)) {
-    const bc = bybitCfg();
-    if (bc.key && bc.secret) {
-      box.innerHTML = '<p class="aia-loading">Получаю доступ к позициям Bybit…</p>';
-      try {
-        const acc = await (await fetch("/api/bybit/account", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: bc.key, secret: bc.secret }),
-        })).json();
-        if (acc.ok) window._bybitPositions = acc.positions || [];
-      } catch (e) { /* без позиций — анализ всё равно сработает */ }
-    }
+  if (level === "full") {
+    box.innerHTML = '<p class="aia-loading">Получаю доступ к позициям Bybit…</p>';
+    await ensureBybitPositions();
   }
   const positions = level === "full" && Array.isArray(window._bybitPositions) ? window._bybitPositions : null;
   box.innerHTML = '<p class="aia-loading">ИИ анализирует' + (level === "full" ? " (наш анализ + Bybit)…" : "…") + '</p>';
@@ -2358,6 +2349,7 @@ function renderAiAnalyst(r, level) {
     `<div class="aia-card">` +
       failNote +
       topHtml +
+      (r.position_note ? `<p class="aia-position ${r.position_note.startsWith("⚠") ? "danger" : ""}">${r.position_note}</p>` : "") +
       `<p class="aia-summary">${r.summary || "—"}</p>` +
       (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
       (r.risks && r.risks.length ? `<div class="aia-block"><h4>Риски</h4><ul class="aia-risks">${li(r.risks)}</ul></div>` : "") +
@@ -2365,6 +2357,29 @@ function renderAiAnalyst(r, level) {
       `<p class="aia-foot">${r.local ? "Заключение по нашему анализу (без ИИ), обновляется в реальном времени" : "ИИ-заключение поверх нашего анализа" + (level === "full" ? " + данные Bybit" : "") + " · модель " + (r.model || "—")}. Не финансовый совет.</p>` +
     `</div>`;
 }
+// Подтянуть открытые позиции Bybit (read-only), если ключ сохранён.
+async function ensureBybitPositions() {
+  if (window._bybitPositions && window._bybitPositions.length) return;
+  const bc = bybitCfg();
+  if (!bc.key || !bc.secret) return;
+  try {
+    const acc = await (await fetch("/api/bybit/account", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: bc.key, secret: bc.secret }),
+    })).json();
+    if (acc.ok) window._bybitPositions = acc.positions || [];
+  } catch (e) { /* без позиций — заключение всё равно сработает */ }
+}
+
+// Открытая позиция Bybit по текущему инструменту (или null).
+function bybitPositionFor(d) {
+  const arr = window._bybitPositions;
+  if (!Array.isArray(arr) || !arr.length) return null;
+  const sym = (d.pair || d.symbol || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (!sym) return null;
+  return arr.find((p) => String(p.symbol || "").toUpperCase().startsWith(sym.slice(0, 6))) || null;
+}
+
 // Детерминированное заключение по НАШЕМУ анализу — без ИИ, без ключа, всегда работает.
 function buildLocalConclusion(d) {
   const acc = d.accuracy || {}, trade = d.trade || {}, vol = d.volatility || {}, deep = d.deep || {};
@@ -2395,7 +2410,29 @@ function buildLocalConclusion(d) {
   };
   const key_points = dedup(good).slice(0, 5);
   if (deep.market_regime) key_points.push(`Режим: ${deep.market_regime}, риск ${deep.risk_score}/100`);
+  // Данные Bybit: фандинг (если доступен — деривативы Bybit/Binance).
+  const fund = d.funding;
+  if (fund && fund.rate_percent != null) {
+    key_points.push(`Фандинг ${fund.rate_percent > 0 ? "+" : ""}${fund.rate_percent}% — ${fund.sentiment || (fund.rate_percent > 0 ? "лонги платят шортам" : "шорты платят лонгам")}`);
+  }
   const risks = dedup(bad.concat(warnings)).slice(0, 4);
+
+  // Оценка ТВОЕЙ открытой позиции Bybit по этому инструменту.
+  const pos = bybitPositionFor(d);
+  let posLine = "";
+  if (pos) {
+    const posSide = pos.side === "buy" ? "long" : "short";
+    const posRu = posSide === "long" ? "ЛОНГ" : "ШОРТ";
+    const pnl = pos.unrealized_pnl;
+    const pnlTxt = `${pnl >= 0 ? "+" : ""}${pnl} USDT`;
+    if (action === "wait") {
+      posLine = `Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt}. Чёткого сигнала нет — управляйте риском (стоп в безубыток / частичная фиксация).`;
+    } else if (posSide === action) {
+      posLine = `Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt} — ПО НАПРАВЛЕНИЮ сигнала. ${pnl >= 0 ? "Можно держать; защитите профит (стоп в БУ, частичный тейк у уровня)." : "Сигнал за вас, но вы в минусе — следите за стопом."}`;
+    } else {
+      posLine = `⚠ Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt} — ПРОТИВ сигнала движка (${sideRu}). Высокий риск: рассмотрите сокращение/закрытие или жёсткий стоп.`;
+    }
+  }
 
   let plan = "";
   if (action !== "wait" && trade.entry_price_hint) {
@@ -2409,15 +2446,18 @@ function buildLocalConclusion(d) {
   return {
     local: true, action, confidence: acc.overall_pct ?? 0,
     horizon: deep.market_regime || "",
-    summary, key_points, risks, plan, model: "наш анализ (без ИИ)",
+    summary, position_note: posLine,
+    key_points, risks, plan, model: "наш анализ (без ИИ)",
   };
 }
 let _localConclTimer = 0;
-function runLocalConclusion() {
+async function runLocalConclusion() {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
   const ttl = $("aiAnalystModalTitle");
-  if (ttl) ttl.textContent = "📋 Заключение (без ИИ)";
+  if (ttl) ttl.textContent = "📋 Заключение (+Bybit, без ИИ)";
   $("aiAnalystOverlay")?.classList.remove("hidden");
+  $("aiAnalystResult").innerHTML = '<p class="aia-loading">Собираю заключение' + (bybitCfg().key ? " и позиции Bybit…" : "…") + '</p>';
+  await ensureBybitPositions();  // подтянуть твою позицию, если ключ Bybit сохранён
   renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
   // Пока окно открыто — переобновляем заключение свежими данными (анализ освежается поллингом графика).
   clearInterval(_localConclTimer);

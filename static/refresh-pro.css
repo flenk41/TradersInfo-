@@ -1335,3 +1335,10 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 }
 .ai-model-chip:hover { color: var(--text); border-color: rgba(255,255,255,.25); }
 .ai-model-chip.active { background: var(--accent, #6366f1); color: #fff; border-color: transparent; }
+
+/* Блок оценки твоей позиции Bybit в заключении */
+.aia-position {
+  margin: 0 0 10px; padding: 9px 12px; border-radius: 10px; font-size: .85rem; line-height: 1.45;
+  background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.25);
+}
+.aia-position.danger { background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.3); color: #fca5a5; }
