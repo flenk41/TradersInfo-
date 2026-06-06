@@ -70,6 +70,7 @@
         <button type="button" class="brand-link brand-link-accent" id="linkAiKey" title="Подключить свой AI-ключ">🔑 AI-ключ</button>
         <button type="button" class="brand-link brand-link-accent" id="linkBybitKey" title="Подключить ключ Bybit (только просмотр баланса/позиций)">🔑 Bybit</button>
         <button type="button" class="brand-link brand-link-dividends hidden" id="linkDividends" title="Калькулятор дивидендов">💰 Дивиденды</button>
+        <button type="button" class="brand-link brand-link-dividends hidden" id="linkQuality" title="Качество бизнеса по Баффету + крупные держатели">🛡️ Качество</button>
         <button type="button" class="btn-support-top" id="linkSupport" title="Поддержать проект">❤️ Поддержать</button>
         <div class="mode-toggle" id="modeToggle" title="Уровень детализации">
           <button type="button" data-mode="simple" class="active">Простой</button>
@@ -731,6 +732,18 @@
           <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
         </div>
         <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="qualityOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🛡️ Инвест-качество (по Баффету)</h2>
+        <button type="button" class="modal-close" id="qualityClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="qualityBody">
+        <p class="modal-note">Откройте акцию и нажмите «Анализ».</p>
       </div>
     </div>
   </div>

@@ -293,6 +293,27 @@ def api_bybit_account():
         return jsonify({"ok": False, "error": "Не удалось получить данные аккаунта Bybit"}), 500
 
 
+@app.route("/api/quality")
+@rate_limit(30, 60)
+def api_quality():
+    """Скоринг качества «по Баффету» + крупные держатели (акции, через yfinance)."""
+    pair = request.args.get("pair", "").strip()
+    market = _market_param() or "stock"
+    lang = _lang_param()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    if market != "stock":
+        return jsonify({"ok": True, "scorecard": {"available": False}, "holders": {"available": False}})
+    try:
+        from tis.features.fundamentals_provider import fetch_quality_scorecard, fetch_top_holders
+
+        sc = get_cached(f"quality:{lang}:{pair.upper()}", lambda: fetch_quality_scorecard(pair, "stock", lang), ttl=3600)
+        hl = get_cached(f"holders:{pair.upper()}", lambda: fetch_top_holders(pair, "stock"), ttl=21600)
+        return jsonify({"ok": True, "scorecard": sc, "holders": hl})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Не удалось получить данные качества: {e}"}), 500
+
+
 @app.route("/api/bybit/sentiment")
 @rate_limit(40, 60)
 def api_bybit_sentiment():

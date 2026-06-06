@@ -2879,6 +2879,11 @@ const MODAL_CONTENT = {
         <p class="modal-note">Любая сумма помогает держать сервис онлайн и развивать его дальше. Спасибо! 🙏</p>
         <div class="support-actions">
           <a class="btn-primary support-btn" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 Поддержать через СБП (Ozon Банк)</a>
+          <a class="support-btn-bybit" href="https://www.bybit.com/invite?ref=ANPNBR&medium=referral&utm_campaign=evergreen" target="_blank" rel="noopener">
+            <span class="sbb-logo">Bybit</span>
+            <span class="sbb-text"><b>Регистрация на Bybit по нашей ссылке</b><small>Бесплатно для вас — биржа делится с проектом частью комиссии</small></span>
+            <span class="sbb-arrow">↗</span>
+          </a>
           <a class="support-btn-alt" href="https://flenk41.github.io/" target="_blank" rel="noopener">Другие способы поддержки ↗</a>
         </div>`,
     },
@@ -2919,6 +2924,11 @@ const MODAL_CONTENT = {
         <p class="modal-note">Any amount helps keep the service online and growing. Thank you! 🙏</p>
         <div class="support-actions">
           <a class="btn-primary support-btn" href="https://flenk41.github.io/" target="_blank" rel="noopener">❤️ Support</a>
+          <a class="support-btn-bybit" href="https://www.bybit.com/invite?ref=ANPNBR&medium=referral&utm_campaign=evergreen" target="_blank" rel="noopener">
+            <span class="sbb-logo">Bybit</span>
+            <span class="sbb-text"><b>Sign up on Bybit via our link</b><small>Free for you — the exchange shares part of its fee with the project</small></span>
+            <span class="sbb-arrow">↗</span>
+          </a>
           <a class="support-btn-alt" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 SBP / Ozon Bank (Russia) ↗</a>
         </div>`,
     },
@@ -3072,9 +3082,9 @@ $("linkGuide")?.addEventListener("click", () => openGuide());
 let divData = null;
 
 function toggleDividendBtn() {
-  const btn = $("linkDividends");
-  if (!btn) return;
-  btn.classList.toggle("hidden", !(activeView === "market" && activeMarket === "stock"));
+  const isStock = activeView === "market" && activeMarket === "stock";
+  $("linkDividends")?.classList.toggle("hidden", !isStock);
+  $("linkQuality")?.classList.toggle("hidden", !isStock);
 }
 
 function divCur(cur) {
@@ -3157,6 +3167,59 @@ function computeDividends() {
 
 function closeDividends() { $("dividendOverlay")?.classList.add("hidden"); }
 $("linkDividends")?.addEventListener("click", openDividends);
+
+// ── Инвест-качество «по Баффету» + крупные держатели (акции) ─────────────────
+const QCHK = { good: "✓", ok: "~", bad: "✗" };
+async function openQuality() {
+  if (activeMarket !== "stock" || !activePair) { showError("Откройте акцию и нажмите «Анализ»"); return; }
+  $("qualityOverlay").classList.remove("hidden");
+  const body = $("qualityBody");
+  body.innerHTML = '<p class="modal-note">Загружаю фундаментал и держателей…</p>';
+  try {
+    const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
+    const j = await (await fetch(`/api/quality?pair=${encodeURIComponent(activePair)}&market=stock&lang=${lang}`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderQuality(j.scorecard, j.holders);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderQuality(sc, hl) {
+  const body = $("qualityBody");
+  let html = "";
+  if (sc && sc.available) {
+    html +=
+      `<div class="q-score">` +
+        `<div class="q-ring q-${sc.grade}"><b>${sc.score}</b><span>из 100</span></div>` +
+        `<div class="q-score-meta"><strong>Класс ${sc.grade} · ${sc.label}</strong>` +
+        `<small>Пройдено сильных критериев: ${sc.passed}/${sc.total}</small></div>` +
+      `</div>` +
+      `<div class="q-checks">` +
+        sc.checks.map((c) =>
+          `<div class="q-chk q-${c.status}"><span class="q-ico">${QCHK[c.status] || "•"}</span>` +
+          `<span class="q-name">${c.name}</span><b class="q-val">${c.value}</b>` +
+          (c.detail ? `<small class="q-det">${c.detail}</small>` : "") + `</div>`
+        ).join("") +
+      `</div>`;
+  } else {
+    html += '<p class="modal-note">Фундаментал недоступен для этой бумаги (Yahoo не отдал данные).</p>';
+  }
+  if (hl && hl.available) {
+    html += `<div class="q-holders"><h4>🏦 Крупные держатели</h4>`;
+    const inst = hl.pct_institutions != null ? `Институционалы: <b>${hl.pct_institutions}%</b>` : "";
+    const ins = hl.pct_insiders != null ? `Инсайдеры: <b>${hl.pct_insiders}%</b>` : "";
+    if (inst || ins) html += `<div class="q-hold-sum">${[inst, ins].filter(Boolean).join(" · ")}</div>`;
+    if (hl.top && hl.top.length) {
+      html += `<div class="q-hold-list">` + hl.top.map((h) =>
+        `<div class="q-hold-row"><span>${h.holder}</span>${h.pct != null ? `<b>${h.pct}%</b>` : ""}${h.value ? `<small>${h.value}</small>` : ""}</div>`
+      ).join("") + `</div>`;
+    }
+    html += `</div>`;
+  }
+  html += '<p class="modal-note">Линза стоимостного инвестора (Баффет/Грэм): качество бизнеса и кто им владеет. Не индивидуальная рекомендация.</p>';
+  body.innerHTML = html;
+}
+$("linkQuality")?.addEventListener("click", openQuality);
+$("qualityClose")?.addEventListener("click", () => $("qualityOverlay")?.classList.add("hidden"));
+$("qualityOverlay")?.addEventListener("click", (e) => { if (e.target === $("qualityOverlay")) $("qualityOverlay").classList.add("hidden"); });
 $("dividendClose")?.addEventListener("click", closeDividends);
 $("dividendOverlay")?.addEventListener("click", (e) => { if (e.target === $("dividendOverlay")) closeDividends(); });
 ["divShares", "divBuy"].forEach((id) => $(id)?.addEventListener("input", computeDividends));

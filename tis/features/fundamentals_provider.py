@@ -148,6 +148,130 @@ def fetch_dividend_info(pair: str, market: str) -> dict:
     }
 
 
+def _ticker_info(pair: str, market: str):
+    """(yf.Ticker, info) или (None, None). Общий помощник для качества/держателей."""
+    if market != "stock" or yf is None:
+        return None, None
+    from tis.data.instruments_catalog import resolve_yf_symbol
+
+    yf_sym = resolve_yf_symbol(pair, market)
+    try:
+        t = yf.Ticker(yf_sym)
+        info = retry_call(lambda: t.info, source=f"Yahoo info ({yf_sym})", max_retries=2)
+    except Exception:
+        return None, None
+    if not info or not isinstance(info, dict):
+        return t, None
+    return t, info
+
+
+def fetch_quality_scorecard(pair: str, market: str, lang: str = "ru") -> dict:
+    """Чек-лист «качество бизнеса» в духе Баффета/Грэма: ROE, долг, маржа, рост,
+    FCF, P/E, earnings yield, ликвидность. Сырые цифры → ✓/~/✗ + композитный балл."""
+    _t, info = _ticker_info(pair, market)
+    if not info:
+        return {"available": False}
+    L = (lambda ru, en: en if lang == "en" else ru)
+    checks: list[dict] = []
+
+    def add(name, val, good, ok, fmt, higher=True, detail=""):
+        v = _num(val)
+        if v is None:
+            return
+        if higher:
+            status = "good" if v >= good else ("ok" if v >= ok else "bad")
+        else:
+            status = "good" if v <= good else ("ok" if v <= ok else "bad")
+        checks.append({"name": name, "value": fmt(v), "status": status, "detail": detail})
+
+    roe = info.get("returnOnEquity")
+    add(L("ROE (отдача на капитал)", "ROE"), roe, 0.15, 0.10, lambda v: f"{v*100:.1f}%",
+        detail=L("≥15% — сильный бизнес", "≥15% is strong"))
+    add(L("Маржа прибыли", "Profit margin"), info.get("profitMargins"), 0.15, 0.07, lambda v: f"{v*100:.1f}%")
+    add(L("Операц. маржа", "Operating margin"), info.get("operatingMargins"), 0.15, 0.07, lambda v: f"{v*100:.1f}%")
+    # debtToEquity у Yahoo в процентах (50 = 0.5x). Меньше — лучше.
+    add(L("Долг / капитал", "Debt / equity"), info.get("debtToEquity"), 60, 120, lambda v: f"{v/100:.2f}x", higher=False,
+        detail=L("<0.6x — низкий долг", "<0.6x is low debt"))
+    add(L("Текущая ликвидность", "Current ratio"), info.get("currentRatio"), 1.5, 1.0, lambda v: f"{v:.2f}")
+    add(L("Рост выручки", "Revenue growth"), info.get("revenueGrowth"), 0.08, 0.0, lambda v: f"{v*100:.1f}%")
+    add(L("Рост прибыли", "Earnings growth"), info.get("earningsGrowth"), 0.08, 0.0, lambda v: f"{v*100:.1f}%")
+    # earnings yield = 1/PE; сравниваем с ~бескупонной доходностью.
+    pe = _num(info.get("trailingPE"))
+    if pe and pe > 0:
+        ey = 1 / pe
+        checks.append({
+            "name": L("Доходность прибыли (E/P)", "Earnings yield (E/P)"),
+            "value": f"{ey*100:.1f}%",
+            "status": "good" if ey >= 0.06 else ("ok" if ey >= 0.04 else "bad"),
+            "detail": L("выше доходности облигаций — привлекательно", "above bond yield is attractive"),
+        })
+    add(L("P/E", "P/E"), pe, 22, 35, lambda v: f"{v:.1f}", higher=False)
+    add(L("P/B", "P/B"), info.get("priceToBook"), 4, 8, lambda v: f"{v:.1f}", higher=False)
+    fcf = _num(info.get("freeCashflow"))
+    if fcf is not None:
+        checks.append({
+            "name": L("Свободный денежный поток", "Free cash flow"),
+            "value": _fmt_big(fcf), "status": "good" if fcf > 0 else "bad",
+            "detail": L("положительный FCF — бизнес генерит кэш", "positive FCF — cash-generative"),
+        })
+
+    if not checks:
+        return {"available": False}
+    good = sum(1 for c in checks if c["status"] == "good")
+    ok = sum(1 for c in checks if c["status"] == "ok")
+    n = len(checks)
+    score = round((good + ok * 0.5) / n * 100)
+    if score >= 70:
+        grade, label = "A", L("Качественный бизнес", "Quality business")
+    elif score >= 50:
+        grade, label = "B", L("Средний — выборочно", "Average — selective")
+    else:
+        grade, label = "C", L("Слабый / спекулятивный", "Weak / speculative")
+    return {
+        "available": True, "score": score, "grade": grade, "label": label,
+        "passed": good, "total": n, "checks": checks,
+    }
+
+
+def fetch_top_holders(pair: str, market: str) -> dict:
+    """Крупные держатели (13F/институционалы) + доли инсайдеров/институтов."""
+    t, info = _ticker_info(pair, market)
+    if t is None:
+        return {"available": False}
+    pct_inst = _num((info or {}).get("heldPercentInstitutions"))
+    pct_ins = _num((info or {}).get("heldPercentInsiders"))
+    top: list[dict] = []
+    try:
+        ih = t.institutional_holders
+        if ih is not None and hasattr(ih, "iterrows"):
+            cols = {c.lower(): c for c in ih.columns}
+            hcol = cols.get("holder")
+            pcol = cols.get("pctheld") or cols.get("% out")
+            vcol = cols.get("value")
+            for _, row in ih.head(8).iterrows():
+                holder = str(row[hcol]) if hcol else None
+                if not holder:
+                    continue
+                pct = _num(row[pcol]) if pcol else None
+                if pct is not None and pct <= 1:
+                    pct = pct * 100  # доля -> %
+                top.append({
+                    "holder": holder,
+                    "pct": round(pct, 2) if pct is not None else None,
+                    "value": _fmt_big(_num(row[vcol])) if vcol and _num(row[vcol]) is not None else None,
+                })
+    except Exception:
+        pass
+    if pct_inst is None and pct_ins is None and not top:
+        return {"available": False}
+    return {
+        "available": True,
+        "pct_institutions": round(pct_inst * 100, 1) if pct_inst is not None else None,
+        "pct_insiders": round(pct_ins * 100, 1) if pct_ins is not None else None,
+        "top": top,
+    }
+
+
 def fundamentals_line(pair: str, market: str, lang: str = "ru") -> str:
     """Однострочная сводка для подмешивания в AI-персону. Пусто при отсутствии."""
     data = fetch_fundamentals(pair, market, lang)
