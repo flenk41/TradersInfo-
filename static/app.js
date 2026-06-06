@@ -597,8 +597,9 @@ function renderJournal(data) {
   const list = $("journalList");
   if (!statsEl || !list) return;
   const s = data.stats || {};
+  const wr = s.win_rate || 0;
   statsEl.innerHTML =
-    `<div class="jstat hero"><span>Винрейт</span><strong class="${(s.win_rate || 0) >= 50 ? "good" : "bad"}">${s.win_rate || 0}%</strong><em>${s.closed || 0} закрытых</em></div>` +
+    `<div class="jstat hero"><span>Винрейт</span><strong class="${wr >= 50 ? "good" : "bad"}">${wr}%</strong><em>${s.closed || 0} закрытых</em><div class="jbar"><i class="${wr >= 50 ? "good" : "bad"}" style="width:${Math.min(100, wr)}%"></i></div></div>` +
     `<div class="jstat hero"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${(s.avg_r || 0) > 0 ? "+" : ""}${s.avg_r || 0}R</strong><em>на сделку</em></div>` +
     `<div class="jstat hero"><span>Профит-фактор</span><strong class="${(s.profit_factor || 0) >= 1 ? "good" : ""}">${s.profit_factor || 0}</strong><em>прибыль / убыток</em></div>` +
     `<div class="jstat mini"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
@@ -615,28 +616,24 @@ function renderJournal(data) {
     const cur = sigCurrency(sig);
     const fmt = (v) => (v == null ? "—" : cur + formatPrice(v));
     const item = document.createElement("div");
-    item.className = `journal-item j-${st.cls}`;
+    item.className = `journal-item jcard j-${st.cls}`;
+    const sideCls = sig.side === "long" ? "long" : "short";
+    const mono = (sig.display || sig.pair || "?").replace(/[^A-Za-zА-Яа-я0-9]/g, "").slice(0, 3).toUpperCase();
     const rTxt = sig.r_multiple == null ? "" : `<span class="j-r ${sig.r_multiple >= 0 ? "good" : "bad"}">${sig.r_multiple > 0 ? "+" : ""}${sig.r_multiple}R</span>`;
-
-    const head = document.createElement("div");
-    head.className = "journal-item-head";
-    head.innerHTML =
-      `<span class="j-badge j-${st.cls}">${st.label}</span>` +
-      `<span class="j-pair">${sig.display || sig.pair} · ${sig.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉"}</span>` +
-      rTxt +
-      `<button class="j-del" data-id="${sig.id}" title="Удалить">✕</button>`;
-
-    const body = document.createElement("div");
-    body.className = "journal-item-body";
-    body.innerHTML =
-      `<span>Вход ${fmt(sig.entry)}</span>` +
-      `<span class="j-sl">Стоп ${fmt(sig.stop)}</span>` +
-      `<span class="j-tp">Тейк ${fmt(sig.take_profit)}</span>` +
-      `<span>R:R 1:${sig.rr}</span>` +
-      (sig.accuracy_pct != null ? `<span>Балл ${sig.accuracy_pct}</span>` : "") +
-      `<span class="j-date">${fmtDate(sig.created_ts)}</span>`;
-
-    item.append(head, body);
+    const rrTxt = sig.rr != null ? `<span class="jc-rr">R:R 1:${sig.rr}</span>` : "";
+    item.innerHTML =
+      `<div class="jc-asset">` +
+        `<div class="jc-ava ${sideCls} ${st.cls === "open" ? "pulse" : ""}">${mono}</div>` +
+        `<div class="jc-id"><span class="jc-pair">${sig.display || sig.pair}</span><span class="jc-date">${fmtDate(sig.created_ts)}</span></div>` +
+      `</div>` +
+      `<span class="jc-side ${sideCls}">${sig.side === "long" ? "LONG" : "SHORT"}</span>` +
+      `<div class="jc-levels">` +
+        `<div class="jc-lv"><span>Вход</span><b>${fmt(sig.entry)}</b></div>` +
+        `<div class="jc-lv"><span>Стоп-лосс</span><b class="down">${fmt(sig.stop)}</b></div>` +
+        `<div class="jc-lv"><span>Тейк-профит</span><b class="up">${fmt(sig.take_profit)}</b></div>` +
+      `</div>` +
+      `<div class="jc-right">${rrTxt}${rTxt}<span class="jc-status j-${st.cls}">${st.label}</span>` +
+        `<button class="j-del" data-id="${sig.id}" title="Удалить">✕</button></div>`;
     list.appendChild(item);
   });
 

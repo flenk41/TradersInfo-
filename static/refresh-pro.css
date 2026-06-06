@@ -858,13 +858,61 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .journal-item.j-bad { border-left-color: #fb7185 !important; }
 .journal-item.j-open { border-left-color: #f59e0b !important; }
 .journal-item:hover { transform: translateY(-2px) !important; border-color: rgba(255,255,255,.16) !important; box-shadow: var(--shadow); }
-.journal-item-head { display: flex; align-items: center; gap: 10px; }
-.journal-item .j-badge { border-radius: 999px !important; padding: 4px 12px !important; font-size: .72rem; font-weight: 700; }
-.journal-item .j-pair { font-size: .92rem !important; font-weight: 700 !important; }
-.journal-item .j-r { margin-left: auto; font-variant-numeric: tabular-nums; }
-.journal-item .j-del { background: none; border: none; color: var(--muted); cursor: pointer; width: 24px; height: 24px; border-radius: 7px; transition: background .15s var(--ease), color .15s var(--ease); }
+.journal-item .j-del { background: none; border: none; color: var(--muted); cursor: pointer; width: 26px; height: 26px; border-radius: 7px; transition: background .15s var(--ease), color .15s var(--ease); opacity: 0; }
+.journal-item:hover .j-del { opacity: 1; }
 .journal-item .j-del:hover { background: rgba(251,113,133,.15); color: #fb7185; }
-.journal-item-body { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .84rem; font-variant-numeric: tabular-nums; color: var(--text2); }
+
+/* Горизонтальная карточка сигнала (re-skin под tis_5) */
+.jcard { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.jc-asset { display: flex; align-items: center; gap: 12px; min-width: 150px; }
+.jc-ava {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem; font-weight: 800; letter-spacing: .02em; position: relative;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+}
+.jc-ava.long  { color: #34d399; }
+.jc-ava.short { color: #fb7185; }
+.jc-ava.pulse::after {
+  content: ""; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px;
+  border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 3px var(--surface);
+  animation: jpulse 1.6s ease-in-out infinite;
+}
+@keyframes jpulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.jc-id { display: flex; flex-direction: column; gap: 2px; }
+.jc-pair { font-size: .98rem; font-weight: 700; }
+.jc-date { font-size: .72rem; color: var(--muted); }
+.jc-side {
+  padding: 5px 14px; border-radius: 9px; font-size: .72rem; font-weight: 800; letter-spacing: .04em;
+}
+.jc-side.long  { background: rgba(52,211,153,.10); border: 1px solid rgba(52,211,153,.22); color: #34d399; }
+.jc-side.short { background: rgba(251,113,133,.10); border: 1px solid rgba(251,113,133,.22); color: #fb7185; }
+.jc-levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; flex: 1; min-width: 220px; }
+.jc-lv { display: flex; flex-direction: column; gap: 2px; }
+.jc-lv > span { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.jc-lv > b { font-size: .92rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.jc-lv > b.up { color: #34d399; } .jc-lv > b.down { color: #fb7185; }
+.jc-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.jc-rr { font-size: .76rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.jcard .j-r { font-variant-numeric: tabular-nums; font-weight: 700; font-size: .84rem; }
+.jc-status {
+  padding: 5px 12px; border-radius: 999px; font-size: .72rem; font-weight: 800; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.jc-status.j-good { background: rgba(52,211,153,.18); color: #34d399; border-color: rgba(52,211,153,.3); }
+.jc-status.j-bad  { background: rgba(251,113,133,.18); color: #fb7185; border-color: rgba(251,113,133,.3); }
+.jc-status.j-open { background: rgba(245,158,11,.16); color: #f59e0b; border-color: rgba(245,158,11,.3); }
+.jc-status.j-neutral { background: rgba(255,255,255,.07); color: var(--text2); border-color: rgba(255,255,255,.12); }
+@media (max-width: 620px) {
+  .jc-levels { min-width: 100%; order: 3; }
+  .jc-right { order: 2; }
+}
+
+/* Прогресс-бар винрейта в KPI */
+.jbar { width: 100%; height: 5px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; margin-top: 8px; }
+.jbar > i { display: block; height: 100%; border-radius: 999px; transition: width .4s var(--ease); }
+.jbar > i.good { background: linear-gradient(90deg, #22c55e, #34d399); }
+.jbar > i.bad  { background: linear-gradient(90deg, #ef4444, #fb7185); }
 
 /* Журнал — крупные KPI-карточки (Винрейт / Средний R / Профит-фактор) + мелкие */
 .journal-stats {
