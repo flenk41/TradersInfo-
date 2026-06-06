@@ -2173,6 +2173,72 @@ $("scLev")?.addEventListener("input", () => {
 });
 $("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
 
+// ── Bybit аккаунт (BYOK, только просмотр баланса/позиций) ───────────────────
+function bybitCfg() { try { return JSON.parse(localStorage.getItem("bybit_cfg") || "{}"); } catch (e) { return {}; } }
+function openBybitKey() {
+  const c = bybitCfg();
+  $("bybitKey").value = c.key || "";
+  $("bybitSecret").value = c.secret || "";
+  $("bybitResult").innerHTML = c.key ? '<p class="modal-note">Ключ сохранён. Нажмите «Показать счёт».</p>' : "";
+  $("bybitKeyOverlay").classList.remove("hidden");
+}
+function closeBybitKey() { $("bybitKeyOverlay")?.classList.add("hidden"); }
+function bybitClearKey() {
+  try { localStorage.removeItem("bybit_cfg"); } catch (e) {}
+  $("bybitKey").value = ""; $("bybitSecret").value = "";
+  $("bybitResult").innerHTML = '<p class="modal-note">Ключ удалён из браузера.</p>';
+}
+async function bybitFetchAccount() {
+  const key = $("bybitKey").value.trim();
+  const secret = $("bybitSecret").value.trim();
+  const box = $("bybitResult");
+  if (!key || !secret) { box.innerHTML = '<p class="dr-row bad"><span>Укажите ключ и секрет</span></p>'; return; }
+  try { localStorage.setItem("bybit_cfg", JSON.stringify({ key, secret })); } catch (e) {}
+  box.innerHTML = '<p class="modal-note">Загрузка счёта…</p>';
+  try {
+    const j = await (await fetch("/api/bybit/account", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, secret }),
+    })).json();
+    if (!j.ok) { box.innerHTML = `<p class="dr-row bad"><span>${j.error || "Ошибка"}</span></p>`; return; }
+    renderBybitAccount(j.balance, j.positions);
+  } catch (e) {
+    box.innerHTML = '<p class="dr-row bad"><span>Не удалось подключиться к серверу</span></p>';
+  }
+}
+function renderBybitAccount(bal, positions) {
+  const box = $("bybitResult");
+  const pnlCls = (bal.unrealized_pnl || 0) >= 0 ? "up" : "down";
+  let html =
+    `<div class="bybit-bal">` +
+      `<div class="bb-kpi"><span>Капитал</span><b>${money(bal.total_equity)} $</b></div>` +
+      `<div class="bb-kpi"><span>Доступно</span><b>${money(bal.available)} $</b></div>` +
+      `<div class="bb-kpi"><span>Нереал. PnL</span><b class="${pnlCls}">${(bal.unrealized_pnl >= 0 ? "+" : "")}${money(bal.unrealized_pnl)} $</b></div>` +
+    `</div>`;
+  if (!positions || !positions.length) {
+    html += '<p class="modal-note">Открытых позиций нет.</p>';
+  } else {
+    html += '<div class="bybit-pos-head"><span>Позиция</span><span>Размер</span><span>Вход</span><span>PnL</span></div>';
+    positions.forEach((p) => {
+      const long = p.side === "buy";
+      const pc = (p.unrealized_pnl || 0) >= 0 ? "up" : "down";
+      html +=
+        `<div class="bybit-pos">` +
+          `<span class="bp-sym"><b>${p.symbol}</b> <em class="${long ? "up" : "down"}">${long ? "LONG" : "SHORT"} ${p.leverage}x</em></span>` +
+          `<span>${p.size}</span>` +
+          `<span>${money(p.entry_price)}</span>` +
+          `<span class="${pc}">${(p.unrealized_pnl >= 0 ? "+" : "")}${money(p.unrealized_pnl)}</span>` +
+        `</div>`;
+    });
+  }
+  box.innerHTML = html;
+}
+$("linkBybitKey")?.addEventListener("click", openBybitKey);
+$("bybitKeyClose")?.addEventListener("click", closeBybitKey);
+$("bybitKeyOverlay")?.addEventListener("click", (e) => { if (e.target === $("bybitKeyOverlay")) closeBybitKey(); });
+$("bybitFetch")?.addEventListener("click", bybitFetchAccount);
+$("bybitClear")?.addEventListener("click", bybitClearKey);
+
 // Переключатель источника крипто-данных (Binance ⇄ Bybit)
 function syncSourceSeg() {
   const seg = $("cryptoSourceSeg");

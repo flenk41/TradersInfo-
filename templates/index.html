@@ -67,6 +67,7 @@
       <div class="topbar-actions">
         <button type="button" class="brand-link brand-link-accent" id="linkGuide" title="Краткий гайд по сервису">📘 Гайд</button>
         <button type="button" class="brand-link brand-link-accent" id="linkAiKey" title="Подключить свой AI-ключ">🔑 AI-ключ</button>
+        <button type="button" class="brand-link brand-link-accent" id="linkBybitKey" title="Подключить ключ Bybit (только просмотр баланса/позиций)">🔑 Bybit</button>
         <button type="button" class="brand-link brand-link-dividends hidden" id="linkDividends" title="Калькулятор дивидендов">💰 Дивиденды</button>
         <button type="button" class="btn-support-top" id="linkSupport" title="Поддержать проект">❤️ Поддержать</button>
         <div class="mode-toggle" id="modeToggle" title="Уровень детализации">
@@ -710,6 +711,38 @@
         <button type="button" class="modal-close" id="aiKeyClose" aria-label="Закрыть">✕</button>
       </div>
       <div class="modal-body" id="aiKeyBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="bybitKeyOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🔑 Аккаунт Bybit (только просмотр)</h2>
+        <button type="button" class="modal-close" id="bybitKeyClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">
+          Ключ и секрет хранятся <b>только в этом браузере</b> (localStorage) и на диск не пишутся.
+          Используются <b>только для просмотра</b> баланса и открытых позиций (read-only).
+          Сервис <b>не торгует и не выводит средства</b>. Создавайте на Bybit ключ
+          <b>с правами только на чтение</b> (Read-Only).
+        </p>
+        <div class="div-form">
+          <label class="div-field">
+            <span>API Key</span>
+            <input type="text" id="bybitKey" autocomplete="off" spellcheck="false" placeholder="Bybit API key">
+          </label>
+          <label class="div-field">
+            <span>API Secret</span>
+            <input type="password" id="bybitSecret" autocomplete="off" spellcheck="false" placeholder="Bybit API secret">
+          </label>
+        </div>
+        <div class="bybit-actions">
+          <button type="button" class="btn-primary" id="bybitFetch">Показать счёт</button>
+          <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
+        </div>
+        <div class="bybit-result" id="bybitResult"></div>
+      </div>
     </div>
   </div>
 

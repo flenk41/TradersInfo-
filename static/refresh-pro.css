@@ -1251,3 +1251,17 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 }
 .source-seg button:hover { color: var(--text); }
 .source-seg button.active { background: var(--accent); color: #fff; }
+
+/* Bybit-аккаунт (модалка просмотра баланса/позиций) */
+.bybit-actions { display: flex; gap: 10px; margin: 14px 0 6px; }
+.bybit-actions .btn-primary { flex: 1; }
+.bybit-result { margin-top: 6px; }
+.bybit-bal { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+.bb-kpi { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); }
+.bb-kpi > span { font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.bb-kpi > b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.bb-kpi b.up, .bybit-pos .up { color: #34d399; } .bb-kpi b.down, .bybit-pos .down { color: #fb7185; }
+.bybit-pos-head, .bybit-pos { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 8px 4px; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.bybit-pos-head { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,.08); }
+.bybit-pos { border-bottom: 1px solid rgba(255,255,255,.05); }
+.bp-sym em { font-size: .66rem; font-weight: 700; font-style: normal; margin-left: 4px; }

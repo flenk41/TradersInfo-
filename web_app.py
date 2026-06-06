@@ -267,6 +267,32 @@ def api_position():
         return jsonify({"ok": False, "error": f"Ошибка: {e}"}), 500
 
 
+@app.route("/api/bybit/account", methods=["POST"])
+@rate_limit(20, 60)
+def api_bybit_account():
+    """READ-ONLY баланс и открытые позиции аккаунта Bybit (BYOK).
+
+    Ключ/секрет приходят в теле запроса от браузера, используются только для
+    подписи и НИГДЕ не сохраняются (ни в файлы, ни в логи). Никаких ордеров.
+    """
+    data = request.get_json(silent=True) or {}
+    key = (data.get("key") or "").strip()
+    secret = (data.get("secret") or "").strip()
+    if not key or not secret:
+        return jsonify({"ok": False, "error": "Укажите API-ключ и секрет Bybit"}), 400
+    try:
+        from tis.data.bybit_account import BybitAuthError, fetch_positions, fetch_wallet_balance
+
+        balance = fetch_wallet_balance(key, secret)
+        positions = fetch_positions(key, secret)
+        return jsonify({"ok": True, "balance": balance, "positions": positions})
+    except BybitAuthError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception:
+        # Намеренно не включаем детали/ключ в текст ошибки.
+        return jsonify({"ok": False, "error": "Не удалось получить данные аккаунта Bybit"}), 500
+
+
 @app.route("/api/klines")
 @rate_limit(90, 60)
 def api_klines():
