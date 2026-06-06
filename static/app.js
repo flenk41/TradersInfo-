@@ -206,9 +206,49 @@ function updateScenarioSideUI(d) {
   scState.verdict = trade ? (isLong ? trade.long_verdict : trade.short_verdict) : "";
 
   const agree = $("scenarioAgree");
-  agree.textContent = `Согласие за ${isLong ? "ЛОНГ" : "ШОРТ"}: ${score}%`;
+  const vshort = scenarioVerdictShort(scState.verdict);
+  agree.textContent = `Согласие за ${isLong ? "ЛОНГ" : "ШОРТ"}: ${score}%` + (vshort ? ` · ${vshort}` : "");
   agree.classList.toggle("sc-strong", score > 60);
   agree.classList.toggle("sc-weak", score <= 60);
+
+  scenarioUpdateEntryHint();
+}
+
+// Подпись-источник цены входа: зона с графика, текущая рыночная или своя.
+function scenarioUpdateEntryHint() {
+  const hint = $("scEntryHint");
+  const d = lastAnalysisData;
+  if (!hint || !d) return;
+  const zp = scenarioZonePrice(d, scState.side);
+  const cur = parseFloat($("scEntry").value);
+  if (isNaN(cur)) hint.textContent = "";
+  else if (zp != null && Math.abs(cur - zp) / zp < 0.0005) hint.textContent = "≈ зона входа с графика";
+  else if (d.price != null && Math.abs(cur - d.price) / d.price < 0.0005) hint.textContent = "текущая рыночная цена";
+  else hint.textContent = "ваша цена входа";
+}
+
+// Открыть запись в журнал, предзаполнив сторону и цену входа из сценария.
+function scenarioToJournal() {
+  openJournalAdd();
+  if ($("journalAddOverlay").classList.contains("hidden")) return; // не открылось (показана ошибка)
+  jaddState.side = scState.side;
+  document.querySelectorAll("#jaddSide button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.side === scState.side)
+  );
+  const sigPair = lastAnalysisData?.display_name || lastAnalysisData?.pair || activePair;
+  if (sigPair) $("jaddPair").textContent = sigPair + " · " + (scState.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉");
+  const e = parseFloat($("scEntry").value);
+  if (!isNaN(e) && e > 0) $("jaddEntry").value = e;
+  jaddRecalc();
+}
+
+// Короткая форма вердикта стороны для бейджа.
+function scenarioVerdictShort(v) {
+  if (!v) return "";
+  if (v.includes("НЕ ")) return "не входить";   // «НЕ ВХОДИТЬ» — проверять раньше «ВХОДИТЬ»
+  if (v.includes("ВХОДИТЬ")) return "входить";
+  if (v.includes("ЖДАТЬ")) return "ждать";
+  return "";
 }
 
 function scenarioScheduleRecalc() {
@@ -226,6 +266,7 @@ async function scenarioRecalc() {
   if (isNaN(margin) || margin > 0) localStorage.setItem("sc_margin", margin);
   if (!isNaN(lev)) localStorage.setItem("sc_lev", lev);
 
+  scenarioUpdateEntryHint();
   const lead = $("scenarioLead");
   if (isNaN(entry) || entry <= 0 || isNaN(margin) || margin <= 0 || isNaN(lev) || lev < 1) {
     lead.textContent = "Укажите корректные цену входа, сумму и плечо.";
@@ -268,8 +309,11 @@ function scenarioPaint(p, entry) {
 
   // Полоса риск↔прибыль (наглядно, кто больше).
   const tot = win + loss || 1;
-  $("scBarRisk").style.flexBasis = (loss / tot * 100) + "%";
-  $("scBarReward").style.flexBasis = (win / tot * 100) + "%";
+  const riskPct = Math.round(loss / tot * 100);
+  $("scBarRisk").style.flexBasis = riskPct + "%";
+  $("scBarReward").style.flexBasis = (100 - riskPct) + "%";
+  $("scBarRisk").textContent = `риск ${riskPct}%`;
+  $("scBarReward").textContent = `прибыль ${100 - riskPct}%`;
 
   const meta = $("scMeta");
   const liq =
@@ -2048,10 +2092,10 @@ document.querySelectorAll("#scSide button").forEach((b) =>
   b.addEventListener("click", () => {
     if (!lastAnalysisData) return;
     scState.side = b.dataset.side;
-    updateScenarioSideUI(lastAnalysisData);
     // Подставляем цену зоны входа выбранной стороны (как на графике).
     const zp = scenarioZonePrice(lastAnalysisData, scState.side);
     if (zp != null) $("scEntry").value = zp;
+    updateScenarioSideUI(lastAnalysisData);
     scenarioRecalc();
   })
 );
@@ -2059,6 +2103,7 @@ $("scLev")?.addEventListener("input", () => {
   $("scLevVal").textContent = $("scLev").value + "×";
   scenarioScheduleRecalc();
 });
+$("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
 
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
 $("btnJournalAdd")?.addEventListener("click", () => openJournalAdd());
