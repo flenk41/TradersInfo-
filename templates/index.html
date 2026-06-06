@@ -195,15 +195,32 @@
             <p class="scenario-lead" id="scenarioLead">—</p>
 
             <div class="scenario-controls">
-              <label class="sc-ctl">Вход
+              <label class="sc-ctl">
+                <span class="sc-ctl-lbl">Вход <button type="button" class="sc-reset" id="scEntryReset" title="Вернуть текущую цену">↺ к рынку</button></span>
                 <input type="number" id="scEntry" step="any" inputmode="decimal" />
                 <small class="sc-hint" id="scEntryHint"></small>
               </label>
-              <label class="sc-ctl">Сумма, USDT
+              <label class="sc-ctl">
+                <span class="sc-ctl-lbl">Сумма, USDT</span>
                 <input type="number" id="scMargin" value="100" min="1" step="any" inputmode="decimal" />
+                <span class="sc-presets" id="scMarginPresets">
+                  <button type="button" data-v="50">50</button>
+                  <button type="button" data-v="100">100</button>
+                  <button type="button" data-v="500">500</button>
+                  <button type="button" data-v="1000">1000</button>
+                </span>
               </label>
-              <label class="sc-ctl sc-ctl-lev">Плечо <b id="scLevVal">10×</b>
+              <label class="sc-ctl sc-ctl-lev">
+                <span class="sc-ctl-lbl">Плечо <b id="scLevVal">10×</b></span>
                 <input type="range" id="scLev" min="1" max="50" value="10" step="1" />
+                <span class="sc-presets" id="scLevPresets">
+                  <button type="button" data-v="1">x1</button>
+                  <button type="button" data-v="3">x3</button>
+                  <button type="button" data-v="5">x5</button>
+                  <button type="button" data-v="10">x10</button>
+                  <button type="button" data-v="20">x20</button>
+                  <button type="button" data-v="50">x50</button>
+                </span>
               </label>
             </div>
 

@@ -198,6 +198,8 @@ function updateScenarioSideUI(d) {
   document.querySelectorAll("#scSide button").forEach((b) =>
     b.classList.toggle("active", b.dataset.side === scState.side)
   );
+  const card = $("scenarioCard");
+  if (card) { card.classList.toggle("sc-side-long", isLong); card.classList.toggle("sc-side-short", !isLong); }
 
   const trade = d.trade;
   let score = trade ? (isLong ? trade.long_score : trade.short_score) : null;
@@ -274,6 +276,16 @@ function scenarioVerdictShort(v) {
   return "";
 }
 
+// Подсветить пресет-чип, если его значение совпадает с текущим.
+function scenarioMarkPresets(margin, lev) {
+  document.querySelectorAll("#scMarginPresets button").forEach((b) =>
+    b.classList.toggle("active", parseFloat(b.dataset.v) === margin)
+  );
+  document.querySelectorAll("#scLevPresets button").forEach((b) =>
+    b.classList.toggle("active", parseInt(b.dataset.v, 10) === lev)
+  );
+}
+
 function scenarioScheduleRecalc() {
   clearTimeout(scState.timer);
   scState.timer = setTimeout(scenarioRecalc, 280);
@@ -290,6 +302,7 @@ async function scenarioRecalc() {
   if (!isNaN(lev)) localStorage.setItem("sc_lev", lev);
 
   scenarioUpdateEntryHint();
+  scenarioMarkPresets(margin, lev);
   const lead = $("scenarioLead");
   if (isNaN(entry) || entry <= 0 || isNaN(margin) || margin <= 0 || isNaN(lev) || lev < 1) {
     lead.textContent = "Укажите корректные цену входа, сумму и плечо.";
@@ -2130,6 +2143,23 @@ $("scLev")?.addEventListener("input", () => {
   scenarioScheduleRecalc();
 });
 $("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
+$("scEntryReset")?.addEventListener("click", () => {
+  if (lastAnalysisData && lastAnalysisData.price != null) {
+    $("scEntry").value = lastAnalysisData.price;
+    scenarioRecalc();
+  }
+});
+$("scMarginPresets")?.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("scMargin").value = b.dataset.v;
+  scenarioRecalc();
+});
+$("scLevPresets")?.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("scLev").value = b.dataset.v;
+  $("scLevVal").textContent = b.dataset.v + "×";
+  scenarioRecalc();
+});
 
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
 $("btnJournalAdd")?.addEventListener("click", () => openJournalAdd());
