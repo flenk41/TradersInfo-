@@ -2317,6 +2317,7 @@ async function runAiAnalyst(level) {
       if (j.need_key) { showError(j.error || "Нужен AI-ключ"); if (typeof openAiKeyModal === "function") openAiKeyModal(); return; }
       const local = buildLocalConclusion(lastAnalysisData);
       local._aiFailed = true;
+      local._aiError = j.error || (junk ? "модель вернула пустой/невалидный ответ" : "нет ответа модели");
       renderAiAnalyst(local, "local");
       return;
     }
@@ -2343,7 +2344,7 @@ function renderAiAnalyst(r, level) {
         `<span class="aia-lvl">${lvlTag}</span>` +
       `</div>`;
   const failNote = r._aiFailed
-    ? `<p class="aia-need" style="margin:0 0 8px">⚠ ИИ не дал ответа (бесплатная модель перегружена/пуста) — показано заключение по нашему анализу. Для AI-текста выберите Gemini/Groq в «🔑 AI-ключ».</p>`
+    ? `<p class="aia-need" style="margin:0 0 8px">⚠ ИИ недоступен${r._aiError ? ` (${r._aiError})` : ""} — показано заключение по нашему анализу. Если повторяется, смените модель/провайдера в «🔑 AI-ключ».</p>`
     : "";
   $("aiAnalystResult").innerHTML =
     `<div class="aia-card">` +

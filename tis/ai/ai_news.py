@@ -143,7 +143,10 @@ def request_chat(base: str, key: str, model: str, prompt: str, temperature: floa
     for m in models:
         try:
             resp = _post(m, True)
-            if resp.status_code == 400 and "response_format" in resp.text.lower():
+            # Многие провайдеры (Gemini OpenAI-compat и др.) отклоняют
+            # response_format=json_object с разным текстом ошибки — повторяем
+            # без него при ЛЮБОМ 400.
+            if resp.status_code == 400:
                 resp = _post(m, False)
         except requests.RequestException as e:
             raise AIChatError(
