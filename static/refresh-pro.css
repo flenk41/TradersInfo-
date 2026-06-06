@@ -1077,6 +1077,24 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .sc-ctl-lev b { color: var(--accent2, #a855f7); font-size: 13px; }
 .sc-ctl input[type="range"] { width: 100%; accent-color: var(--accent, #6366f1); margin-top: 2px; }
 
+/* Дорожка цены: стоп ← вход → тейк + текущая цена */
+.scenario-track { position: relative; height: 56px; margin: 4px 0 16px; }
+.scenario-track:empty { display: none; }
+.sc-tk-base { position: absolute; top: 22px; left: 0; right: 0; height: 6px; border-radius: 999px; background: rgba(255,255,255,.08); }
+.sc-tk-fill { position: absolute; top: 22px; height: 6px; }
+.sc-tk-fill.red   { background: linear-gradient(90deg,#ef4444,#f87171); border-radius: 999px 0 0 999px; }
+.sc-tk-fill.green { background: linear-gradient(90deg,#22c55e,#4ade80); border-radius: 0 999px 999px 0; }
+.sc-tk-mark { position: absolute; top: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+.sc-tk-mark i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg, #0b1020); box-sizing: border-box; }
+.sc-tk-mark span { margin-top: 5px; font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
+.sc-tk-mark.sl i { background: #f87171; } .sc-tk-mark.sl span { color: #f87171; }
+.sc-tk-mark.tp i { background: #4ade80; } .sc-tk-mark.tp span { color: #4ade80; }
+.sc-tk-mark.en i { background: #cbd5e1; } .sc-tk-mark.en span { color: var(--text, #f1f5f9); }
+.sc-tk-mark.sl { align-items: flex-start; } .sc-tk-mark.sl span { margin-left: -2px; }
+.sc-tk-mark.tp { align-items: flex-end; }   .sc-tk-mark.tp span { margin-right: -2px; }
+.sc-tk-cur { position: absolute; top: 8px; width: 2px; height: 34px; background: var(--accent2, #a855f7); transform: translateX(-50%); box-shadow: 0 0 6px rgba(168,85,247,.8); }
+.sc-tk-cur::before { content: "сейчас"; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); font-size: 8.5px; font-weight: 700; color: var(--accent2, #a855f7); white-space: nowrap; }
+
 .scenario-outcomes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .sc-out { padding: 12px; border-radius: 12px; background: rgba(0,0,0,.22); border: 1px solid transparent; }
 .sc-out.sc-win  { border-color: rgba(34,197,94,.35);  background: rgba(34,197,94,.08); }

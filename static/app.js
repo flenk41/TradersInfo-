@@ -227,6 +227,29 @@ function scenarioUpdateEntryHint() {
   else hint.textContent = "ваша цена входа";
 }
 
+// Рисует горизонтальную дорожку цены: стоп / вход / тейк + текущая цена.
+// Расстояния пропорциональны реальным ценам — видно, что тейк дальше стопа (R:R).
+function scenarioPaintTrack(p, entry) {
+  const track = $("scTrack");
+  if (!track) return;
+  const sl = p.stop_loss, tp = p.take_profit, cur = p.current_price;
+  const lo = Math.min(sl, tp), hi = Math.max(sl, tp);
+  const span = hi - lo || 1;
+  const pos = (v) => Math.max(0, Math.min(100, (v - lo) / span * 100));
+  const slP = pos(sl), tpP = pos(tp), enP = pos(entry), curP = pos(cur);
+  // Красный сегмент — от входа к стопу, зелёный — от входа к тейку.
+  const redL = Math.min(enP, slP), redW = Math.abs(enP - slP);
+  const grL = Math.min(enP, tpP), grW = Math.abs(enP - tpP);
+  track.innerHTML =
+    `<div class="sc-tk-base"></div>` +
+    `<div class="sc-tk-fill red" style="left:${redL}%;width:${redW}%"></div>` +
+    `<div class="sc-tk-fill green" style="left:${grL}%;width:${grW}%"></div>` +
+    `<div class="sc-tk-mark sl" style="left:${slP}%"><i></i><span>Стоп ${money(sl)}</span></div>` +
+    `<div class="sc-tk-mark en" style="left:${enP}%"><i></i><span>Вход ${money(entry)}</span></div>` +
+    `<div class="sc-tk-mark tp" style="left:${tpP}%"><i></i><span>Тейк ${money(tp)}</span></div>` +
+    `<div class="sc-tk-cur" style="left:${curP}%" title="Сейчас: ${money(cur)}"></div>`;
+}
+
 // Открыть запись в журнал, предзаполнив сторону и цену входа из сценария.
 function scenarioToJournal() {
   openJournalAdd();
@@ -306,6 +329,9 @@ function scenarioPaint(p, entry) {
   $("scTpPnl").textContent = `+${win.toFixed(2)} USDT (+${Math.abs(p.pnl_tp_pct).toFixed(0)}% к сумме)`;
   $("scSlPrice").textContent = `${money(p.stop_loss)} (${isLong ? "−" : "+"}${slPct.toFixed(2)}%)`;
   $("scSlPnl").textContent = `−${loss.toFixed(2)} USDT (−${Math.abs(p.pnl_sl_pct).toFixed(0)}% к сумме)`;
+
+  // Мини-дорожка цены: стоп ← вход → тейк, с маркером текущей цены.
+  scenarioPaintTrack(p, entry);
 
   // Полоса риск↔прибыль (наглядно, кто больше).
   const tot = win + loss || 1;
