@@ -2029,6 +2029,7 @@ async function analyze(pair, forceRefresh = false) {
     document.querySelectorAll(".persona-chip.active").forEach((c) => c.classList.remove("active"));
     loadFundamentals(pair, json.data.market_type);
     loadCorrelations(pair, json.data.market_type);
+    loadBybitSentiment(pair);
     updateWatchBtn();
     if (activeView === "news") loadNews();
   } catch (e) {
@@ -2204,6 +2205,45 @@ $("scLev")?.addEventListener("input", () => {
   scenarioScheduleRecalc();
 });
 $("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
+
+// ── Сентимент Bybit: Long/Short ratio + дисбаланс стакана (публично) ─────────
+async function loadBybitSentiment(pair) {
+  const card = $("bybitSentCard");
+  if (!card) return;
+  if (activeMarket !== "crypto") { card.classList.add("hidden"); return; }
+  try {
+    const j = await (await fetch(`/api/bybit/sentiment?pair=${encodeURIComponent(pair)}`)).json();
+    if (activePair !== pair) return;  // инструмент сменился
+    if (!j.ok || (!j.long_short && !j.orderbook)) { card.classList.add("hidden"); return; }
+    renderBybitSentiment(j);
+    card.classList.remove("hidden");
+  } catch (e) { card.classList.add("hidden"); }
+}
+function renderBybitSentiment(j) {
+  const box = $("bybitSentBody");
+  let html = "";
+  const ls = j.long_short;
+  if (ls) {
+    const lp = ls.long_pct, sp = ls.short_pct;
+    const skew = lp >= 60 ? "Толпа в лонге — осторожно с поздним входом в лонг" :
+                 sp >= 60 ? "Толпа в шорте — риск шорт-сквиза" : "Без перекоса";
+    html +=
+      `<div class="bs-row"><div class="bs-label"><span>Long/Short трейдеров</span><b>${lp}% / ${sp}%</b></div>` +
+      `<div class="bs-bar"><i class="up" style="flex-basis:${lp}%"></i><i class="down" style="flex-basis:${sp}%"></i></div>` +
+      `<div class="bs-note">${skew}</div></div>`;
+  }
+  const ob = j.orderbook;
+  if (ob) {
+    const bp = ob.bid_pct, ap = ob.ask_pct;
+    const press = bp >= 58 ? "Давление покупателей (биды толще)" :
+                  ap >= 58 ? "Давление продавцов (аски толще)" : "Стакан сбалансирован";
+    html +=
+      `<div class="bs-row"><div class="bs-label"><span>Стакан (бид/аск, ${ob.levels} ур.)</span><b>${bp}% / ${ap}%</b></div>` +
+      `<div class="bs-bar"><i class="up" style="flex-basis:${bp}%"></i><i class="down" style="flex-basis:${ap}%"></i></div>` +
+      `<div class="bs-note">${press}</div></div>`;
+  }
+  box.innerHTML = html;
+}
 
 // ── Bybit аккаунт (BYOK, только просмотр баланса/позиций) ───────────────────
 function bybitCfg() { try { return JSON.parse(localStorage.getItem("bybit_cfg") || "{}"); } catch (e) { return {}; } }

@@ -211,3 +211,58 @@ def validate_symbol(symbol: str) -> bool:
         return True
     except BybitDataError:
         return False
+
+
+def fetch_long_short_ratio(symbol: str, period: str = "1h") -> dict | None:
+    """Доля аккаунтов в лонге/шорте по перпетуалу (сентимент толпы).
+
+    Деривативный эндпоинт — в части регионов отдаёт 403; тогда возвращаем None.
+    """
+    try:
+        res = _get(
+            "/v5/market/account-ratio",
+            {"category": "linear", "symbol": symbol, "period": period, "limit": 1},
+        )
+        lst = res.get("list") or []
+        if not lst:
+            return None
+        row = lst[0]
+        buy = float(row.get("buyRatio") or 0)
+        sell = float(row.get("sellRatio") or 0)
+        if buy <= 0 and sell <= 0:
+            return None
+        return {
+            "long_pct": round(buy * 100, 1),
+            "short_pct": round(sell * 100, 1),
+            "period": period,
+        }
+    except (BybitDataError, ValueError, TypeError):
+        return None
+
+
+def fetch_orderbook_imbalance(symbol: str, depth: int = 50) -> dict | None:
+    """Дисбаланс стакана (спот): объём бидов vs асков у текущей цены.
+
+    >50% bid — давление покупателей. Спот-стакан публичный, работает без ключа.
+    """
+    try:
+        res = _get("/v5/market/orderbook", {"category": "spot", "symbol": symbol, "limit": min(depth, 200)})
+        bids = res.get("b") or []
+        asks = res.get("a") or []
+        if not bids or not asks:
+            return None
+        bid_vol = sum(float(p[1]) for p in bids)
+        ask_vol = sum(float(p[1]) for p in asks)
+        total = bid_vol + ask_vol
+        if total <= 0:
+            return None
+        bid_pct = round(bid_vol / total * 100, 1)
+        return {
+            "bid_pct": bid_pct,
+            "ask_pct": round(100 - bid_pct, 1),
+            "best_bid": float(bids[0][0]),
+            "best_ask": float(asks[0][0]),
+            "levels": len(bids) + len(asks),
+        }
+    except (BybitDataError, ValueError, TypeError, IndexError):
+        return None

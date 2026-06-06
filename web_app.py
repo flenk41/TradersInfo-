@@ -293,6 +293,30 @@ def api_bybit_account():
         return jsonify({"ok": False, "error": "Не удалось получить данные аккаунта Bybit"}), 500
 
 
+@app.route("/api/bybit/sentiment")
+@rate_limit(40, 60)
+def api_bybit_sentiment():
+    """Сентимент Bybit (публичный, без ключа): Long/Short ratio + дисбаланс стакана.
+
+    Деривативные данные (L/S ratio) в части регионов отдают 403 → тогда null.
+    """
+    pair = request.args.get("pair", "").strip()
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    m = detect_market(pair, "crypto")
+    if m != "crypto":
+        return jsonify({"ok": True, "long_short": None, "orderbook": None})
+    try:
+        sym, _ = normalize_pair(pair, m)
+        from tis.data.bybit_provider import fetch_long_short_ratio, fetch_orderbook_imbalance
+
+        ls = get_cached(f"bbls:{sym}", lambda: fetch_long_short_ratio(sym), ttl=120)
+        ob = get_cached(f"bbob:{sym}", lambda: fetch_orderbook_imbalance(sym), ttl=30)
+        return jsonify({"ok": True, "symbol": sym, "long_short": ls, "orderbook": ob})
+    except Exception:
+        return jsonify({"ok": True, "long_short": None, "orderbook": None})
+
+
 @app.route("/api/klines")
 @rate_limit(90, 60)
 def api_klines():

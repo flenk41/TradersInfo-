@@ -1342,3 +1342,21 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
   background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.25);
 }
 .aia-position.danger { background: rgba(251,113,133,.12); border-color: rgba(251,113,133,.3); color: #fca5a5; }
+
+/* Сентимент Bybit (Long/Short + стакан) */
+.bybit-sent-card { margin-top: 14px; padding: 16px; border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0) 45%), var(--surface);
+  border: 1px solid rgba(255,255,255,.08); }
+.bybit-sent-card.hidden { display: none; }
+.bybit-sent-card .bs-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.bybit-sent-card .bs-head h3 { margin: 0; font-size: 15px; }
+.bybit-sent-card .bs-head small { color: var(--muted); font-size: .74rem; }
+.bs-row { margin-bottom: 12px; }
+.bs-row:last-child { margin-bottom: 0; }
+.bs-label { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: 5px; }
+.bs-label span { color: var(--text2); } .bs-label b { font-variant-numeric: tabular-nums; }
+.bs-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: rgba(0,0,0,.3); }
+.bs-bar > i { display: block; }
+.bs-bar > i.up { background: linear-gradient(90deg,#22c55e,#34d399); }
+.bs-bar > i.down { background: linear-gradient(90deg,#fb7185,#ef4444); }
+.bs-note { font-size: .72rem; color: var(--muted); margin-top: 4px; }
