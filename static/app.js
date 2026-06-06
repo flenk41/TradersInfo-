@@ -366,9 +366,18 @@ function scenarioPaint(p, entry) {
     p.liquidation_price != null
       ? `<span class="sc-meta-it sc-warn">💥 Ликвидация: ${money(p.liquidation_price)} (${p.liquidation_distance_pct}% от входа)</span>`
       : "";
+  // Рекомендованное плечо: чтобы стоп срабатывал РАНЬШЕ ликвидации (с запасом 30%).
+  // L < 1/d, где d — дистанция стопа в долях; берём 0.7/d.
+  const recLev = slPct > 0 ? Math.max(1, Math.floor(70 / slPct)) : null;
+  const curLev = p.leverage;
+  const levOk = recLev == null || curLev <= recLev;
+  const levHtml = recLev != null
+    ? `<span class="sc-meta-it ${levOk ? "" : "sc-warn"}">🎚 Реком. плечо: <b>≤ ${recLev}x</b>${levOk ? "" : ` · у вас ${curLev}x — стоп может не сработать (ликвидация раньше)!`}</span>`
+    : "";
   meta.innerHTML =
     `<span class="sc-meta-it">⚖ Риск/прибыль: <b>1:${p.risk_reward}</b></span>` +
     `<span class="sc-meta-it">📦 Объём позиции: <b>${money(p.position_notional_usdt)} USDT</b></span>` +
+    levHtml +
     liq;
 
   const verb = isLong ? "вырастет" : "упадёт";
