@@ -167,15 +167,19 @@ def _lang_param() -> str:
 def api_analyze():
     pair = request.args.get("pair", "").strip()
     market = _market_param()
+    # Источник крипто-данных: bybit → публичный Bybit V5, иначе авто (Binance→Yahoo).
+    source = request.args.get("source", "").strip().lower()
+    if source != "bybit":
+        source = None
     if not pair:
         return jsonify({"error": "Укажите инструмент"}), 400
     try:
-        cache_key = f"analyze:{market or 'auto'}:{pair.upper()}"
+        cache_key = f"analyze:{market or 'auto'}:{source or 'def'}:{pair.upper()}"
         if request.args.get("refresh"):
             invalidate(cache_key)
         analysis = get_cached(
             cache_key,
-            lambda: analyze_pair(pair, market=market),
+            lambda: analyze_pair(pair, market=market, source=source),
         )
         preview = calculate_position(
             analysis,
@@ -221,6 +225,8 @@ def api_position():
     market = (data.get("market") or request.args.get("market", "")).strip().lower() or None
     if market and market not in ("crypto", "stock", "forex"):
         market = None
+    source = (data.get("source") or request.args.get("source", "")).strip().lower()
+    source = "bybit" if source == "bybit" else None
     try:
         entry = float(data.get("entry") or request.args.get("entry", 0))
         margin = float(data.get("margin") or request.args.get("margin", 0))
@@ -239,7 +245,7 @@ def api_position():
         return jsonify({"ok": False, "error": "Плечо должно быть от 1"}), 400
 
     try:
-        analysis = analyze_pair(pair, market=market)
+        analysis = analyze_pair(pair, market=market, source=source)
         pos_input = PositionInput(
             entry_price=entry,
             margin_usdt=margin,

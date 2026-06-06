@@ -48,7 +48,7 @@ def _apply_funding_verdict(funding, verdict) -> None:
     funding.summary = verdict.summary
 
 
-def cached_analysis(pair: str, market: str | None = None) -> "MarketAnalysis":
+def cached_analysis(pair: str, market: str | None = None, source: str | None = None) -> "MarketAnalysis":
     """Анализ через тот же кэш, что и эндпоинт /api/analyze.
 
     Ключ совпадает с web_app (`analyze:{market|auto}:{PAIR}`), поэтому балл
@@ -58,18 +58,22 @@ def cached_analysis(pair: str, market: str | None = None) -> "MarketAnalysis":
     """
     from tis.core.data_cache import get_cached
 
-    key = f"analyze:{market or 'auto'}:{pair.upper()}"
-    return get_cached(key, lambda: analyze_pair(pair, market=market))
+    src = (source or "").strip().lower()
+    key = f"analyze:{market or 'auto'}:{src or 'def'}:{pair.upper()}"
+    return get_cached(key, lambda: analyze_pair(pair, market=market, source=source))
 
 
-def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
+def analyze_pair(pair: str, market: str | None = None, source: str | None = None) -> MarketAnalysis:
     m = detect_market(pair, market)
     symbol, display = normalize_pair(pair, m)
+
+    # Источник крипто-данных: "bybit" → публичный Bybit V5, иначе авто (Binance→Yahoo).
+    src = (source or "").strip().lower() if m == "crypto" else None
 
     # Тикер сам по себе валидирует инструмент — отдельный validate_symbol не делаем,
     # чтобы не дублировать сетевой запрос (особенно к MOEX/Yahoo).
     try:
-        ticker = fetch_ticker_24h(pair, m)
+        ticker = fetch_ticker_24h(pair, m, source=src)
         price = float(ticker["lastPrice"])
     except MarketDataError:
         raise
@@ -89,7 +93,7 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     ]
 
     def _load(interval: str, limit: int):
-        return fetch_klines(pair, interval=interval, limit=limit, market=m)
+        return fetch_klines(pair, interval=interval, limit=limit, market=m, source=src)
 
     with ThreadPoolExecutor(max_workers=min(6, len(intervals))) as pool:
         futures = {pool.submit(_load, tf, lim): tf for tf, lim in intervals}
@@ -106,9 +110,9 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     klines_15m = klines_map.get("15m")
 
     if klines_1h is None:
-        klines_1h = fetch_klines(pair, interval="1h", limit=250, market=m)
+        klines_1h = fetch_klines(pair, interval="1h", limit=250, market=m, source=src)
     if klines_4h is None:
-        klines_4h = fetch_klines(pair, interval="4h", limit=250, market=m)
+        klines_4h = fetch_klines(pair, interval="4h", limit=250, market=m, source=src)
 
     tf_analyses = []
     for tf in DEFAULT_TIMEFRAMES:
@@ -117,8 +121,8 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
             tf_analyses.append(analyze_timeframe(df, tf))
 
     volatility = calculate_volatility(klines_1h, ticker)
-    funding_data = get_funding_rate(pair, m)
-    open_interest = get_open_interest(pair, m) if funding_data else None
+    funding_data = get_funding_rate(pair, m, source=src)
+    open_interest = get_open_interest(pair, m, source=src) if funding_data else None
     funding = analyze_funding(funding_data, open_interest)
 
     funding_verdict = evaluate_funding(funding)
@@ -217,10 +221,10 @@ def analyze_pair(pair: str, market: str | None = None) -> MarketAnalysis:
     if m == "crypto":
 
         def _fund():
-            return fetch_funding_history(pair, limit=90, market=m)
+            return fetch_funding_history(pair, limit=90, market=m, source=src)
 
         def _oi():
-            return get_open_interest_history(pair, m)
+            return get_open_interest_history(pair, m, source=src)
 
         def _btc():
             return fetch_btc_change_24h()

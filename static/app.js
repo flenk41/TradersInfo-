@@ -317,7 +317,7 @@ async function scenarioRecalc() {
     const r = await fetch("/api/position", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pair, market, entry, side: scState.side, margin, leverage: lev }),
+      body: JSON.stringify({ pair, market, entry, side: scState.side, margin, leverage: lev, source: cryptoSource() }),
     });
     const j = await r.json();
     if (myReq !== scState.reqId) return; // пришёл ответ на устаревший запрос
@@ -716,7 +716,7 @@ async function jaddRecalc() {
     const r = await fetch("/api/position", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pair, market, entry, side: jaddState.side, margin: 100, leverage: 10 }),
+      body: JSON.stringify({ pair, market, entry, side: jaddState.side, margin: 100, leverage: 10, source: cryptoSource() }),
     });
     const j = await r.json();
     if (!j.ok || !j.position) { box.innerHTML = `<div class="dr-row bad"><span>${j.error || "Не удалось рассчитать"}</span><b>—</b></div>`; jaddState.levels = null; return; }
@@ -1129,6 +1129,7 @@ function switchView(view, market) {
 
   if (view === "market") {
     renderPairsGrid(activeMarket);
+    if (typeof syncSourceSeg === "function") syncSourceSeg();
     const ph = PLACEHOLDERS[activeMarket];
     if (ph && $("customPair")) $("customPair").placeholder = ph;
     if (loadedMarket !== activeMarket || !activePair) {
@@ -1937,6 +1938,17 @@ function render(data) {
   applyI18n();
 }
 
+// Источник крипто-данных для анализа: bybit (публичный V5) или авто (Binance→Yahoo).
+// Только для крипты; хранится в localStorage. Bybit полезен, когда Binance режут в РФ.
+function cryptoSource() {
+  if (activeMarket !== "crypto") return null;
+  try { return localStorage.getItem("crypto_source") === "bybit" ? "bybit" : null; } catch (e) { return null; }
+}
+function sourceParam() {
+  const s = cryptoSource();
+  return s ? "&source=" + s : "";
+}
+
 async function analyze(pair, forceRefresh = false) {
   if (!pair || !pair.trim()) return;
 
@@ -1949,7 +1961,7 @@ async function analyze(pair, forceRefresh = false) {
 
   try {
     let url =
-      "/api/analyze?pair=" + encodeURIComponent(pair) + "&market=" + encodeURIComponent(activeMarket);
+      "/api/analyze?pair=" + encodeURIComponent(pair) + "&market=" + encodeURIComponent(activeMarket) + sourceParam();
     if (forceRefresh) url += "&refresh=1";
     const res = await fetch(url);
     const json = await res.json();
@@ -2003,7 +2015,7 @@ async function refreshAnalysis() {
     const refPair = activePair, refMarket = activeMarket;
     const url =
       "/api/analyze?pair=" + encodeURIComponent(refPair) +
-      "&market=" + encodeURIComponent(refMarket);
+      "&market=" + encodeURIComponent(refMarket) + sourceParam();
     const json = await (await fetch(url)).json();
     if (!json.ok) return;
     // Инструмент мог смениться, пока шёл запрос — не перетираем свежими чужими данными.
@@ -2160,6 +2172,22 @@ $("scLev")?.addEventListener("input", () => {
   scenarioScheduleRecalc();
 });
 $("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
+
+// Переключатель источника крипто-данных (Binance ⇄ Bybit)
+function syncSourceSeg() {
+  const seg = $("cryptoSourceSeg");
+  if (!seg) return;
+  seg.style.display = activeMarket === "crypto" ? "" : "none";
+  const cur = cryptoSource() === "bybit" ? "bybit" : "auto";
+  seg.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.source === cur));
+}
+$("cryptoSourceSeg")?.querySelectorAll("button").forEach((b) =>
+  b.addEventListener("click", () => {
+    try { localStorage.setItem("crypto_source", b.dataset.source === "bybit" ? "bybit" : "auto"); } catch (e) {}
+    syncSourceSeg();
+    if (activePair && activeView === "market") analyze(activePair, true); // пересчёт с новым источником
+  })
+);
 $("scEntryReset")?.addEventListener("click", () => {
   if (lastAnalysisData && lastAnalysisData.price != null) {
     $("scEntry").value = lastAnalysisData.price;

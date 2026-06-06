@@ -1238,3 +1238,16 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
   .scenario-controls { grid-template-columns: 1fr; }
   .scenario-outcomes { grid-template-columns: 1fr; }
 }
+
+/* Переключатель источника крипто-данных в тулбаре графика (Binance ⇄ Bybit) */
+.source-seg {
+  display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px;
+  background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.08);
+}
+.source-seg button {
+  border: 0; background: transparent; cursor: pointer; padding: 4px 10px;
+  border-radius: 7px; font-size: .74rem; font-weight: 700; color: var(--muted);
+  transition: background .14s var(--ease), color .14s var(--ease);
+}
+.source-seg button:hover { color: var(--text); }
+.source-seg button.active { background: var(--accent); color: #fff; }

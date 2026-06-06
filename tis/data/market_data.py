@@ -43,10 +43,20 @@ def _crypto_to_yf(sym: str) -> str:
     return f"{s}-USD"
 
 
-def fetch_klines(pair: str, interval: str = "1h", limit: int = 200, market: str | None = None) -> pd.DataFrame:
+def _use_bybit(source: str | None) -> bool:
+    return (source or "").strip().lower() == "bybit"
+
+
+def fetch_klines(pair: str, interval: str = "1h", limit: int = 200, market: str | None = None, source: str | None = None) -> pd.DataFrame:
     m = detect_market(pair, market)
     sym, _ = normalize_pair(pair, m)
     if m == "crypto":
+        if _use_bybit(source):
+            from tis.data.bybit_provider import BybitDataError, fetch_klines as _fk_bybit
+            try:
+                return _fk_bybit(sym, interval, limit)
+            except BybitDataError:
+                pass  # Bybit не отдал — падаем на общий путь ниже
         try:
             return _fetch_klines_binance(sym, interval, limit)
         except BinanceDataError:
@@ -62,10 +72,16 @@ def fetch_klines(pair: str, interval: str = "1h", limit: int = 200, market: str 
     return fetch_klines_yf(yf_sym, interval, limit)
 
 
-def fetch_ticker_24h(pair: str, market: str | None = None) -> dict[str, Any]:
+def fetch_ticker_24h(pair: str, market: str | None = None, source: str | None = None) -> dict[str, Any]:
     m = detect_market(pair, market)
     sym, _ = normalize_pair(pair, m)
     if m == "crypto":
+        if _use_bybit(source):
+            from tis.data.bybit_provider import BybitDataError, fetch_ticker_24h as _ft_bybit
+            try:
+                return _ft_bybit(sym)
+            except BybitDataError:
+                pass
         try:
             return _fetch_ticker_binance(sym)
         except BinanceDataError:
@@ -104,33 +120,53 @@ def validate_symbol(pair: str, market: str | None = None) -> bool:
         return False
 
 
-def fetch_funding_history(pair: str, limit: int = 90, market: str | None = None) -> list[dict]:
+def fetch_funding_history(pair: str, limit: int = 90, market: str | None = None, source: str | None = None) -> list[dict]:
     m = detect_market(pair, market)
     if m != "crypto":
         return []
     sym, _ = normalize_pair(pair, m)
+    if _use_bybit(source):
+        from tis.data.bybit_provider import fetch_funding_history as _fh_bybit
+        pts = _fh_bybit(sym, limit)
+        if pts:
+            return pts
     return _fetch_funding_binance(sym, limit)
 
 
-def get_funding_rate(pair: str, market: str | None = None):
+def get_funding_rate(pair: str, market: str | None = None, source: str | None = None):
     m = detect_market(pair, market)
     if m != "crypto":
         return None
     sym, _ = normalize_pair(pair, m)
+    if _use_bybit(source):
+        from tis.data.bybit_provider import fetch_funding_rate as _fr_bybit
+        r = _fr_bybit(sym)
+        if r:
+            return r
     return fetch_funding_rate(sym)
 
 
-def get_open_interest(pair: str, market: str | None = None):
+def get_open_interest(pair: str, market: str | None = None, source: str | None = None):
     m = detect_market(pair, market)
     if m != "crypto":
         return None
     sym, _ = normalize_pair(pair, m)
+    if _use_bybit(source):
+        from tis.data.bybit_provider import fetch_open_interest as _oi_bybit
+        v = _oi_bybit(sym)
+        if v is not None:
+            return v
     return fetch_open_interest(sym)
 
 
-def get_open_interest_history(pair: str, market: str | None = None):
+def get_open_interest_history(pair: str, market: str | None = None, source: str | None = None):
     m = detect_market(pair, market)
     if m != "crypto":
         return []
     sym, _ = normalize_pair(pair, m)
+    if _use_bybit(source):
+        from tis.data.bybit_provider import fetch_open_interest_history as _oih_bybit
+        pts = _oih_bybit(sym)
+        if pts:
+            return pts
     return fetch_open_interest_history(sym)
