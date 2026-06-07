@@ -415,6 +415,9 @@ const TradingChart = (() => {
     // с другого ценового масштаба (напр. BTC 76000 vs EUR 1.16) растягивают автошкалу
     // и новые свечи сплющиваются в невидимую полоску.
     const pairChanged = live.pair !== pair;
+    // Глушим опрос прошлой пары на время загрузки — чтобы ни один поллинг
+    // не дописал чужую свечу, пока грузятся новые klines.
+    stopLive();
     if (pairChanged) {
       clearEntryZones();
       removeLines();
@@ -494,10 +497,16 @@ const TradingChart = (() => {
 
   async function pollLive() {
     if (!live.pair || !candleSeries || document.hidden) return;
+    // Фиксируем пару на момент запроса: пока идёт await, пользователь мог
+    // переключить инструмент. Если ответ пришёл уже для ДРУГОЙ пары — отбрасываем,
+    // иначе чужая свеча (с другим масштабом цены) попадёт в lastCandles и
+    // растянет автошкалу, сплющив свечи нового инструмента.
+    const reqPair = live.pair, reqInterval = live.interval, reqMarket = live.market;
     try {
-      const base = `pair=${encodeURIComponent(live.pair)}&interval=${live.interval}&limit=3&market=${encodeURIComponent(live.market)}`;
+      const base = `pair=${encodeURIComponent(reqPair)}&interval=${reqInterval}&limit=3&market=${encodeURIComponent(reqMarket)}`;
       const res = await fetch(`/api/klines?${base}`);
       const json = await res.json();
+      if (live.pair !== reqPair || live.interval !== reqInterval || live.market !== reqMarket) return;
       if (!json.ok || !json.candles?.length) return;
       // lightweight-charts .update() кидает ошибку для свечей СТАРШЕ последней,
       // поэтому обновляем только текущую (или более новую) свечу.
