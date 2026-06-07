@@ -293,6 +293,36 @@ def api_bybit_account():
         return jsonify({"ok": False, "error": "Не удалось получить данные аккаунта Bybit"}), 500
 
 
+@app.route("/api/backtest")
+@rate_limit(20, 60)
+def api_backtest():
+    """Бэктест стратегии TIS по истории (без реальных сделок) — статистика и кривая."""
+    pair = request.args.get("pair", "").strip()
+    market = _market_param()
+    interval = request.args.get("interval", "1h")
+    try:
+        limit = min(int(request.args.get("limit", 1000)), 1000)
+    except ValueError:
+        limit = 1000
+    if not pair:
+        return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    try:
+        from tis.analysis.backtester import backtest
+        from tis.data.market_data import fetch_klines
+
+        key = f"backtest:{market or 'auto'}:{interval}:{limit}:{pair.upper()}"
+        result = get_cached(
+            key,
+            lambda: backtest(fetch_klines(pair, interval=interval, limit=limit, market=market)),
+            ttl=600,
+        )
+        return jsonify({"ok": True, "interval": interval, "bars": limit, "result": result})
+    except MarketDataError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка бэктеста: {e}"}), 500
+
+
 @app.route("/api/quality")
 @rate_limit(30, 60)
 def api_quality():

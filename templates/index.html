@@ -188,6 +188,7 @@
           <div class="overview-actions" id="overviewActions">
             <button type="button" class="ov-action" id="btnScenario">🎯 <span>Сценарий входа</span><small id="btnScenarioSub">вход · стоп · тейк · плечо</small></button>
             <button type="button" class="ov-action" id="btnRiskCalc">🧮 <span>Калькулятор риска</span><small>плечо и размер под ваш риск</small></button>
+            <button type="button" class="ov-action ov-action-wide" id="btnBacktest">📊 <span>Бэктест стратегии</span><small>винрейт и прибыль на истории</small></button>
           </div>
 
           <section class="bybit-sent-card hidden" id="bybitSentCard">
@@ -732,6 +733,18 @@
           <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
         </div>
         <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="backtestOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📊 Бэктест стратегии</h2>
+        <button type="button" class="modal-close" id="backtestClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="backtestBody">
+        <p class="modal-note">Откройте инструмент и нажмите «Анализ».</p>
       </div>
     </div>
   </div>

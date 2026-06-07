@@ -2284,6 +2284,50 @@ async function computeRiskCalc() {
   }
 }
 $("btnRiskCalc")?.addEventListener("click", () => openRiskCalc());
+
+// ── Бэктест стратегии (история, без реальных сделок) ────────────────────────
+async function openBacktest() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  $("backtestOverlay").classList.remove("hidden");
+  const body = $("backtestBody");
+  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по истории (≈1000 баров)…</p>';
+  try {
+    const tf = (typeof currentLwTf === "function") ? currentLwTf() : "1h";
+    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${tf}&limit=1000`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderBacktest(j.result, j.interval);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderBacktest(r, interval) {
+  const body = $("backtestBody");
+  if (!r || !r.available || !r.trades) {
+    body.innerHTML = '<p class="modal-note">Недостаточно данных/сделок для бэктеста на этом ТФ.</p>'; return;
+  }
+  const profit = r.total_r > 0 && r.profit_factor >= 1;
+  const verdict = r.profit_factor >= 1.5 ? { t: "Стратегия прибыльна ✅", c: "good" }
+    : r.profit_factor >= 1 ? { t: "Слабый плюс — осторожно", c: "ok" }
+    : { t: "Убыточна на этой истории ⛔", c: "bad" };
+  const spark = (typeof sparklineSvg === "function") ? sparklineSvg(r.equity, profit, "bt-spark") : "";
+  body.innerHTML =
+    `<div class="bt-verdict bt-${verdict.c}">${verdict.t} <small>R:R 1:${r.rr} · ТФ ${interval} · ${r.trades} сделок</small></div>` +
+    `<div class="bt-equity"><div class="bt-eq-label">Кривая депозита (в R)</div>${spark}<div class="bt-eq-total ${r.total_r>=0?'up':'down'}">${r.total_r>=0?'+':''}${r.total_r}R итого</div></div>` +
+    `<div class="bt-kpis">` +
+      `<div class="bt-kpi"><span>Винрейт</span><b class="${r.win_rate>=45?'up':''}">${r.win_rate}%</b></div>` +
+      `<div class="bt-kpi"><span>Средний R</span><b class="${r.avg_r>=0?'up':'down'}">${r.avg_r>0?'+':''}${r.avg_r}</b></div>` +
+      `<div class="bt-kpi"><span>Профит-фактор</span><b class="${r.profit_factor>=1?'up':'down'}">${r.profit_factor}</b></div>` +
+      `<div class="bt-kpi"><span>Макс. просадка</span><b class="down">−${r.max_drawdown_r}R</b></div>` +
+      `<div class="bt-kpi"><span>Сделок</span><b>${r.trades}</b></div>` +
+      `<div class="bt-kpi"><span>TP/SL/БУ</span><b>${r.wins}/${r.losses}/${r.breakeven}</b></div>` +
+    `</div>` +
+    `<div class="bt-sides">` +
+      `<div class="bt-side"><span>📈 Лонги</span><b>${r.long_trades} сд · WR ${r.long_wr}%</b></div>` +
+      `<div class="bt-side"><span>📉 Шорты</span><b>${r.short_trades} сд · WR ${r.short_wr}%</b></div>` +
+    `</div>` +
+    `<p class="modal-note">Упрощённая модель стратегии (тренд EMA + RSI, стоп ATR, тейк R:R 1:${r.rr}, безубыток после +1R) на истории ${interval}. Прошлые результаты не гарантируют будущих. Не финансовый совет.</p>`;
+}
+$("btnBacktest")?.addEventListener("click", () => openBacktest());
+$("backtestClose")?.addEventListener("click", () => $("backtestOverlay")?.classList.add("hidden"));
+$("backtestOverlay")?.addEventListener("click", (e) => { if (e.target === $("backtestOverlay")) $("backtestOverlay").classList.add("hidden"); });
 $("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
 $("riskCalcOverlay")?.addEventListener("click", (e) => { if (e.target === $("riskCalcOverlay")) $("riskCalcOverlay").classList.add("hidden"); });
 document.querySelectorAll("#rcSide button").forEach((b) =>
