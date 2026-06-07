@@ -625,11 +625,17 @@
           </div>
         </div>
         <div class="trainer-toolbar">
+          <div class="seg tr-levels" id="trLevels">
+            <button type="button" data-level="easy">Лёгкий</button>
+            <button type="button" data-level="medium" class="active">Средний</button>
+            <button type="button" data-level="hard">Сложный</button>
+          </div>
           <span class="tr-tf" id="trTf">—</span>
           <span class="tr-spacer"></span>
           <button type="button" class="btn-secondary" id="trDraw" title="Рисовать линии для анализа">✏️ Рисовать</button>
           <button type="button" class="btn-secondary" id="trClear" title="Стереть рисунок">🧹 Стереть</button>
         </div>
+        <div class="trainer-badges" id="trainerBadges"></div>
         <div class="trainer-chart-wrap">
           <div id="trainerChart"></div>
           <canvas id="trainerDraw" class="trainer-draw"></canvas>

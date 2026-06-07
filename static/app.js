@@ -4102,9 +4102,11 @@ function trInitChart() {
   });
 }
 
+let trLevel = "medium";
 async function openTrainer() {
   trInitChart();
   trRenderScore();
+  trRenderBadges();
   setTimeout(() => { if (TRAINER.chart) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth }); trResizeCanvas(); }, 60);
   await trLoadRound();
 }
@@ -4120,7 +4122,7 @@ async function trLoadRound() {
   trClearDraw();
   $("trTf").textContent = "Загрузка…";
   try {
-    const j = await (await fetch("/api/trainer/round")).json();
+    const j = await (await fetch("/api/trainer/round?level=" + trLevel)).json();
     if (!j.ok) { $("trTf").textContent = j.error || "Ошибка"; return; }
     TRAINER.round = j; TRAINER.future = j.future; TRAINER.answered = false;
     $("trTf").textContent = "ТФ: " + j.interval + " · следующие " + j.horizon + " свечей скрыты";
@@ -4146,12 +4148,24 @@ function trAnswer(dir) {
       color: actual === "up" ? "#22c55e" : "#ef4444", shape: actual === "up" ? "arrowUp" : "arrowDown",
       text: (actual === "up" ? "+" : "") + TRAINER.round.outcome.change_pct + "%" },
   ]);
-  // счёт
+  // счёт + лучшая серия
   const s = trGetScore();
   s.total = (s.total || 0) + 1;
   if (correct) { s.correct = (s.correct || 0) + 1; s.streak = (s.streak || 0) + 1; }
   else { s.streak = 0; }
-  trSaveScore(s); trRenderScore();
+  const prevBest = s.best_streak || 0;
+  if (s.streak > prevBest) s.best_streak = s.streak;
+  trSaveScore(s); trRenderScore(); trRenderBadges();
+  const unlocked = trCheckAchievement(prevBest, s.best_streak || 0);
+  // подсказки «почему»
+  const h = TRAINER.round.hints || {};
+  let hintsHtml = "";
+  if (h.trend) {
+    const tr = h.trend === "up" ? "вверх 📈" : h.trend === "down" ? "вниз 📉" : "боковик ↔";
+    const rsiTxt = h.rsi != null ? `RSI ${h.rsi} (${h.rsi >= 70 ? "перекуплен" : h.rsi <= 30 ? "перепродан" : "норма"})` : "";
+    const b3 = h.bull3 != null ? `последние 3 свечи: ${h.bull3} зелёных` : "";
+    hintsHtml = `<div class="tr-res-hints">🔎 На что смотреть: тренд по EMA — <b>${tr}</b>; ${rsiTxt}; ${b3}.</div>`;
+  }
   // результат
   const ch = TRAINER.round.outcome.change_pct;
   $("trainerActions").innerHTML = '<button type="button" class="btn-primary tr-next" id="trNext">Следующий график →</button>';
@@ -4159,9 +4173,34 @@ function trAnswer(dir) {
   const r = $("trainerResult");
   r.className = "trainer-result " + (correct ? "good" : "bad");
   r.innerHTML =
-    `<div class="tr-res-h">${correct ? "✅ Верно!" : "❌ Мимо"}</div>` +
+    `<div class="tr-res-h">${correct ? "✅ Верно!" : "❌ Мимо"}${correct && s.streak >= 2 ? ` · серия ${s.streak} 🔥` : ""}</div>` +
     `<div class="tr-res-d">Цена пошла <b class="${actual === "up" ? "up" : "down"}">${actual === "up" ? "ВВЕРХ 📈" : "ВНИЗ 📉"}</b> на ${ch > 0 ? "+" : ""}${ch}% за ${TRAINER.round.horizon} свечей. Ты выбрал «${dir === "up" ? "Вверх" : "Вниз"}».</div>` +
-    `<div class="tr-res-tip">${correct ? "Отлично читаешь тренд — продолжай серию." : "Совет: смотри направление последних свечей, уровни и импульс. Один график — не приговор, важна статистика на дистанции."}</div>`;
+    hintsHtml +
+    `<div class="tr-res-tip">${correct ? "Отлично читаешь график — держи серию." : "Совет: оцени тренд (EMA/наклон), импульс и уровни. Один график — не приговор, важна статистика на дистанции."}</div>` +
+    (unlocked ? `<div class="tr-res-ach">🏆 Достижение: ${unlocked}!</div>` : "");
+}
+
+// ── Достижения за серии ─────────────────────────────────────────────
+const TR_ACH = [
+  { n: 3, label: "🥉 Серия 3", key: "s3" },
+  { n: 5, label: "🥈 Серия 5", key: "s5" },
+  { n: 10, label: "🥇 Серия 10", key: "s10" },
+  { n: 20, label: "🏆 Серия 20", key: "s20" },
+  { n: 50, label: "💎 Серия 50", key: "s50" },
+];
+function trCheckAchievement(prevBest, best) {
+  // вернуть label, если новая планка достигнута только что
+  for (const a of TR_ACH) {
+    if (prevBest < a.n && best >= a.n) return a.label;
+  }
+  return null;
+}
+function trRenderBadges() {
+  const el = $("trainerBadges");
+  if (!el) return;
+  const best = trGetScore().best_streak || 0;
+  el.innerHTML = `<span class="tr-badge-label">Лучшая серия: <b>${best} 🔥</b></span>` +
+    TR_ACH.map((a) => `<span class="tr-badge ${best >= a.n ? "got" : ""}" title="${a.label}">${a.label}</span>`).join("");
 }
 
 // ── Рисование поверх графика (для анализа) ──────────────────────────
@@ -4211,3 +4250,10 @@ function trBindDraw() {
 $("trDraw")?.addEventListener("click", trToggleDraw);
 $("trClear")?.addEventListener("click", trClearDraw);
 $("trDraw") && trBindDraw();
+document.querySelectorAll("#trLevels button").forEach((b) =>
+  b.addEventListener("click", () => {
+    trLevel = b.dataset.level;
+    document.querySelectorAll("#trLevels button").forEach((x) => x.classList.toggle("active", x === b));
+    trLoadRound();
+  })
+);

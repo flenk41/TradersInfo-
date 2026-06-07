@@ -1567,3 +1567,12 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .tr-res-d { font-size: .9rem; margin-bottom: 6px; } .tr-res-d .up { color: #34d399; } .tr-res-d .down { color: #fb7185; }
 .tr-res-tip { font-size: .8rem; color: var(--muted); }
 @media (max-width: 600px) { .trainer-score { width: 100%; justify-content: space-between; gap: 6px; } .ts-item { flex: 1; padding: 6px; } }
+
+/* Тренажёр — уровни сложности, ачивки, подсказки */
+.tr-levels button.active { background: var(--accent); color: #fff; }
+.trainer-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tr-badge-label { font-size: .78rem; color: var(--muted); margin-right: 4px; } .tr-badge-label b { color: var(--text); }
+.tr-badge { font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); color: var(--muted); filter: grayscale(1); opacity: .5; }
+.tr-badge.got { filter: none; opacity: 1; background: rgba(99,102,241,.15); border-color: rgba(99,102,241,.3); color: var(--text); }
+.tr-res-hints { font-size: .82rem; color: var(--text2, #c7c4d7); margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
+.tr-res-ach { margin-top: 8px; font-weight: 800; color: #f59e0b; }

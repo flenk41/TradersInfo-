@@ -334,8 +334,11 @@ def api_trainer_round():
     import random
     from tis.data.instruments_catalog import CRYPTO_LIST
     from tis.data.market_data import fetch_klines
+    from tis.analysis.backtester import _ema, _rsi
 
-    VIS, HORIZON = 130, 16
+    level = request.args.get("level", "medium").strip().lower()
+    HORIZON = {"easy": 20, "medium": 12, "hard": 6}.get(level, 12)  # короче горизонт = сложнее
+    VIS = 130
     try:
         for _ in range(4):  # пара попыток на случай пустых данных
             inst = random.choice(CRYPTO_LIST)
@@ -364,9 +367,21 @@ def api_trainer_round():
             p0 = vc[-1]["close"]
             p1 = fc[-1]["close"]
             direction = "up" if p1 >= p0 else "down"
+            # Подсказки «почему» — по видимому графику (для объяснения после ответа).
+            hints = {}
+            try:
+                closes = vis["close"].astype(float)
+                e20 = float(_ema(closes, 20).iloc[-1])
+                e50 = float(_ema(closes, 50).iloc[-1])
+                hints["trend"] = "up" if e20 > e50 * 1.001 else "down" if e20 < e50 * 0.999 else "flat"
+                hints["rsi"] = round(float(_rsi(closes).iloc[-1]), 0)
+                last3 = vc[-3:]
+                hints["bull3"] = sum(1 for c in last3 if c["close"] >= c["open"])
+            except Exception:
+                hints = {}
             return jsonify({
-                "ok": True, "interval": interval, "horizon": HORIZON,
-                "visible": vc, "future": fc,
+                "ok": True, "interval": interval, "horizon": HORIZON, "level": level,
+                "visible": vc, "future": fc, "hints": hints,
                 "outcome": {"direction": direction, "change_pct": round((p1 - p0) / p0 * 100, 2)},
             })
         return jsonify({"ok": False, "error": "Нет данных для раунда, попробуйте ещё раз"}), 503
