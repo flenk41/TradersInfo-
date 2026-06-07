@@ -13,6 +13,7 @@ const ChartDraw = (() => {
   let shapes = [];          // фигуры текущей пары
   let storeKey = "";        // ключ localStorage
   let tool = "cursor";      // активный инструмент
+  let lastTool = "trend";   // последний инструмент рисования (для авто-выбора при включении)
   let color = "#a855f7";
   let lineWidth = 2;
   let draft = null;         // фигура в процессе создания
@@ -390,13 +391,14 @@ const ChartDraw = (() => {
 
   function commit() {
     if (draft) {
-      if (isDegenerate(draft)) { draft = null; setTool("cursor"); redraw(); return; }
+      if (isDegenerate(draft)) { draft = null; redraw(); return; }
       shapes.push(draft);
       selected = shapes.length - 1;
       draft = null;
       save();
     }
-    setTool("cursor");
+    // инструмент НЕ сбрасываем — пользователь может рисовать ещё (как кисть/линия в TV).
+    // Для выделения/перемещения он сам выберет «Курсор».
     redraw();
   }
 
@@ -469,6 +471,7 @@ const ChartDraw = (() => {
 
   function setTool(id) {
     tool = id;
+    if (id !== "cursor") lastTool = id;
     // в режиме редактирования канва всегда ловит указатель (выбор/создание);
     // вне редактирования — прозрачна, график панорамируется
     canvas.style.pointerEvents = editing ? "auto" : "none";
@@ -507,8 +510,12 @@ const ChartDraw = (() => {
     if (!editing) {
       selected = -1; draft = null; drag = null;
       if (hint) hint.classList.add("hidden");
+      setTool("cursor");
+    } else {
+      // при включении сразу даём рабочий инструмент рисования — иначе перетаскивание
+      // в режиме «курсор» ничего не рисует и кажется, что рисовать нельзя
+      setTool(lastTool || "trend");
     }
-    setTool("cursor");
     redraw();
     return editing;
   }
