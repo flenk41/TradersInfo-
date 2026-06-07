@@ -4117,8 +4117,10 @@ async function trLoadRound() {
   res.classList.add("hidden"); res.innerHTML = "";
   $("trainerActions").innerHTML =
     '<button type="button" class="tr-predict up" id="trUp">📈 Вверх</button>' +
+    '<button type="button" class="tr-predict flat" id="trFlat">↔ Вбок</button>' +
     '<button type="button" class="tr-predict down" id="trDown">📉 Вниз</button>';
   $("trUp").addEventListener("click", () => trAnswer("up"));
+  $("trFlat").addEventListener("click", () => trAnswer("flat"));
   $("trDown").addEventListener("click", () => trAnswer("down"));
   trClearDraw();
   if (TRAINER.hintOn) trClearHint();
@@ -4144,11 +4146,13 @@ function trAnswer(dir) {
   TRAINER.chart.timeScale().fitContent();
   // маркеры: точка предсказания + исход
   const lastVis = TRAINER.round.visible[TRAINER.round.visible.length - 1];
+  const aColor = actual === "up" ? "#22c55e" : actual === "down" ? "#ef4444" : "#94a3b8";
+  const aShape = actual === "up" ? "arrowUp" : actual === "down" ? "arrowDown" : "circle";
   TRAINER.series.setMarkers([
     { time: lastVis.time, position: "inBar", color: "#a855f7", shape: "circle", text: "ты тут" },
-    { time: TRAINER.future[TRAINER.future.length - 1].time, position: actual === "up" ? "aboveBar" : "belowBar",
-      color: actual === "up" ? "#22c55e" : "#ef4444", shape: actual === "up" ? "arrowUp" : "arrowDown",
-      text: (actual === "up" ? "+" : "") + TRAINER.round.outcome.change_pct + "%" },
+    { time: TRAINER.future[TRAINER.future.length - 1].time, position: actual === "down" ? "belowBar" : "aboveBar",
+      color: aColor, shape: aShape,
+      text: (TRAINER.round.outcome.change_pct > 0 ? "+" : "") + TRAINER.round.outcome.change_pct + "%" },
   ]);
   // счёт + лучшая серия
   const s = trGetScore();
@@ -4174,9 +4178,12 @@ function trAnswer(dir) {
   $("trNext").addEventListener("click", () => trLoadRound());
   const r = $("trainerResult");
   r.className = "trainer-result " + (correct ? "good" : "bad");
+  const RU = { up: "ВВЕРХ 📈", down: "ВНИЗ 📉", flat: "ВБОК ↔" };
+  const PICK = { up: "Вверх", down: "Вниз", flat: "Вбок" };
+  const aCls = actual === "up" ? "up" : actual === "down" ? "down" : "";
   r.innerHTML =
     `<div class="tr-res-h">${correct ? "✅ Верно!" : "❌ Мимо"}${correct && s.streak >= 2 ? ` · серия ${s.streak} 🔥` : ""}</div>` +
-    `<div class="tr-res-d">Цена пошла <b class="${actual === "up" ? "up" : "down"}">${actual === "up" ? "ВВЕРХ 📈" : "ВНИЗ 📉"}</b> на ${ch > 0 ? "+" : ""}${ch}% за ${TRAINER.round.horizon} свечей. Ты выбрал «${dir === "up" ? "Вверх" : "Вниз"}».</div>` +
+    `<div class="tr-res-d">Цена пошла <b class="${aCls}">${RU[actual]}</b> на ${ch > 0 ? "+" : ""}${ch}% за ${TRAINER.round.horizon} свечей. Ты выбрал «${PICK[dir]}».</div>` +
     hintsHtml +
     `<div class="tr-res-tip">${correct ? "Отлично читаешь график — держи серию." : "Совет: оцени тренд (EMA/наклон), импульс и уровни. Один график — не приговор, важна статистика на дистанции."}</div>` +
     (unlocked ? `<div class="tr-res-ach">🏆 Достижение: ${unlocked}!</div>` : "");
@@ -4285,6 +4292,25 @@ function trBindDraw() {
   cv.addEventListener("touchstart", start, { passive: false }); cv.addEventListener("touchmove", move, { passive: false });
   cv.addEventListener("touchend", end);
 }
+// ── Мини-уроки (основы анализа для новичков) ────────────────────────
+const TR_LESSONS = [
+  { i: "📈", t: "Тренд", d: "Направление движения. <b>Восходящий</b> — каждый максимум и минимум выше предыдущего; <b>нисходящий</b> — ниже; <b>боковик</b> — цена топчется. Линии EMA20/50 помогают увидеть: цена выше растущих линий = тренд вверх. Главное правило новичка — <b>торгуй по тренду</b>, а не против." },
+  { i: "🟩", t: "Свечи", d: "Каждая свеча — период. <b>Зелёная</b> — закрытие выше открытия (рост), <b>красная</b> — падение. Тело = разница открытие/закрытие, тени (фитили) = максимумы/минимумы. Длинное тело = сила движения; длинные тени = отвержение цены (борьба покупателей и продавцов)." },
+  { i: "📊", t: "Поддержка и сопротивление", d: "<b>Поддержка</b> — уровень, где цена не раз разворачивалась вверх (покупатели сильнее). <b>Сопротивление</b> — где разворот вниз. От уровня часто отскок; <b>пробой</b> уровня с объёмом = сигнал продолжения. Вход у уровня даёт близкий стоп = хороший риск." },
+  { i: "🌡", t: "RSI (импульс)", d: "Индикатор 0–100: насколько перегрето движение. <b>&gt;70</b> — перекуплен (риск отката вниз), <b>&lt;30</b> — перепродан (риск отскока вверх), <b>40–60</b> — норма. RSI не сигнал сам по себе — смотри вместе с трендом и уровнями." },
+  { i: "⚖", t: "Стоп, тейк и R:R", d: "<b>Стоп-лосс</b> — цена, где признаёшь ошибку и выходишь (за уровнем). <b>Тейк-профит</b> — цель. <b>R:R</b> — отношение: рискуешь 1 ради 2 (1:2). При R:R 1:2 даже <b>40% удачных сделок прибыльны</b>. Без стопа не входи никогда." },
+  { i: "🎯", t: "Как тренироваться", d: "В тренажёре: оцени <b>треnд</b> (куда наклон), есть ли рядом <b>уровень</b>, не перегрет ли <b>RSI</b> — и выбери Вверх/Вбок/Вниз. Жми «💡 Подсказка», чтобы увидеть тренд и уровни на графике. Важна не одна сделка, а <b>статистика на дистанции</b> — копи серию." },
+];
+function openLessons() {
+  $("lessonsBody").innerHTML = TR_LESSONS.map((l) =>
+    `<div class="lesson-card"><div class="lesson-ic">${l.i}</div><div class="lesson-tx"><b>${l.t}</b><p>${l.d}</p></div></div>`
+  ).join("") + '<p class="modal-note">Это база. Лучший способ научиться — практика в тренажёре: читай график, предсказывай, смотри разбор.</p>';
+  $("lessonsOverlay").classList.remove("hidden");
+}
+$("trLessonsBtn")?.addEventListener("click", openLessons);
+$("lessonsClose")?.addEventListener("click", () => $("lessonsOverlay")?.classList.add("hidden"));
+$("lessonsOverlay")?.addEventListener("click", (e) => { if (e.target === $("lessonsOverlay")) $("lessonsOverlay").classList.add("hidden"); });
+
 $("trHint")?.addEventListener("click", trToggleHint);
 $("trDraw")?.addEventListener("click", trToggleDraw);
 $("trClear")?.addEventListener("click", trClearDraw);

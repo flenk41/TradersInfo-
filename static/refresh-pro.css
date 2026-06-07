@@ -1576,3 +1576,10 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .tr-badge.got { filter: none; opacity: 1; background: rgba(99,102,241,.15); border-color: rgba(99,102,241,.3); color: var(--text); }
 .tr-res-hints { font-size: .82rem; color: var(--text2, #c7c4d7); margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
 .tr-res-ach { margin-top: 8px; font-weight: 800; color: #f59e0b; }
+
+/* Тренажёр — флэт-кнопка, уроки */
+.tr-predict.flat { background: rgba(148,163,184,.15); color: #cbd5e1; border: 1px solid rgba(148,163,184,.3); }
+.tr-lessons-btn { font-size: .72rem !important; padding: 4px 10px !important; vertical-align: middle; margin-left: 8px; }
+.lesson-card { display: flex; gap: 12px; padding: 12px; margin-bottom: 10px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); }
+.lesson-ic { font-size: 1.6rem; flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(99,102,241,.12); }
+.lesson-tx b { font-size: .95rem; } .lesson-tx p { margin: 4px 0 0; font-size: .84rem; line-height: 1.5; color: var(--text2, #c7c4d7); }

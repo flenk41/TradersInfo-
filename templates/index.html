@@ -614,7 +614,7 @@
       <section class="panel trainer-panel">
         <div class="trainer-head">
           <div>
-            <h2>🎓 Тренажёр чтения графика</h2>
+            <h2>🎓 Тренажёр чтения графика <button type="button" class="btn-secondary tr-lessons-btn" id="trLessonsBtn">📚 Уроки</button></h2>
             <p class="trainer-sub">Куда пойдёт цена дальше? Проанализируй график и выбери направление. Инструмент скрыт — только чистое чтение свечей.</p>
           </div>
           <div class="trainer-score" id="trainerScore">
@@ -786,6 +786,16 @@
         </div>
         <div class="bybit-result" id="bybitResult"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="lessonsOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📚 Мини-уроки: основы анализа</h2>
+        <button type="button" class="modal-close" id="lessonsClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="lessonsBody"></div>
     </div>
   </div>
 

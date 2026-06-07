@@ -334,7 +334,7 @@ def api_trainer_round():
     import random
     from tis.data.instruments_catalog import CRYPTO_LIST
     from tis.data.market_data import fetch_klines
-    from tis.analysis.backtester import _ema, _rsi
+    from tis.analysis.backtester import _ema, _rsi, _atr
 
     level = request.args.get("level", "medium").strip().lower()
     HORIZON = {"easy": 20, "medium": 12, "hard": 6}.get(level, 12)  # короче горизонт = сложнее
@@ -366,7 +366,16 @@ def api_trainer_round():
                 continue
             p0 = vc[-1]["close"]
             p1 = fc[-1]["close"]
-            direction = "up" if p1 >= p0 else "down"
+            # Флэт — если движение за горизонт меньше ~0.75 ATR (никуда не пошло).
+            try:
+                atr = float(_atr(vis).iloc[-1])
+            except Exception:
+                atr = abs(p1 - p0)
+            move = p1 - p0
+            if atr > 0 and abs(move) < 0.75 * atr:
+                direction = "flat"
+            else:
+                direction = "up" if move >= 0 else "down"
             # Подсказки «почему» — по видимому графику (для объяснения после ответа).
             hints = {}
             try:
