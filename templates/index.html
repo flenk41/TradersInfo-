@@ -616,6 +616,10 @@
           <p class="control-sub">Инструменты анализа и настройки в одном месте</p>
         </div>
         <div class="control-grid">
+          <button type="button" class="ctrl-card" data-ctrl="scanner">
+            <span class="ctrl-ic">🔔</span>
+            <span class="ctrl-text"><strong>Сканер сигналов</strong><small>Бот находит готовые сетапы по стратегии · алерты · вы торгуете сами</small></span>
+          </button>
           <button type="button" class="ctrl-card" data-ctrl="journal">
             <span class="ctrl-ic">📝</span>
             <span class="ctrl-text"><strong>Записать сигнал</strong><small>Зафиксировать вход/стоп/тейк в журнал — винрейт по реальной истории</small></span>
@@ -733,6 +737,30 @@
           <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
         </div>
         <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="scannerOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🔔 Сканер сигналов</h2>
+        <button type="button" class="modal-close" id="scannerClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="scan-controls">
+          <div class="seg scan-markets" id="scanMarkets">
+            <button type="button" class="active" data-market="crypto">Крипта</button>
+            <button type="button" data-market="stock">Акции</button>
+            <button type="button" data-market="forex">Валюта</button>
+          </div>
+          <button type="button" class="btn-primary" id="scanRun">Сканировать</button>
+          <label class="scan-toggle"><input type="checkbox" id="scanAuto"> Авто каждые 5 мин</label>
+          <label class="scan-toggle"><input type="checkbox" id="scanNotify"> Уведомления</label>
+        </div>
+        <div class="scan-results" id="scanResults">
+          <p class="modal-note">Нажмите «Сканировать» — бот найдёт инструменты с готовым сигналом (вход/стоп/тейк). Сделки вы открываете сами.</p>
+        </div>
       </div>
     </div>
   </div>

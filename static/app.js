@@ -2326,6 +2326,77 @@ function renderBacktest(r, interval) {
     `<p class="modal-note">Упрощённая модель стратегии (тренд EMA + RSI, стоп ATR, тейк R:R 1:${r.rr}, безубыток после +1R) на истории ${interval}. Прошлые результаты не гарантируют будущих. Не финансовый совет.</p>`;
 }
 $("btnBacktest")?.addEventListener("click", () => openBacktest());
+
+// ── Сканер сигналов: бот находит сетапы по стратегии (без исполнения сделок) ──
+let scanMarket = "crypto", _scanTimer = 0, _scanSeen = new Set();
+function openScanner() {
+  $("scannerOverlay")?.classList.remove("hidden");
+  scanMarket = activeMarket || "crypto";
+  document.querySelectorAll("#scanMarkets button").forEach((b) => b.classList.toggle("active", b.dataset.market === scanMarket));
+  runScan();
+}
+function closeScanner() {
+  $("scannerOverlay")?.classList.add("hidden");
+  // авто-скан продолжается в фоне только если включён тумблер — иначе стоп.
+  if (!$("scanAuto")?.checked) { clearInterval(_scanTimer); _scanTimer = 0; }
+}
+async function runScan() {
+  const box = $("scanResults");
+  box.innerHTML = '<p class="modal-note">Сканирую рынок по стратегии… (первый скан ~10–15с)</p>';
+  const region = scanMarket === "stock" ? (activeStockRegion || "all") : "all";
+  try {
+    const j = await (await fetch(`/api/signals/scan?market=${encodeURIComponent(scanMarket)}&region=${region}`)).json();
+    if (!j.ok) { box.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderScan(j.setups || [], j.scanned);
+  } catch (e) { box.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderScan(setups, scanned) {
+  const box = $("scanResults");
+  if (!setups.length) {
+    box.innerHTML = `<p class="modal-note">Готовых сигналов сейчас нет (проверено ${scanned || 0}). Это нормально — стратегия селективна, ждёт сильные сетапы.</p>`;
+    return;
+  }
+  // Уведомления о новых сетапах.
+  if ($("scanNotify")?.checked && "Notification" in window && Notification.permission === "granted") {
+    setups.forEach((s) => {
+      const k = `${s.id}:${s.side}`;
+      if (!_scanSeen.has(k)) {
+        _scanSeen.add(k);
+        new Notification(`Сигнал: ${s.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉"} ${s.name}`, { body: `Балл ${s.score}/100 · вход ${money(s.entry)} · R:R 1:${s.rr}` });
+      }
+    });
+  }
+  box.innerHTML = `<div class="scan-head">Найдено сетапов: <b>${setups.length}</b> из ${scanned} · обновлено ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>` +
+    setups.map((s) => {
+      const long = s.side === "long";
+      return `<button type="button" class="scan-card ${long ? "long" : "short"}" data-id="${s.id}" data-market="${s.market}">
+        <span class="sc-c-side ${long ? "long" : "short"}">${long ? "LONG" : "SHORT"}</span>
+        <span class="sc-c-main"><b>${s.name}</b><small>${s.trend || ""}</small></span>
+        <span class="sc-c-score">${s.score ?? "—"}<small>балл</small></span>
+        <span class="sc-c-levels"><span>Вход ${money(s.entry)}</span><span class="down">Стоп ${money(s.stop)}</span><span class="up">Тейк ${money(s.take_profit)}</span><span>R:R 1:${s.rr}</span></span>
+      </button>`;
+    }).join("");
+  box.querySelectorAll(".scan-card").forEach((c) =>
+    c.addEventListener("click", () => {
+      closeScanner();
+      switchView("market", c.dataset.market);
+      analyze(c.dataset.id);
+    })
+  );
+}
+$("scannerClose")?.addEventListener("click", closeScanner);
+$("scannerOverlay")?.addEventListener("click", (e) => { if (e.target === $("scannerOverlay")) closeScanner(); });
+$("scanRun")?.addEventListener("click", () => runScan());
+document.querySelectorAll("#scanMarkets button").forEach((b) =>
+  b.addEventListener("click", () => { scanMarket = b.dataset.market; document.querySelectorAll("#scanMarkets button").forEach((x) => x.classList.toggle("active", x === b)); runScan(); })
+);
+$("scanAuto")?.addEventListener("change", () => {
+  clearInterval(_scanTimer); _scanTimer = 0;
+  if ($("scanAuto").checked) _scanTimer = setInterval(runScan, 300000);  // 5 мин
+});
+$("scanNotify")?.addEventListener("change", () => {
+  if ($("scanNotify").checked && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+});
 $("backtestClose")?.addEventListener("click", () => $("backtestOverlay")?.classList.add("hidden"));
 $("backtestOverlay")?.addEventListener("click", (e) => { if (e.target === $("backtestOverlay")) $("backtestOverlay").classList.add("hidden"); });
 $("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
@@ -2642,6 +2713,7 @@ $("aiAnalystOverlay")?.addEventListener("click", (e) => { if (e.target === $("ai
 document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
   card.addEventListener("click", () => {
     switch (card.dataset.ctrl) {
+      case "scanner": openScanner(); break;
       case "journal": openJournalAdd(); break;
       case "dividends": openDividends(); break;
       case "colors": openColorsModal(); break;

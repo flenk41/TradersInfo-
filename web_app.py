@@ -293,6 +293,23 @@ def api_bybit_account():
         return jsonify({"ok": False, "error": "Не удалось получить данные аккаунта Bybit"}), 500
 
 
+@app.route("/api/signals/scan")
+@rate_limit(12, 60)
+def api_signals_scan():
+    """Сканер сигналов: готовые сетапы по стратегии (без исполнения сделок)."""
+    market = _market_param() or "crypto"
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    try:
+        from tis.features.signal_scanner import scan_signals
+
+        data = get_cached(f"scan:{market}:{region}", lambda: scan_signals(market, region), ttl=90)
+        return jsonify({"ok": True, "market": market, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка сканера: {e}"}), 500
+
+
 @app.route("/api/backtest")
 @rate_limit(20, 60)
 def api_backtest():
