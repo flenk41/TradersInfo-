@@ -4065,7 +4065,8 @@ document.addEventListener("DOMContentLoaded", () => {
 // ════════════════════════════════════════════════════════════════════
 //  🎓 ТРЕНАЖЁР ЧТЕНИЯ ГРАФИКА (в стиле Forex Hero)
 // ════════════════════════════════════════════════════════════════════
-const TRAINER = { chart: null, series: null, round: null, answered: false, future: null };
+const TRAINER = { chart: null, series: null, round: null, answered: false, future: null,
+  ema20: null, ema50: null, priceLines: [], hintOn: false };
 
 function trGetScore() {
   try { return JSON.parse(localStorage.getItem("trainer_score") || "{}"); } catch (e) { return {}; }
@@ -4120,6 +4121,7 @@ async function trLoadRound() {
   $("trUp").addEventListener("click", () => trAnswer("up"));
   $("trDown").addEventListener("click", () => trAnswer("down"));
   trClearDraw();
+  if (TRAINER.hintOn) trClearHint();
   $("trTf").textContent = "Загрузка…";
   try {
     const j = await (await fetch("/api/trainer/round?level=" + trLevel)).json();
@@ -4203,6 +4205,42 @@ function trRenderBadges() {
     TR_ACH.map((a) => `<span class="tr-badge ${best >= a.n ? "got" : ""}" title="${a.label}">${a.label}</span>`).join("");
 }
 
+// ── Обучающие подсказки на графике: тренд (EMA) + уровни ────────────
+function _trEmaSeries(candles, n) {
+  const k = 2 / (n + 1);
+  let e = candles[0].close, out = [];
+  candles.forEach((c, i) => { e = i ? c.close * k + e * (1 - k) : c.close; out.push({ time: c.time, value: +e.toFixed(6) }); });
+  return out;
+}
+function trClearHint() {
+  TRAINER.hintOn = false;
+  if (TRAINER.ema20) { TRAINER.chart.removeSeries(TRAINER.ema20); TRAINER.ema20 = null; }
+  if (TRAINER.ema50) { TRAINER.chart.removeSeries(TRAINER.ema50); TRAINER.ema50 = null; }
+  (TRAINER.priceLines || []).forEach((pl) => { try { TRAINER.series.removePriceLine(pl); } catch (e) {} });
+  TRAINER.priceLines = [];
+  $("trHint")?.classList.remove("active");
+}
+function trToggleHint() {
+  if (!TRAINER.chart || !TRAINER.round) return;
+  if (TRAINER.hintOn) { trClearHint(); return; }
+  const vis = TRAINER.round.visible;
+  // Тренд: EMA20 (жёлтая) + EMA50 (голубая).
+  TRAINER.ema20 = TRAINER.chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  TRAINER.ema20.setData(_trEmaSeries(vis, 20));
+  TRAINER.ema50 = TRAINER.chart.addLineSeries({ color: "#38bdf8", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  TRAINER.ema50.setData(_trEmaSeries(vis, 50));
+  // Уровни: сопротивление = макс. high, поддержка = мин. low за последние ~60 свечей.
+  const look = vis.slice(-60);
+  const res = Math.max(...look.map((c) => c.high));
+  const sup = Math.min(...look.map((c) => c.low));
+  TRAINER.priceLines = [
+    TRAINER.series.createPriceLine({ price: res, color: "#fb7185", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: "сопротивление" }),
+    TRAINER.series.createPriceLine({ price: sup, color: "#34d399", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: "поддержка" }),
+  ];
+  TRAINER.hintOn = true;
+  $("trHint")?.classList.add("active");
+}
+
 // ── Рисование поверх графика (для анализа) ──────────────────────────
 let _trDrawing = false, _trDrawOn = false, _trLast = null;
 function trResizeCanvas() {
@@ -4247,6 +4285,7 @@ function trBindDraw() {
   cv.addEventListener("touchstart", start, { passive: false }); cv.addEventListener("touchmove", move, { passive: false });
   cv.addEventListener("touchend", end);
 }
+$("trHint")?.addEventListener("click", trToggleHint);
 $("trDraw")?.addEventListener("click", trToggleDraw);
 $("trClear")?.addEventListener("click", trClearDraw);
 $("trDraw") && trBindDraw();
