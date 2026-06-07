@@ -771,8 +771,16 @@
         <h2>📊 Бэктест стратегии</h2>
         <button type="button" class="modal-close" id="backtestClose" aria-label="Закрыть">✕</button>
       </div>
-      <div class="modal-body" id="backtestBody">
-        <p class="modal-note">Откройте инструмент и нажмите «Анализ».</p>
+      <div class="modal-body">
+        <div class="bt-controls">
+          <span class="bt-ctl-label">Период:</span>
+          <div class="seg" id="btInterval">
+            <button type="button" data-int="1h">1ч · ~1.5 мес</button>
+            <button type="button" data-int="4h">4ч · ~5 мес</button>
+            <button type="button" data-int="1d" class="active">1д · ~3 года</button>
+          </div>
+        </div>
+        <div id="backtestBody"><p class="modal-note">Откройте инструмент и нажмите «Анализ».</p></div>
       </div>
     </div>
   </div>

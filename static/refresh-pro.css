@@ -1479,3 +1479,11 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .sc-c-levels { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-left: auto; font-size: .76rem; font-variant-numeric: tabular-nums; justify-content: flex-end; }
 .sc-c-levels .up { color: #34d399; } .sc-c-levels .down { color: #fb7185; }
 @media (max-width: 620px) { .sc-c-levels { width: 100%; margin-left: 0; justify-content: flex-start; } }
+
+/* Бэктест — выбор периода */
+.bt-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.bt-ctl-label { font-size: .78rem; color: var(--muted); }
+#btInterval { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.08); }
+#btInterval button { border: 0; background: transparent; cursor: pointer; padding: 5px 10px; border-radius: 7px; font-size: .74rem; font-weight: 700; color: var(--muted); }
+#btInterval button:hover { color: var(--text); }
+#btInterval button.active { background: var(--accent); color: #fff; }

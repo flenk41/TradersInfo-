@@ -2286,14 +2286,18 @@ async function computeRiskCalc() {
 $("btnRiskCalc")?.addEventListener("click", () => openRiskCalc());
 
 // ── Бэктест стратегии (история, без реальных сделок) ────────────────────────
-async function openBacktest() {
+let btInterval = "1d";  // по умолчанию длинный/ранний период
+function openBacktest() {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
   $("backtestOverlay").classList.remove("hidden");
+  document.querySelectorAll("#btInterval button").forEach((b) => b.classList.toggle("active", b.dataset.int === btInterval));
+  runBacktest();
+}
+async function runBacktest() {
   const body = $("backtestBody");
-  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по истории (≈1000 баров)…</p>';
+  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по истории (до 1000 баров)…</p>';
   try {
-    const tf = (typeof currentLwTf === "function") ? currentLwTf() : "1h";
-    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${tf}&limit=1000`)).json();
+    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${btInterval}&limit=1000`)).json();
     if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
     renderBacktest(j.result, j.interval);
   } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
@@ -2399,6 +2403,9 @@ $("scanNotify")?.addEventListener("change", () => {
 });
 $("backtestClose")?.addEventListener("click", () => $("backtestOverlay")?.classList.add("hidden"));
 $("backtestOverlay")?.addEventListener("click", (e) => { if (e.target === $("backtestOverlay")) $("backtestOverlay").classList.add("hidden"); });
+document.querySelectorAll("#btInterval button").forEach((b) =>
+  b.addEventListener("click", () => { btInterval = b.dataset.int; document.querySelectorAll("#btInterval button").forEach((x) => x.classList.toggle("active", x === b)); runBacktest(); })
+);
 $("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
 $("riskCalcOverlay")?.addEventListener("click", (e) => { if (e.target === $("riskCalcOverlay")) $("riskCalcOverlay").classList.add("hidden"); });
 document.querySelectorAll("#rcSide button").forEach((b) =>
