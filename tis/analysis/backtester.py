@@ -155,6 +155,39 @@ def backtest(
     return _stats(trades, rr)
 
 
+def signal_now(df: pd.DataFrame, rr: float = 2.0, atr_mult: float = 2.0,
+               use_ema200: bool = True, adx_min: float = 0.0, use_macd: bool = False) -> dict | None:
+    """Сигнал на ПОСЛЕДНЕМ баре по той же стратегии, что бэктест.
+    Возвращает {'side','entry','stop','tp'} или None. Для бумажного бота/сканера."""
+    if df is None or len(df) < _WARMUP:
+        return None
+    df = df.reset_index(drop=True)
+    c = df["close"].astype(float)
+    ema20, ema50, ema200 = _ema(c, 20), _ema(c, 50), _ema(c, 200)
+    rsi, atr = _rsi(c), _atr(df)
+    i = len(df) - 1
+    price, a = float(c.iloc[i]), float(atr.iloc[i])
+    if a <= 0 or np.isnan(rsi.iloc[i]):
+        return None
+    up = ema20.iloc[i] > ema50.iloc[i]
+    if abs(ema20.iloc[i] - ema50.iloc[i]) / price < 0.002:
+        return None
+    if adx_min and not np.isnan(_adx(df).iloc[i]) and _adx(df).iloc[i] < adx_min:
+        return None
+    mh = _macd_hist(c).iloc[i] if use_macd else 0
+    e200 = ema200.iloc[i]
+    long_ok = ((not use_ema200) or np.isnan(e200) or price > e200) and (not use_macd or mh > 0)
+    short_ok = ((not use_ema200) or np.isnan(e200) or price < e200) and (not use_macd or mh < 0)
+    r = rsi.iloc[i]
+    if up and long_ok and 45 <= r <= 70:
+        stop = price - atr_mult * a
+        return {"side": "long", "entry": price, "stop": round(stop, 6), "tp": round(price + rr * (price - stop), 6)}
+    if (not up) and short_ok and 30 <= r <= 55:
+        stop = price + atr_mult * a
+        return {"side": "short", "entry": price, "stop": round(stop, 6), "tp": round(price - rr * (stop - price), 6)}
+    return None
+
+
 def backtest_universe(market: str, region: str = "all", interval: str = "4h",
                       limit: int = 1000, cap: int = 14, filters: dict | None = None) -> dict:
     """Бэктест стратегии по набору инструментов — таблица устойчивости.

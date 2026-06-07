@@ -324,6 +324,19 @@ def api_signals_scan():
         return jsonify({"ok": False, "error": f"Ошибка сканера: {e}"}), 500
 
 
+@app.route("/api/paper-bot")
+@rate_limit(60, 60)
+def api_paper_bot():
+    """Состояние серверного бумажного бота (виртуальная торговля, без ключей)."""
+    try:
+        from tis.features.paper_bot import ensure_running, get_state
+
+        ensure_running()
+        return jsonify({"ok": True, **get_state()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/backtest")
 @rate_limit(20, 60)
 def api_backtest():

@@ -1523,3 +1523,16 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .bot-cmd { background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px;
   font-size: .76rem; font-family: ui-monospace, monospace; white-space: pre-wrap; overflow-x: auto; color: var(--text2, #c7c4d7); margin: 0; }
 @media (max-width: 560px) { .bot-cfg { grid-template-columns: 1fr; } }
+
+/* Бумажный бот — дашборд */
+.pb-h { margin: 14px 0 6px; font-size: .9rem; }
+.pb-pos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 10px; margin-bottom: 6px;
+  border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07);
+  border-left-width: 3px; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.pb-pos.long { border-left-color: #34d399; } .pb-pos.short { border-left-color: #fb7185; }
+.pb-pos .pb-sym { font-weight: 700; min-width: 70px; }
+.pb-pos .up { color: #34d399; } .pb-pos .down { color: #fb7185; }
+.pb-be { font-size: .64rem; font-weight: 800; padding: 1px 6px; border-radius: 6px; background: rgba(245,158,11,.18); color: #f59e0b; }
+.pb-rec { display: grid; grid-template-columns: 1.4fr .8fr .7fr auto; gap: 6px; align-items: center; padding: 6px 8px;
+  border-bottom: 1px solid rgba(255,255,255,.05); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.pb-rec .up { color: #34d399; } .pb-rec .down { color: #fb7185; } .pb-rec .pb-ago { color: var(--muted); font-size: .7rem; text-align: right; }

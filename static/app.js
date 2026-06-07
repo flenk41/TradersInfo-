@@ -2397,6 +2397,60 @@ function renderScan(setups, scanned) {
 $("botInfoClose")?.addEventListener("click", () => $("botInfoOverlay")?.classList.add("hidden"));
 $("botInfoOverlay")?.addEventListener("click", (e) => { if (e.target === $("botInfoOverlay")) $("botInfoOverlay").classList.add("hidden"); });
 
+// ── Бумажный бот (серверный, виртуальная торговля) ──────────────────────────
+let _paperTimer = 0;
+async function openPaperBot() {
+  $("paperBotOverlay")?.classList.remove("hidden");
+  await loadPaperBot();
+  clearInterval(_paperTimer);
+  _paperTimer = setInterval(loadPaperBot, 30000);  // обновление пока окно открыто
+}
+function closePaperBot() { $("paperBotOverlay")?.classList.add("hidden"); clearInterval(_paperTimer); }
+async function loadPaperBot() {
+  const ov = $("paperBotOverlay");
+  if (!ov || ov.classList.contains("hidden")) { clearInterval(_paperTimer); return; }
+  try {
+    const j = await (await fetch("/api/paper-bot")).json();
+    if (!j.ok) { $("paperBotBody").innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderPaperBot(j);
+  } catch (e) { $("paperBotBody").innerHTML = '<p class="modal-note">Ошибка сети.</p>'; }
+}
+function _ago(ts) {
+  if (!ts) return "—";
+  const m = Math.floor((Date.now() / 1000 - ts) / 60);
+  if (m < 1) return "только что"; if (m < 60) return m + " мин назад";
+  return Math.floor(m / 60) + " ч назад";
+}
+function renderPaperBot(j) {
+  const s = j.stats || {};
+  const up = (s.total_r || 0) >= 0;
+  const spark = (typeof sparklineSvg === "function" && j.equity && j.equity.length) ? sparklineSvg(j.equity, up, "bt-spark") : "";
+  const sideRu = (x) => x === "long" ? "LONG" : "SHORT";
+  const posHtml = (j.open_positions || []).length
+    ? j.open_positions.map((p) => `<div class="pb-pos ${p.side}"><span class="pb-sym">${p.symbol}</span><span class="${p.side === "long" ? "up" : "down"}">${sideRu(p.side)}</span><span>вход ${money(p.entry)}</span><span class="down">стоп ${money(p.stop)}</span><span class="up">тейк ${money(p.tp)}</span>${p.be ? '<span class="pb-be">БУ</span>' : ""}</div>`).join("")
+    : '<p class="modal-note">Открытых виртуальных позиций нет — бот ждёт сигналы.</p>';
+  const recHtml = (j.recent || []).filter((r) => r.outcome).slice(0, 8).map((r) => {
+    const cls = r.outcome === "tp" ? "up" : r.outcome === "sl" ? "down" : "";
+    const lbl = r.outcome === "tp" ? "TP ✓" : r.outcome === "sl" ? "SL ✗" : "БУ";
+    return `<div class="pb-rec"><span>${r.symbol} ${sideRu(r.side)}</span><span class="${cls}">${lbl}</span><span class="${r.r >= 0 ? "up" : "down"}">${r.r > 0 ? "+" : ""}${r.r}R</span><span class="pb-ago">${_ago(r.ts)}</span></div>`;
+  }).join("") || '<p class="modal-note">Закрытых сделок пока нет.</p>';
+  $("paperBotBody").innerHTML =
+    `<p class="modal-note">Бот торгует <b>виртуально</b> (без ключей и денег) на ${j.symbols?.length || 0} инструментах, ТФ ${j.interval}. Запущен ${_ago(j.started_ts)}, обновлён ${_ago(j.last_tick)}. Это демонстрация стратегии вживую, не реальная торговля.</p>` +
+    `<div class="bt-kpis">` +
+      `<div class="bt-kpi"><span>Винрейт</span><b class="${s.win_rate>=45?'up':''}">${s.win_rate||0}%</b></div>` +
+      `<div class="bt-kpi"><span>Итого</span><b class="${up?'up':'down'}">${up?'+':''}${s.total_r||0}R</b></div>` +
+      `<div class="bt-kpi"><span>Профит-фактор</span><b class="${(s.profit_factor||0)>=1?'up':'down'}">${s.profit_factor||0}</b></div>` +
+      `<div class="bt-kpi"><span>Сделок</span><b>${s.closed||0}</b></div>` +
+      `<div class="bt-kpi"><span>Открыто</span><b>${(j.open_positions||[]).length}</b></div>` +
+      `<div class="bt-kpi"><span>TP/SL/БУ</span><b>${s.wins||0}/${s.losses||0}/${s.breakeven||0}</b></div>` +
+    `</div>` +
+    (spark ? `<div class="bt-equity"><div class="bt-eq-label">Кривая депозита (в R)</div>${spark}</div>` : "") +
+    `<h4 class="pb-h">Открытые позиции</h4>${posHtml}` +
+    `<h4 class="pb-h">Последние сделки</h4>${recHtml}`;
+}
+$("paperBotClose")?.addEventListener("click", closePaperBot);
+$("paperBotOverlay")?.addEventListener("click", (e) => { if (e.target === $("paperBotOverlay")) closePaperBot(); });
+
 // ── Конфигуратор бота: настройки → bot_config.json ──────────────────────────
 function openBotConfig() {
   const sym = (lastAnalysisData?.pair || activePair || "SOLUSDT").replace("/", "");
@@ -2807,6 +2861,7 @@ document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
   card.addEventListener("click", () => {
     switch (card.dataset.ctrl) {
       case "scanner": openScanner(); break;
+      case "paperbot": openPaperBot(); break;
       case "bot": openBotConfig(); break;
       case "journal": openJournalAdd(); break;
       case "dividends": openDividends(); break;

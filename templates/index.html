@@ -620,6 +620,10 @@
             <span class="ctrl-ic">🔔</span>
             <span class="ctrl-text"><strong>Сканер сигналов</strong><small>Бот находит готовые сетапы по стратегии · алерты · вы торгуете сами</small></span>
           </button>
+          <button type="button" class="ctrl-card" data-ctrl="paperbot">
+            <span class="ctrl-ic">🧪</span>
+            <span class="ctrl-text"><strong>Бумажный бот (онлайн)</strong><small>Живёт на сайте 24/7, торгует виртуально · смотри эффективность вживую</small></span>
+          </button>
           <button type="button" class="ctrl-card" data-ctrl="bot">
             <span class="ctrl-ic">🤖</span>
             <span class="ctrl-text"><strong>Торговый бот</strong><small>Скрипт для самостоятельного запуска · бумажный режим по умолчанию</small></span>
@@ -741,6 +745,18 @@
           <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
         </div>
         <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="paperBotOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🧪 Бумажный бот (онлайн)</h2>
+        <button type="button" class="modal-close" id="paperBotClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="paperBotBody">
+        <p class="modal-note">Загрузка состояния бота…</p>
       </div>
     </div>
   </div>
