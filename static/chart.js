@@ -133,6 +133,15 @@ const TradingChart = (() => {
       resize();
     });
     resizeObserver.observe(parent || mainEl);
+
+    if (window.ChartDraw) {
+      window.ChartDraw.attach({
+        chart: mainChart,
+        series: candleSeries,
+        container: mainEl,
+        canvas: document.getElementById("mcDrawCanvas"),
+      });
+    }
   }
 
   function resize() {
@@ -145,6 +154,7 @@ const TradingChart = (() => {
       const fc = document.getElementById("fundingChartContainer");
       fundingChart.applyOptions({ width: fc?.clientWidth || width, height: 88 });
     }
+    if (window.ChartDraw) window.ChartDraw.resize();
   }
 
   function clearFunding() {
@@ -199,6 +209,8 @@ const TradingChart = (() => {
       zoneOverlay.appendChild(box);
     };
 
+    if (window.ChartDraw) window.ChartDraw.redraw();
+
     zoneData.longEntry.forEach((z) => drawZone(z, "long-entry"));
     zoneData.shortEntry.forEach((z) => drawZone(z, "short-entry"));
     zoneData.support.forEach((z) => drawZone(z, "support"));
@@ -235,6 +247,7 @@ const TradingChart = (() => {
     lastCandles = candles;
     candleSeries.setData(candles);
     if (volumeSeries) volumeSeries.setData(candles.map(_volBar));
+    if (window.ChartDraw) window.ChartDraw.setBars(candles.length);
     mainChart.timeScale().fitContent();
     // принудительно пересчитываем ценовую шкалу под новые свечи
     try {
@@ -407,6 +420,8 @@ const TradingChart = (() => {
       removeLines();
     }
     live = { pair, market: m, interval: tf };
+    // Рисунки привязаны к паре+ТФ (логические индексы/время свечей зависят от ТФ).
+    if (window.ChartDraw) window.ChartDraw.setPair(m, pair + "@" + tf);
     const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=500&market=${encodeURIComponent(m)}`;
     const kRes = await fetch(`/api/klines?${base}`);
     const kJson = await kRes.json();
