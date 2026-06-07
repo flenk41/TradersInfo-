@@ -22,7 +22,7 @@ const TradingChart = (() => {
   let liveTimer = null;
   let curSymbol = "$";
   let live = { pair: null, market: "crypto", interval: "1h" };
-  const LIVE_MS = 3000;
+  const LIVE_MS = 2000;
   const VOL_UP = "rgba(52, 211, 153, 0.7)";
   const VOL_DOWN = "rgba(251, 113, 133, 0.7)";
 
@@ -86,6 +86,11 @@ const TradingChart = (() => {
       borderDownColor: "#ef4444",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+      // Живая ценовая линия + метка последней цены (двигается при каждом обновлении)
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineStyle: LightweightCharts.LineStyle.Dotted,
+      lastValueVisible: true,
       // Масштаб цены строим ТОЛЬКО по свечам, игнорируя ценовые линии (входы/стоп/тейк),
       // иначе линия с чужого масштаба растягивает шкалу и сплющивает свечи.
       autoscaleInfoProvider: (original) => {
@@ -459,14 +464,25 @@ const TradingChart = (() => {
     const el = document.getElementById("chartTimer");
     if (!el) return;
     if (!live.pair) {
-      el.textContent = "↻ —";
+      el.classList.remove("is-live");
+      el.innerHTML = "↻ —";
       return;
     }
     if (document.hidden) {
-      el.textContent = "↻ пауза";
+      el.classList.remove("is-live");
+      el.innerHTML = "❚❚ пауза";
       return;
     }
-    el.textContent = `↻ ${Math.max(0, liveCountdown)}с`;
+    el.classList.add("is-live");
+    el.innerHTML = `<span class="live-dot"></span>LIVE <span class="live-cd">${Math.max(0, liveCountdown)}с</span>`;
+  }
+
+  // короткая вспышка индикатора при реальном обновлении свечи
+  function flashLive() {
+    const el = document.getElementById("chartTimer");
+    if (!el) return;
+    el.classList.add("live-tick");
+    setTimeout(() => el.classList.remove("live-tick"), 350);
   }
 
   function startLive() {
@@ -511,11 +527,14 @@ const TradingChart = (() => {
       // lightweight-charts .update() кидает ошибку для свечей СТАРШЕ последней,
       // поэтому обновляем только текущую (или более новую) свечу.
       const lastTime = lastCandles.length ? lastCandles[lastCandles.length - 1].time : 0;
+      let ticked = false;
       json.candles.forEach((c) => {
         if (c.time < lastTime) return;
         candleSeries.update(c);
         if (volumeSeries) volumeSeries.update(_volBar(c));
+        ticked = true;
       });
+      if (ticked) flashLive();
       const latest = json.candles[json.candles.length - 1];
       if (lastCandles.length) {
         if (latest.time === lastTime) {

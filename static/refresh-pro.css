@@ -1584,6 +1584,27 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .lesson-ic { font-size: 1.6rem; flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(99,102,241,.12); }
 .lesson-tx b { font-size: .95rem; } .lesson-tx p { margin: 4px 0 0; font-size: .84rem; line-height: 1.5; color: var(--text2, #c7c4d7); }
 
+/* LIVE-индикатор графика */
+.chart-timer.is-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #34d399; font-weight: 600; letter-spacing: .04em;
+}
+.chart-timer .live-cd { color: var(--muted, #8b9cb3); font-weight: 500; letter-spacing: 0; }
+.chart-timer .live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: livedot 2s ease-out infinite;
+}
+.chart-timer.live-tick .live-dot { background: #4ade80; box-shadow: 0 0 8px 2px rgba(74, 222, 128, 0.8); }
+@keyframes livedot {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  70%  { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-timer .live-dot { animation: none; }
+}
+
 /* Рисование на основном графике */
 .lw-chart-pane { position: relative; }
 .mc-draw-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
