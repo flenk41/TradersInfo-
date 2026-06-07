@@ -2394,6 +2394,8 @@ function renderScan(setups, scanned) {
     })
   );
 }
+$("botInfoClose")?.addEventListener("click", () => $("botInfoOverlay")?.classList.add("hidden"));
+$("botInfoOverlay")?.addEventListener("click", (e) => { if (e.target === $("botInfoOverlay")) $("botInfoOverlay").classList.add("hidden"); });
 $("scannerClose")?.addEventListener("click", closeScanner);
 $("scannerOverlay")?.addEventListener("click", (e) => { if (e.target === $("scannerOverlay")) closeScanner(); });
 $("scanRun")?.addEventListener("click", () => runScan());
@@ -2759,6 +2761,7 @@ document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
   card.addEventListener("click", () => {
     switch (card.dataset.ctrl) {
       case "scanner": openScanner(); break;
+      case "bot": $("botInfoOverlay")?.classList.remove("hidden"); break;
       case "journal": openJournalAdd(); break;
       case "dividends": openDividends(); break;
       case "colors": openColorsModal(); break;

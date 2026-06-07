@@ -620,6 +620,10 @@
             <span class="ctrl-ic">🔔</span>
             <span class="ctrl-text"><strong>Сканер сигналов</strong><small>Бот находит готовые сетапы по стратегии · алерты · вы торгуете сами</small></span>
           </button>
+          <button type="button" class="ctrl-card" data-ctrl="bot">
+            <span class="ctrl-ic">🤖</span>
+            <span class="ctrl-text"><strong>Торговый бот</strong><small>Скрипт для самостоятельного запуска · бумажный режим по умолчанию</small></span>
+          </button>
           <button type="button" class="ctrl-card" data-ctrl="journal">
             <span class="ctrl-ic">📝</span>
             <span class="ctrl-text"><strong>Записать сигнал</strong><small>Зафиксировать вход/стоп/тейк в журнал — винрейт по реальной истории</small></span>
@@ -737,6 +741,26 @@
           <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
         </div>
         <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="botInfoOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🤖 Торговый бот</h2>
+        <button type="button" class="modal-close" id="botInfoClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">⚠ Бот — это отдельный скрипт, который запускаете <b>вы у себя</b>, со <b>своими</b> ключами. Сайт его не запускает и ключи не хранит. Торговля с плечом — высокий риск. Не финансовый совет.</p>
+        <div class="bot-steps">
+          <div class="bot-step"><span class="bot-n">1</span><div><b>Стратегия</b> — та же, что в «📊 Бэктест» (тренд EMA + EMA200-фильтр, RSI, стоп ATR, тейк R:R, размер от риска %). Сначала прогоните бэктест: PF&gt;1.3 при ≥30 сделках.</div></div>
+          <div class="bot-step"><span class="bot-n">2</span><div><b>Файл:</b> <code>bots/tis_bybit_bot.py</code> + инструкция <code>bots/README.md</code> в репозитории.</div></div>
+          <div class="bot-step"><span class="bot-n">3</span><div><b>Ключи</b> — только в переменных окружения (<code>BYBIT_API_KEY/SECRET</code>), права Read+Trade <b>без вывода</b>, лучше суб-аккаунт.</div></div>
+          <div class="bot-step"><span class="bot-n">4</span><div><b>По умолчанию</b> — бумажный режим на testnet (реальные ордера не идут). Live на mainnet включается тремя явными условиями (см. README).</div></div>
+          <div class="bot-step"><span class="bot-n">5</span><div>Запуск: <code>python bots/tis_bybit_bot.py</code></div></div>
+        </div>
+        <p class="modal-note">Бот сам подбирает плечо так, чтобы стоп срабатывал раньше ликвидации, и ставит ордер с прикреплёнными стопом и тейком. Вывод средств не делает никогда.</p>
       </div>
     </div>
   </div>
