@@ -168,7 +168,7 @@ def _ticker_info(pair: str, market: str):
 def fetch_quality_scorecard(pair: str, market: str, lang: str = "ru") -> dict:
     """Чек-лист «качество бизнеса» в духе Баффета/Грэма: ROE, долг, маржа, рост,
     FCF, P/E, earnings yield, ликвидность. Сырые цифры → ✓/~/✗ + композитный балл."""
-    _t, info = _ticker_info(pair, market)
+    t, info = _ticker_info(pair, market)
     if not info:
         return {"available": False}
     L = (lambda ru, en: en if lang == "en" else ru)
@@ -213,6 +213,47 @@ def fetch_quality_scorecard(pair: str, market: str, lang: str = "ru") -> dict:
             "name": L("Свободный денежный поток", "Free cash flow"),
             "value": _fmt_big(fcf), "status": "good" if fcf > 0 else "bad",
             "detail": L("положительный FCF — бизнес генерит кэш", "positive FCF — cash-generative"),
+        })
+
+    # #3 Запас прочности по Грэму: число Грэма = √(22.5·EPS·BVPS) vs цена.
+    import math
+    eps = _num(info.get("trailingEps"))
+    bvps = _num(info.get("bookValue"))
+    price = _num(info.get("currentPrice")) or _num(info.get("regularMarketPrice")) or _num(info.get("previousClose"))
+    if eps and eps > 0 and bvps and bvps > 0 and price and price > 0:
+        graham = math.sqrt(22.5 * eps * bvps)
+        mos = (graham - price) / graham * 100  # запас прочности, %
+        checks.append({
+            "name": L("Запас прочности (Грэм)", "Margin of safety (Graham)"),
+            "value": f"{mos:+.0f}% ({L('спр.цена', 'fair')} {graham:.2f})",
+            "status": "good" if mos >= 20 else ("ok" if mos >= 0 else "bad"),
+            "detail": L("спр. цена выше рыночной — есть запас", "fair value above price — undervalued"),
+        })
+
+    # #4 Доход акционеру: дивиденды + чистый байбэк (выкуп акций / капитализация).
+    div_y = _num(info.get("trailingAnnualDividendYield")) or 0.0
+    mcap = _num(info.get("marketCap"))
+    buyback_y = 0.0
+    if t is not None and mcap and mcap > 0:
+        try:
+            cf = t.cashflow
+            if cf is not None and hasattr(cf, "index"):
+                for label in ("Repurchase Of Capital Stock", "Repurchase Of Stock", "Common Stock Repurchase"):
+                    if label in cf.index:
+                        rep = _num(cf.loc[label].iloc[0])
+                        if rep is not None:
+                            buyback_y = abs(rep) / mcap
+                        break
+        except Exception:
+            buyback_y = 0.0
+    sh_yield = (div_y + buyback_y) * 100
+    if div_y or buyback_y:
+        checks.append({
+            "name": L("Доход акционеру (див+байбэк)", "Shareholder yield (div+buyback)"),
+            "value": f"{sh_yield:.1f}%",
+            "status": "good" if sh_yield >= 4 else ("ok" if sh_yield >= 2 else "bad"),
+            "detail": L(f"дивиденды {div_y*100:.1f}% + байбэк {buyback_y*100:.1f}%",
+                        f"dividends {div_y*100:.1f}% + buyback {buyback_y*100:.1f}%"),
         })
 
     if not checks:
