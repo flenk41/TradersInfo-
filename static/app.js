@@ -2406,6 +2406,37 @@ $("backtestOverlay")?.addEventListener("click", (e) => { if (e.target === $("bac
 document.querySelectorAll("#btInterval button").forEach((b) =>
   b.addEventListener("click", () => { btInterval = b.dataset.int; document.querySelectorAll("#btInterval button").forEach((x) => x.classList.toggle("active", x === b)); runBacktest(); })
 );
+$("btScanBtn")?.addEventListener("click", () => runBacktestScan());
+async function runBacktestScan() {
+  const body = $("backtestBody");
+  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по многим инструментам (≈10–20с)…</p>';
+  const region = activeMarket === "stock" ? (activeStockRegion || "all") : "all";
+  try {
+    const j = await (await fetch(`/api/backtest/scan?market=${encodeURIComponent(activeMarket)}&region=${region}&interval=${btInterval}`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderBacktestScan(j);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderBacktestScan(j) {
+  const body = $("backtestBody");
+  if (!j.rows || !j.rows.length) { body.innerHTML = '<p class="modal-note">Недостаточно данных для сравнения.</p>'; return; }
+  const verdict = j.robust > 0 ? { t: `Стратегия устойчива на ${j.robust} инстр. ✅`, c: "good" }
+    : j.profitable >= j.tested * 0.6 ? { t: "Прибыльна, но выборки малы — нужно больше сделок", c: "ok" }
+    : { t: "Неустойчива на этом периоде ⛔", c: "bad" };
+  body.innerHTML =
+    `<div class="bt-verdict bt-${verdict.c}">${verdict.t} <small>ТФ ${j.interval} · прибыльных ${j.profitable}/${j.tested} · средний PF ${j.avg_pf} · итого ${j.total_r>=0?'+':''}${j.total_r}R</small></div>` +
+    `<div class="bt-table"><div class="bt-tr bt-th"><span>Инструмент</span><span>PF</span><span>Винрейт</span><span>Сделок</span><span>Σ R</span></div>` +
+    j.rows.map((r) => {
+      const pfCls = r.profit_factor >= 1.3 ? "up" : r.profit_factor >= 1 ? "" : "down";
+      return `<button type="button" class="bt-tr" data-id="${r.id}"><span class="bt-td-name">${r.name}</span>` +
+        `<span class="${pfCls}"><b>${r.profit_factor}</b></span><span>${r.win_rate}%</span><span>${r.trades}</span>` +
+        `<span class="${r.total_r>=0?'up':'down'}">${r.total_r>=0?'+':''}${r.total_r}</span></button>`;
+    }).join("") + `</div>` +
+    `<p class="modal-note">«Устойчиво» = PF ≥ 1.3 при ≥20 сделках. Малые выборки (мало сделок) — не повод доверять. Клик по строке открывает инструмент.</p>`;
+  body.querySelectorAll(".bt-tr[data-id]").forEach((row) =>
+    row.addEventListener("click", () => { $("backtestOverlay").classList.add("hidden"); analyze(row.dataset.id); })
+  );
+}
 $("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
 $("riskCalcOverlay")?.addEventListener("click", (e) => { if (e.target === $("riskCalcOverlay")) $("riskCalcOverlay").classList.add("hidden"); });
 document.querySelectorAll("#rcSide button").forEach((b) =>

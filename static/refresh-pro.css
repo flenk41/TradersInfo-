@@ -1487,3 +1487,15 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 #btInterval button { border: 0; background: transparent; cursor: pointer; padding: 5px 10px; border-radius: 7px; font-size: .74rem; font-weight: 700; color: var(--muted); }
 #btInterval button:hover { color: var(--text); }
 #btInterval button.active { background: var(--accent); color: #fff; }
+
+/* Бэктест — таблица сравнения инструментов */
+.bt-table { display: flex; flex-direction: column; margin-bottom: 8px; }
+.bt-tr { display: grid; grid-template-columns: 1.6fr .8fr 1fr .8fr .8fr; align-items: center; gap: 6px;
+  width: 100%; text-align: left; padding: 8px 6px; border: 0; background: transparent; color: var(--text, #f1f5fb);
+  border-bottom: 1px solid rgba(255,255,255,.06); font-size: .82rem; font-variant-numeric: tabular-nums; }
+button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,255,.05); }
+.bt-th { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); cursor: default; }
+.bt-th:hover { background: transparent; }
+.bt-tr span:not(.bt-td-name) { text-align: right; }
+.bt-td-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-tr .up { color: #34d399; } .bt-tr .down { color: #fb7185; }

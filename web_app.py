@@ -340,6 +340,28 @@ def api_backtest():
         return jsonify({"ok": False, "error": f"Ошибка бэктеста: {e}"}), 500
 
 
+@app.route("/api/backtest/scan")
+@rate_limit(8, 60)
+def api_backtest_scan():
+    """Бэктест стратегии по нескольким инструментам — таблица устойчивости."""
+    market = _market_param() or "crypto"
+    region = request.args.get("region", "all").strip().lower()
+    if region not in ("ru", "us", "all"):
+        region = "all"
+    interval = request.args.get("interval", "4h")
+    try:
+        from tis.analysis.backtester import backtest_universe
+
+        data = get_cached(
+            f"btscan:{market}:{region}:{interval}",
+            lambda: backtest_universe(market, region, interval),
+            ttl=600,
+        )
+        return jsonify({"ok": True, "market": market, **data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка сравнения: {e}"}), 500
+
+
 @app.route("/api/quality")
 @rate_limit(30, 60)
 def api_quality():

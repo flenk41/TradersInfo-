@@ -114,6 +114,66 @@ def backtest(
     return _stats(trades, rr)
 
 
+def backtest_universe(market: str, region: str = "all", interval: str = "4h",
+                      limit: int = 1000, cap: int = 14) -> dict:
+    """Бэктест стратегии по набору инструментов — таблица устойчивости.
+
+    Прогоняет backtest() на каждом инструменте вселенной (с потолком) и сводит:
+    по инструментам (PF, винрейт, total R, сделки) + агрегат (сколько прибыльных).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from tis.data.market_data import fetch_klines
+    from tis.data.instruments_catalog import CRYPTO_LIST, FOREX_LIST, STOCKS_RU, STOCKS_US
+
+    if market == "crypto":
+        uni = CRYPTO_LIST
+    elif market == "forex":
+        uni = FOREX_LIST
+    elif market == "stock":
+        uni = STOCKS_US if region == "us" else STOCKS_RU if region == "ru" else STOCKS_RU + STOCKS_US
+    else:
+        uni = []
+    uni = uni[: max(1, min(cap, 16))]
+    if not uni:
+        return {"available": False, "rows": []}
+
+    def _one(inst):
+        try:
+            df = fetch_klines(inst.id, interval=interval, limit=limit, market=market)
+            r = backtest(df)
+        except Exception:
+            return None
+        if not r.get("available") or not r.get("trades"):
+            return None
+        return {
+            "id": inst.id, "name": inst.name,
+            "trades": r["trades"], "win_rate": r["win_rate"],
+            "profit_factor": r["profit_factor"], "total_r": r["total_r"], "avg_r": r["avg_r"],
+        }
+
+    rows: list[dict] = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_one, inst): inst for inst in uni}
+        for fut in as_completed(futs):
+            try:
+                r = fut.result()
+            except Exception:
+                r = None
+            if r:
+                rows.append(r)
+    rows.sort(key=lambda x: x["profit_factor"], reverse=True)
+    n = len(rows)
+    profitable = sum(1 for r in rows if r["profit_factor"] >= 1)
+    robust = sum(1 for r in rows if r["profit_factor"] >= 1.3 and r["trades"] >= 20)
+    avg_pf = round(sum(r["profit_factor"] for r in rows) / n, 2) if n else 0.0
+    total_r = round(sum(r["total_r"] for r in rows), 1)
+    return {
+        "available": True, "interval": interval, "tested": n,
+        "profitable": profitable, "robust": robust, "avg_pf": avg_pf, "total_r": total_r,
+        "rows": rows,
+    }
+
+
 def _stats(trades: list[dict], rr: float) -> dict:
     n = len(trades)
     if n == 0:
