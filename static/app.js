@@ -1375,6 +1375,14 @@ function imbalancesForTf(data) {
   return (data && data.imbalances) || [];
 }
 
+// SMC под текущий таймфрейм графика.
+function smcForTf(data) {
+  const byTf = data && data.smc_by_tf;
+  const tf = currentLwTf();
+  if (byTf && byTf[tf]) return byTf[tf];
+  return (data && data.smc) || null;
+}
+
 function updateChartTrend(data) {
   if (!data) return;
   const z = zonesForTf(data);
@@ -1384,6 +1392,7 @@ function updateChartTrend(data) {
   buildEntryMenu(z.long, z.short);
   renderZonesStrip(view);
   TradingChart.setImbalances?.(imbalancesForTf(data));
+  TradingChart.setSmc?.(smcForTf(data));
   renderImbalance(data);
   if (document.querySelector('.panel-tabs button.active')?.dataset.tab === "patterns") renderPatternsView();
   applyI18n();
@@ -3158,6 +3167,12 @@ $("btnImbalance")?.addEventListener("click", () => {
   imbalanceOn = !imbalanceOn;
   TradingChart.toggleImbalances?.(imbalanceOn);
   $("btnImbalance")?.classList.toggle("active", imbalanceOn);
+});
+
+let smcOn = false;
+$("btnSmc")?.addEventListener("click", () => {
+  smcOn = TradingChart.toggleSmc?.();
+  $("btnSmc")?.classList.toggle("active", !!smcOn);
 });
 document.addEventListener("click", (e) => {
   const dd = $("entryDropdown");
