@@ -1078,7 +1078,7 @@ def run_server(host: str = "127.0.0.1", port: int = 5000, open_browser: bool = T
             f"\n  ⚠ Порт {port} уже занят — вероятно, старый сервер ещё работает.\n"
             f"    Закройте его (Ctrl+C в том окне) или завершите процесс на порту {port},\n"
             f"    иначе в браузере будет открываться УСТАРЕВШАЯ версия страницы.\n"
-            f"    Windows:  Get-NetTCPConnection -LocalPort {port} | Stop-Process -Id {{$_.OwningProcess}}\n",
+            f"    Windows:  Get-NetTCPConnection -LocalPort {port} | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}\n",
             flush=True,
         )
         raise SystemExit(1)
