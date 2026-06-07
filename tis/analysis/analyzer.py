@@ -112,6 +112,8 @@ class MarketAnalysis:
     imbalances: list[dict] = field(default_factory=list)
     imbalances_by_tf: dict = field(default_factory=dict)
     imbalance_summary: str = ""
+    smc: dict | None = None
+    smc_by_tf: dict = field(default_factory=dict)
     patterns: list[dict] = field(default_factory=list)
     patterns_by_tf: dict = field(default_factory=dict)
     pattern_outlook_by_tf: dict = field(default_factory=dict)

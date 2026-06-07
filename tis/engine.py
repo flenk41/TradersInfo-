@@ -174,9 +174,11 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
     # (на 5m уже, на 1D шире). Данные по ТФ уже загружены — без новых запросов.
     from tis.analysis.imbalance import find_imbalances, imbalance_summary
     from tis.analysis.candle_patterns import detect_patterns, next_candle_outlook
+    from tis.analysis.smc import analyze_smc
 
     entry_zones_by_tf: dict = {}
     imbalances_by_tf: dict = {}
+    smc_by_tf: dict = {}
     patterns_by_tf: dict = {}
     pattern_outlook_by_tf: dict = {}
     for tf_key in ("5m", "15m", "1h", "4h", "1d"):
@@ -195,6 +197,10 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
             imbalances_by_tf[tf_key] = find_imbalances(df_tf, price)
         except Exception:
             imbalances_by_tf[tf_key] = []
+        try:
+            smc_by_tf[tf_key] = analyze_smc(df_tf, price)
+        except Exception:
+            smc_by_tf[tf_key] = None
         try:
             pats = detect_patterns(df_tf)
             patterns_by_tf[tf_key] = pats
@@ -284,6 +290,8 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
         imbalances=imbalances_by_tf.get("1h", []),
         imbalances_by_tf=imbalances_by_tf,
         imbalance_summary=imbalance_summary(imbalances_by_tf.get("1h", []), price),
+        smc=smc_by_tf.get("1h") or smc_by_tf.get("4h"),
+        smc_by_tf=smc_by_tf,
         patterns=patterns_by_tf.get("1h", []),
         patterns_by_tf=patterns_by_tf,
         pattern_outlook_by_tf=pattern_outlook_by_tf,
@@ -339,4 +347,7 @@ def analyze_pair(pair: str, market: str | None = None, source: str | None = None
             4,
             f"Согласованность сигналов: {partial.accuracy.overall_pct}/100 · класс {partial.accuracy.confidence_grade}",
         )
+    smc_main = partial.smc
+    if smc_main and (smc_main.get("bos_choch", {}).get("event", "none") != "none" or smc_main.get("liquidity_sweeps")):
+        signals.append(f"SMC: {smc_main.get('summary', '')}")
     return partial

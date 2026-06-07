@@ -181,8 +181,36 @@ def _confirmation_checks(analysis: MarketAnalysis, rec_side: str) -> tuple[list[
             else:
                 add(f"Поддержка близко (-{room:.1f}%)", "bad", -2, "Мало места для тейка")
 
+    # 7) Smart Money Concepts — снятие ликвидности, ордер-блоки, BOS/CHoCH, premium/discount
+    smc = getattr(analysis, "smc", None)
+    if smc and directional:
+        bias = smc.get("smc_bias")
+        sweeps = smc.get("liquidity_sweeps") or []
+        bos = (smc.get("bos_choch") or {})
+        pdz = (smc.get("premium_discount") or {})
+        # снятие ликвидности в сторону входа — сильный сигнал
+        sweep_for = any(
+            (s.get("side") == "bullish") == (rec_side == "long") for s in sweeps
+        )
+        bos_dir = bos.get("direction")
+        zone = pdz.get("zone")
+        good_zone = (rec_side == "long" and zone == "discount") or (rec_side == "short" and zone == "premium")
+        bad_zone = (rec_side == "long" and zone == "premium") or (rec_side == "short" and zone == "discount")
+
+        if bias == rec_side:
+            detail = smc.get("summary", "")
+            delta = 4 if (sweep_for or bos_dir == rec_side) else 3
+            if good_zone:
+                delta += 1
+            add("SMC подтверждает вход", "good", min(delta, 5), detail)
+        elif bias in ("long", "short") and bias != rec_side:
+            add("SMC против входа", "bad", -4, smc.get("summary", ""))
+        elif bad_zone:
+            zname = "premium (дорого для лонга)" if rec_side == "long" else "discount (дёшево для шорта)"
+            add(f"Вход в невыгодной зоне: {zname}", "bad", -2, pdz.get("hint", ""))
+
     total = sum(c["delta"] for c in checks)
-    total = round(max(-12.0, min(12.0, float(total))), 1)
+    total = round(max(-14.0, min(14.0, float(total))), 1)
     return checks, total
 
 
@@ -287,6 +315,11 @@ def build_accuracy_metrics(
     if ins and ins.get("available") and ins.get("label"):
         adj_txt = f" ({'+' if insider_adj > 0 else ''}{insider_adj} к баллу)" if insider_adj else ""
         factors.append(f"{ins['label']}: {ins.get('summary', '')}{adj_txt}")
+
+    smc = getattr(analysis, "smc", None)
+    if smc and smc.get("smc_bias"):
+        bias_ru = {"long": "за лонг", "short": "за шорт", "neutral": "нейтрально"}.get(smc["smc_bias"], "")
+        factors.append(f"SMC ({bias_ru}): {smc.get('summary', '')}")
 
     passed = sum(1 for c in checks if c["status"] == "good")
     expl = (
