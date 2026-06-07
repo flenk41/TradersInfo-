@@ -134,7 +134,97 @@ function renderVerdict(d) {
   // Блок «позиции» (Вход/Стоп/Тейк/R:R/Ликвидация) убран: уровни входа со
   // стопом и тейком показываются на графике.
   renderScenario(d);
+  renderTradePlan(d);
   applyI18n();
+}
+
+// ── «Что делать сейчас»: где/когда/куда заходить ────────────────────────────
+// Считает наглядный план сделки из готовых данных анализа (рекомендованная
+// сторона + зоны входа текущего ТФ + position_preview). Показывает светофор:
+// 🟢 заходить сейчас (цена в зоне) / 🟡 ждать отката к цене X / 🔴 не входить.
+function computeTradePlan(d) {
+  if (!d) return null;
+  const side = d.accuracy && d.accuracy.recommended_side;
+  const cur = d.price || 0;
+  if (side !== "long" && side !== "short") {
+    return { state: "wait", side: side || "wait", currentPrice: cur,
+      why: d.trend_summary || (d.bias && d.bias.summary) || "Нет согласия сигналов — лучше пропустить." };
+  }
+  const z = (typeof zonesForTf === "function")
+    ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const arr = side === "long" ? z.long : z.short;
+  const zone = arr && arr.length
+    ? arr.reduce((b, x) => (Math.abs(x.price - cur) < Math.abs(b.price - cur) ? x : b)) : null;
+  const pv = (d.position_preview && d.position_preview[side]) || null;
+
+  const entry = zone ? zone.price : (pv ? pv.entry_price : cur);
+  const entryLow = zone && zone.low != null ? zone.low : entry;
+  const entryHigh = zone && zone.high != null ? zone.high : entry;
+  const stop = zone && zone.stop != null ? zone.stop : (pv ? pv.stop_loss : null);
+  const take = zone && zone.take != null ? zone.take : (pv ? pv.take_profit : null);
+  let rr = pv ? pv.risk_reward : null;
+  if ((rr == null || !isFinite(rr)) && stop != null && take != null && entry !== stop)
+    rr = Math.abs(take - entry) / Math.abs(entry - stop);
+
+  const lo = Math.min(entryLow, entryHigh), hi = Math.max(entryLow, entryHigh);
+  const inZone = cur >= lo && cur <= hi;
+  const dist = cur ? ((entry - cur) / cur) * 100 : 0;
+  const state = inZone ? "enter" : "wait_pullback";
+
+  return { state, side, currentPrice: cur, entry, entryLow, entryHigh, stop, take, rr, dist,
+    approx: !!(zone && zone.approx),
+    why: (d.trade && d.trade.best_action ? d.trade.best_action + ". " : "") +
+         (d.trend_summary || "") };
+}
+
+function _tpFmt(v) {
+  if (v == null || !isFinite(v)) return "—";
+  const a = Math.abs(v), dgt = a >= 1000 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
+  return Number(v).toFixed(dgt);
+}
+
+function renderTradePlan(d) {
+  const card = $("tradePlanCard");
+  if (!card) return;
+  const plan = computeTradePlan(d);
+  if (!plan) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+
+  const sideRu = plan.side === "short" ? "ШОРТ" : "ЛОНГ";
+  let light, text, why;
+  if (plan.state === "wait") {
+    light = "red"; text = "НЕ ВХОДИТЬ"; why = plan.why || "Чёткого сигнала нет — лучше подождать.";
+  } else if (plan.state === "enter") {
+    light = "green"; text = "ЗАХОДИТЬ — " + sideRu;
+    why = "Цена в зоне входа — можно открывать " + sideRu + ". " + (plan.why || "");
+  } else {
+    light = "yellow";
+    const dir = plan.dist < 0 ? "вниз" : "вверх";
+    text = "ЖДАТЬ ОТКАТА к " + _tpFmt(plan.entry);
+    why = sideRu + " от " + _tpFmt(plan.entry) + " (цена " + _tpFmt(plan.currentPrice) +
+      ", ждём " + (plan.dist >= 0 ? "+" : "") + plan.dist.toFixed(1) + "% " + dir + "). " + (plan.why || "");
+  }
+  card.className = "trade-plan tp-" + light;
+  $("tpState").className = "tp-state";
+  $("tpStateText").textContent = text + (plan.approx ? " (приблизит.)" : "");
+  $("tpWhy").textContent = why.trim();
+
+  const grid = card.querySelector(".tp-grid");
+  if (plan.state === "wait") {
+    if (grid) grid.style.display = "none";
+  } else {
+    if (grid) grid.style.display = "";
+    $("tpEntry").textContent = _tpFmt(plan.entry);
+    $("tpEntryDist").textContent = plan.currentPrice
+      ? (plan.dist >= 0 ? "+" : "") + plan.dist.toFixed(1) + "%" : "";
+    $("tpStop").textContent = _tpFmt(plan.stop);
+    $("tpStopDist").textContent = (plan.stop != null && plan.entry)
+      ? (((plan.stop - plan.entry) / plan.entry) * 100).toFixed(1) + "%" : "";
+    $("tpTake").textContent = _tpFmt(plan.take);
+    $("tpTakeDist").textContent = (plan.take != null && plan.entry)
+      ? "+" + Math.abs(((plan.take - plan.entry) / plan.entry) * 100).toFixed(1) + "%" : "";
+    $("tpRR").textContent = plan.rr != null && isFinite(plan.rr) ? "1:" + plan.rr.toFixed(1) : "—";
+  }
 }
 
 // ── Интерактивный сценарий «Что будет, если войти» ──────────────────────────
@@ -1290,6 +1380,7 @@ function updateChartTrend(data) {
   const z = zonesForTf(data);
   const view = Object.assign({}, data, { long_entry_zones: z.long, short_entry_zones: z.short });
   TradingChart.applyAnalysis(view);
+  TradingChart.setTradePlan?.(computeTradePlan(data));
   buildEntryMenu(z.long, z.short);
   renderZonesStrip(view);
   TradingChart.setImbalances?.(imbalancesForTf(data));

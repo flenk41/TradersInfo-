@@ -18,6 +18,9 @@ const TradingChart = (() => {
   let lastCandles = [];
   let mainContainer = null;
   let zoneOverlay = null;
+  let tradePlanCanvas = null;
+  let tpCtx = null;
+  let tradePlan = null;
   let resizeObserver = null;
   let liveTimer = null;
   let curSymbol = "$";
@@ -139,6 +142,12 @@ const TradingChart = (() => {
     });
     resizeObserver.observe(parent || mainEl);
 
+    tradePlanCanvas = document.getElementById("tradePlanCanvas");
+    if (tradePlanCanvas) {
+      tpCtx = tradePlanCanvas.getContext("2d");
+      sizeTradeCanvas();
+    }
+
     if (window.ChartDraw) {
       window.ChartDraw.attach({
         chart: mainChart,
@@ -147,6 +156,77 @@ const TradingChart = (() => {
         canvas: document.getElementById("mcDrawCanvas"),
       });
     }
+  }
+
+  function sizeTradeCanvas() {
+    if (!tradePlanCanvas || !mainContainer) return;
+    const w = mainContainer.clientWidth || 800;
+    const h = mainContainer.clientHeight || 360;
+    const dpr = window.devicePixelRatio || 1;
+    tradePlanCanvas.width = Math.round(w * dpr);
+    tradePlanCanvas.height = Math.round(h * dpr);
+    tradePlanCanvas.style.width = w + "px";
+    tradePlanCanvas.style.height = h + "px";
+    tpCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Зоны сделки на графике (как position-tool в TradingView):
+  // зелёная зона прибыли (вход→цель), красная зона риска (вход→стоп), линия входа.
+  function setTradePlan(plan) {
+    tradePlan = plan && (plan.state === "enter" || plan.state === "wait_pullback") ? plan : null;
+    drawTradePlan();
+  }
+
+  function drawTradePlan() {
+    if (!tpCtx || !tradePlanCanvas) return;
+    const W = tradePlanCanvas.clientWidth, H = tradePlanCanvas.clientHeight;
+    tpCtx.clearRect(0, 0, W, H);
+    if (!tradePlan || !candleSeries || !lastCandles.length) return;
+    const { entry, stop, take, side } = tradePlan;
+    const yE = candleSeries.priceToCoordinate(entry);
+    const yS = stop != null ? candleSeries.priceToCoordinate(stop) : null;
+    const yT = take != null ? candleSeries.priceToCoordinate(take) : null;
+    if (yE == null) return;
+
+    const sideCol = side === "short" ? "#a855f7" : "#3b82f6";
+    // зона прибыли (вход → цель)
+    if (yT != null) {
+      tpCtx.fillStyle = "rgba(34, 197, 94, 0.13)";
+      tpCtx.fillRect(0, Math.min(yE, yT), W, Math.abs(yT - yE));
+      band(yT, "Цель " + _fmtP(take), "#22c55e", "right");
+    }
+    // зона риска (вход → стоп)
+    if (yS != null) {
+      tpCtx.fillStyle = "rgba(239, 68, 68, 0.13)";
+      tpCtx.fillRect(0, Math.min(yE, yS), W, Math.abs(yS - yE));
+      band(yS, "Стоп " + _fmtP(stop), "#ef4444", "right");
+    }
+    // линия входа
+    tpCtx.save();
+    tpCtx.strokeStyle = sideCol; tpCtx.lineWidth = 2; tpCtx.setLineDash([6, 3]);
+    tpCtx.beginPath(); tpCtx.moveTo(0, yE); tpCtx.lineTo(W, yE); tpCtx.stroke();
+    tpCtx.restore();
+    const sideLbl = (side === "short" ? "ШОРТ" : "ЛОНГ") + " вход " + _fmtP(entry);
+    band(yE, sideLbl, sideCol, "left");
+
+    function band(y, text, col, align) {
+      tpCtx.save();
+      tpCtx.font = "11px ui-monospace, monospace";
+      const tw = tpCtx.measureText(text).width + 10;
+      const x = align === "left" ? 6 : W - tw - 6;
+      tpCtx.fillStyle = col;
+      tpCtx.fillRect(x, y - 8, tw, 16);
+      tpCtx.fillStyle = "#fff";
+      tpCtx.fillText(text, x + 5, y + 3.5);
+      tpCtx.restore();
+    }
+  }
+
+  function _fmtP(v) {
+    if (v == null) return "";
+    const a = Math.abs(v);
+    const d = a >= 1000 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
+    return v.toFixed(d);
   }
 
   function resize() {
@@ -159,6 +239,8 @@ const TradingChart = (() => {
       const fc = document.getElementById("fundingChartContainer");
       fundingChart.applyOptions({ width: fc?.clientWidth || width, height: 88 });
     }
+    sizeTradeCanvas();
+    drawTradePlan();
     if (window.ChartDraw) window.ChartDraw.resize();
   }
 
@@ -215,6 +297,7 @@ const TradingChart = (() => {
     };
 
     if (window.ChartDraw) window.ChartDraw.redraw();
+    drawTradePlan();
 
     zoneData.longEntry.forEach((z) => drawZone(z, "long-entry"));
     zoneData.shortEntry.forEach((z) => drawZone(z, "short-entry"));
@@ -426,6 +509,7 @@ const TradingChart = (() => {
     if (pairChanged) {
       clearEntryZones();
       removeLines();
+      setTradePlan(null);
     }
     live = { pair, market: m, interval: tf };
     // Рисунки привязаны к паре+ТФ (логические индексы/время свечей зависят от ТФ).
@@ -692,5 +776,6 @@ const TradingChart = (() => {
     setImbalances,
     toggleImbalances,
     setEntryColors,
+    setTradePlan,
   };
 })();

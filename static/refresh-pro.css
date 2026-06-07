@@ -1605,6 +1605,49 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
   .chart-timer .live-dot { animation: none; }
 }
 
+/* Зоны сделки на графике (вход/стоп/цель) */
+.trade-plan-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+
+/* Карточка «Что делать сейчас» (светофор) */
+.trade-plan {
+  margin: 10px 0; padding: 14px 16px; border-radius: 14px;
+  background: var(--surface2, #141b2b); border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-left-width: 4px;
+}
+.trade-plan.hidden { display: none; }
+.trade-plan.tp-green  { border-left-color: #22c55e; }
+.trade-plan.tp-yellow { border-left-color: #eab308; }
+.trade-plan.tp-red    { border-left-color: #6b7280; }
+.tp-state {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 1.05rem; font-weight: 700; letter-spacing: .01em;
+}
+.tp-light { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: 0 0 10px 1px currentColor; }
+.tp-green  .tp-light { background: #22c55e; color: #22c55e; }
+.tp-yellow .tp-light { background: #eab308; color: #eab308; animation: tpblink 1.4s ease-in-out infinite; }
+.tp-red    .tp-light { background: #6b7280; color: #6b7280; }
+.tp-green  .tp-state { color: #4ade80; }
+.tp-yellow .tp-state { color: #fde047; }
+.tp-red    .tp-state { color: #9ca3af; }
+@keyframes tpblink { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tp-yellow .tp-light { animation: none; } }
+.tp-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px;
+}
+.tp-cell {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+}
+.tp-cell .tp-k { font-size: .7rem; color: var(--muted, #8b9cb3); text-transform: uppercase; letter-spacing: .04em; }
+.tp-cell strong { font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+.tp-cell small { font-size: .72rem; color: var(--muted, #8b9cb3); font-variant-numeric: tabular-nums; }
+.tp-c-entry strong { color: #93c5fd; }
+.tp-c-stop strong  { color: #f87171; }
+.tp-c-take strong  { color: #4ade80; }
+.tp-why { margin: 11px 0 0; font-size: .82rem; color: var(--muted, #9fb0c6); line-height: 1.45; }
+@media (max-width: 560px) { .tp-grid { grid-template-columns: repeat(2, 1fr); } }
+
 /* Рисование на основном графике */
 .lw-chart-pane { position: relative; }
 .mc-draw-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 5; }

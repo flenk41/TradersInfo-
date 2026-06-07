@@ -145,6 +145,7 @@
         <div class="chart-viewport">
           <div id="lwChartPane" class="lw-chart-pane">
             <div id="chartContainer"></div>
+            <canvas id="tradePlanCanvas" class="trade-plan-canvas"></canvas>
             <canvas id="mcDrawCanvas" class="mc-draw-canvas"></canvas>
           </div>
         </div>
@@ -186,6 +187,17 @@
               </div>
             </div>
             <p class="verdict-reason" id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
+          </section>
+
+          <section class="trade-plan hidden" id="tradePlanCard">
+            <div class="tp-state" id="tpState"><span class="tp-light"></span><span id="tpStateText">—</span></div>
+            <div class="tp-grid">
+              <div class="tp-cell tp-c-entry"><span class="tp-k">Вход</span><strong id="tpEntry">—</strong><small id="tpEntryDist"></small></div>
+              <div class="tp-cell tp-c-stop"><span class="tp-k">Стоп</span><strong id="tpStop">—</strong><small id="tpStopDist"></small></div>
+              <div class="tp-cell tp-c-take"><span class="tp-k">Цель</span><strong id="tpTake">—</strong><small id="tpTakeDist"></small></div>
+              <div class="tp-cell tp-c-rr"><span class="tp-k">R:R</span><strong id="tpRR">—</strong></div>
+            </div>
+            <p class="tp-why" id="tpWhy"></p>
           </section>
 
           <div class="overview-actions" id="overviewActions">
