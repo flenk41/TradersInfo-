@@ -53,6 +53,7 @@
         <button type="button" class="nav-tab" data-view="news"><span class="nav-ic">📰</span><span>Новости</span></button>
         <button type="button" class="nav-tab" data-view="journal"><span class="nav-ic">📒</span><span>Журнал</span></button>
         <button type="button" class="nav-tab" data-view="control"><span class="nav-ic">🎛️</span><span>Центр</span></button>
+        <button type="button" class="nav-tab" data-view="trainer"><span class="nav-ic">🎓</span><span>Тренажёр</span></button>
       </div>
     </nav>
     <div class="app-main">
@@ -606,6 +607,38 @@
         <div class="journal-list" id="journalList">
           <p class="news-empty">Пока нет записей. Откройте инструмент, нажмите «Анализ» и «Записать сигнал».</p>
         </div>
+      </section>
+    </div>
+
+    <div class="app-view hidden" id="view-trainer">
+      <section class="panel trainer-panel">
+        <div class="trainer-head">
+          <div>
+            <h2>🎓 Тренажёр чтения графика</h2>
+            <p class="trainer-sub">Куда пойдёт цена дальше? Проанализируй график и выбери направление. Инструмент скрыт — только чистое чтение свечей.</p>
+          </div>
+          <div class="trainer-score" id="trainerScore">
+            <span class="ts-item"><b id="tsCorrect">0</b><small>верно</small></span>
+            <span class="ts-item"><b id="tsTotal">0</b><small>всего</small></span>
+            <span class="ts-item"><b id="tsRate">—</b><small>точность</small></span>
+            <span class="ts-item"><b id="tsStreak">0</b><small>серия 🔥</small></span>
+          </div>
+        </div>
+        <div class="trainer-toolbar">
+          <span class="tr-tf" id="trTf">—</span>
+          <span class="tr-spacer"></span>
+          <button type="button" class="btn-secondary" id="trDraw" title="Рисовать линии для анализа">✏️ Рисовать</button>
+          <button type="button" class="btn-secondary" id="trClear" title="Стереть рисунок">🧹 Стереть</button>
+        </div>
+        <div class="trainer-chart-wrap">
+          <div id="trainerChart"></div>
+          <canvas id="trainerDraw" class="trainer-draw"></canvas>
+        </div>
+        <div class="trainer-actions" id="trainerActions">
+          <button type="button" class="tr-predict up" id="trUp">📈 Вверх</button>
+          <button type="button" class="tr-predict down" id="trDown">📉 Вниз</button>
+        </div>
+        <div class="trainer-result hidden" id="trainerResult"></div>
       </section>
     </div>
 

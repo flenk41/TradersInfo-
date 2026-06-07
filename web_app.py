@@ -324,6 +324,56 @@ def api_signals_scan():
         return jsonify({"ok": False, "error": f"Ошибка сканера: {e}"}), 500
 
 
+@app.route("/api/trainer/round")
+@rate_limit(40, 60)
+def api_trainer_round():
+    """Раунд тренажёра: кусок реального графика (будущее скрыто) + исход.
+
+    Инструмент анонимизирован — это чистое чтение графика (как Forex Hero).
+    """
+    import random
+    from tis.data.instruments_catalog import CRYPTO_LIST
+    from tis.data.market_data import fetch_klines
+
+    VIS, HORIZON = 130, 16
+    try:
+        for _ in range(4):  # пара попыток на случай пустых данных
+            inst = random.choice(CRYPTO_LIST)
+            interval = random.choice(["1h", "4h", "1d"])
+            df = fetch_klines(inst.id, interval=interval, limit=350, market="crypto")
+            if df is None or len(df) < VIS + HORIZON + 5:
+                continue
+            start = random.randint(0, len(df) - (VIS + HORIZON))
+            win = df.iloc[start:start + VIS + HORIZON]
+            vis = win.iloc[:VIS]
+            fut = win.iloc[VIS:]
+
+            def _c(rows):
+                out = []
+                for _, r in rows.iterrows():
+                    out.append({
+                        "time": int(r["open_time"].timestamp()),
+                        "open": round(float(r["open"]), 6), "high": round(float(r["high"]), 6),
+                        "low": round(float(r["low"]), 6), "close": round(float(r["close"]), 6),
+                    })
+                return out
+
+            vc, fc = _c(vis), _c(fut)
+            if len(vc) < VIS or len(fc) < HORIZON:
+                continue
+            p0 = vc[-1]["close"]
+            p1 = fc[-1]["close"]
+            direction = "up" if p1 >= p0 else "down"
+            return jsonify({
+                "ok": True, "interval": interval, "horizon": HORIZON,
+                "visible": vc, "future": fc,
+                "outcome": {"direction": direction, "change_pct": round((p1 - p0) / p0 * 100, 2)},
+            })
+        return jsonify({"ok": False, "error": "Нет данных для раунда, попробуйте ещё раз"}), 503
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ошибка тренажёра: {e}"}), 500
+
+
 @app.route("/api/paper-bot")
 @rate_limit(60, 60)
 def api_paper_bot():

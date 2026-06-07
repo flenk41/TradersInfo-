@@ -1169,6 +1169,8 @@ function switchView(view, market) {
     loadNews();
   } else if (view === "journal") {
     loadJournal();
+  } else if (view === "trainer") {
+    openTrainer();
   }
   toggleDividendBtn();
   applyI18n();
@@ -4059,3 +4061,153 @@ document.addEventListener("DOMContentLoaded", () => {
   renderPairsGrid("crypto");
   analyze("ETH/USDT");
 });
+
+// ════════════════════════════════════════════════════════════════════
+//  🎓 ТРЕНАЖЁР ЧТЕНИЯ ГРАФИКА (в стиле Forex Hero)
+// ════════════════════════════════════════════════════════════════════
+const TRAINER = { chart: null, series: null, round: null, answered: false, future: null };
+
+function trGetScore() {
+  try { return JSON.parse(localStorage.getItem("trainer_score") || "{}"); } catch (e) { return {}; }
+}
+function trSaveScore(s) { try { localStorage.setItem("trainer_score", JSON.stringify(s)); } catch (e) {} }
+function trRenderScore() {
+  const s = trGetScore();
+  const c = s.correct || 0, t = s.total || 0;
+  $("tsCorrect").textContent = c;
+  $("tsTotal").textContent = t;
+  $("tsRate").textContent = t ? Math.round(c / t * 100) + "%" : "—";
+  $("tsStreak").textContent = s.streak || 0;
+}
+
+function trInitChart() {
+  if (TRAINER.chart || !window.LightweightCharts) return;
+  const el = $("trainerChart");
+  if (!el) return;
+  TRAINER.chart = LightweightCharts.createChart(el, {
+    layout: { background: { color: "#0f1623" }, textColor: "#8b9cb3" },
+    grid: { vertLines: { color: "rgba(255,255,255,0.05)" }, horzLines: { color: "rgba(255,255,255,0.05)" } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: "rgba(255,255,255,0.09)" },
+    timeScale: { borderColor: "rgba(255,255,255,0.09)", timeVisible: true },
+    width: el.clientWidth || 800, height: 380,
+  });
+  TRAINER.series = TRAINER.chart.addCandlestickSeries({
+    upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e",
+    borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444",
+  });
+  window.addEventListener("resize", () => {
+    if (TRAINER.chart && $("trainerChart")) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth });
+    trResizeCanvas();
+  });
+}
+
+async function openTrainer() {
+  trInitChart();
+  trRenderScore();
+  setTimeout(() => { if (TRAINER.chart) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth }); trResizeCanvas(); }, 60);
+  await trLoadRound();
+}
+
+async function trLoadRound() {
+  const res = $("trainerResult");
+  res.classList.add("hidden"); res.innerHTML = "";
+  $("trainerActions").innerHTML =
+    '<button type="button" class="tr-predict up" id="trUp">📈 Вверх</button>' +
+    '<button type="button" class="tr-predict down" id="trDown">📉 Вниз</button>';
+  $("trUp").addEventListener("click", () => trAnswer("up"));
+  $("trDown").addEventListener("click", () => trAnswer("down"));
+  trClearDraw();
+  $("trTf").textContent = "Загрузка…";
+  try {
+    const j = await (await fetch("/api/trainer/round")).json();
+    if (!j.ok) { $("trTf").textContent = j.error || "Ошибка"; return; }
+    TRAINER.round = j; TRAINER.future = j.future; TRAINER.answered = false;
+    $("trTf").textContent = "ТФ: " + j.interval + " · следующие " + j.horizon + " свечей скрыты";
+    TRAINER.series.setData(j.visible);
+    TRAINER.chart.timeScale().fitContent();
+  } catch (e) { $("trTf").textContent = "Ошибка сети"; }
+}
+
+function trAnswer(dir) {
+  if (TRAINER.answered || !TRAINER.round) return;
+  TRAINER.answered = true;
+  const actual = TRAINER.round.outcome.direction;
+  const correct = dir === actual;
+  // дорисовываем будущее
+  const full = TRAINER.round.visible.concat(TRAINER.future);
+  TRAINER.series.setData(full);
+  TRAINER.chart.timeScale().fitContent();
+  // маркеры: точка предсказания + исход
+  const lastVis = TRAINER.round.visible[TRAINER.round.visible.length - 1];
+  TRAINER.series.setMarkers([
+    { time: lastVis.time, position: "inBar", color: "#a855f7", shape: "circle", text: "ты тут" },
+    { time: TRAINER.future[TRAINER.future.length - 1].time, position: actual === "up" ? "aboveBar" : "belowBar",
+      color: actual === "up" ? "#22c55e" : "#ef4444", shape: actual === "up" ? "arrowUp" : "arrowDown",
+      text: (actual === "up" ? "+" : "") + TRAINER.round.outcome.change_pct + "%" },
+  ]);
+  // счёт
+  const s = trGetScore();
+  s.total = (s.total || 0) + 1;
+  if (correct) { s.correct = (s.correct || 0) + 1; s.streak = (s.streak || 0) + 1; }
+  else { s.streak = 0; }
+  trSaveScore(s); trRenderScore();
+  // результат
+  const ch = TRAINER.round.outcome.change_pct;
+  $("trainerActions").innerHTML = '<button type="button" class="btn-primary tr-next" id="trNext">Следующий график →</button>';
+  $("trNext").addEventListener("click", () => trLoadRound());
+  const r = $("trainerResult");
+  r.className = "trainer-result " + (correct ? "good" : "bad");
+  r.innerHTML =
+    `<div class="tr-res-h">${correct ? "✅ Верно!" : "❌ Мимо"}</div>` +
+    `<div class="tr-res-d">Цена пошла <b class="${actual === "up" ? "up" : "down"}">${actual === "up" ? "ВВЕРХ 📈" : "ВНИЗ 📉"}</b> на ${ch > 0 ? "+" : ""}${ch}% за ${TRAINER.round.horizon} свечей. Ты выбрал «${dir === "up" ? "Вверх" : "Вниз"}».</div>` +
+    `<div class="tr-res-tip">${correct ? "Отлично читаешь тренд — продолжай серию." : "Совет: смотри направление последних свечей, уровни и импульс. Один график — не приговор, важна статистика на дистанции."}</div>`;
+}
+
+// ── Рисование поверх графика (для анализа) ──────────────────────────
+let _trDrawing = false, _trDrawOn = false, _trLast = null;
+function trResizeCanvas() {
+  const cv = $("trainerDraw"), wrap = $("trainerChart");
+  if (!cv || !wrap) return;
+  const w = wrap.clientWidth || (wrap.parentElement && wrap.parentElement.clientWidth) || 800;
+  cv.width = w; cv.height = wrap.clientHeight || 380;
+  if (TRAINER.chart) TRAINER.chart.applyOptions({ width: w });
+}
+function trClearDraw() {
+  const cv = $("trainerDraw");
+  if (cv) { const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height); }
+}
+function trToggleDraw() {
+  _trDrawOn = !_trDrawOn;
+  const cv = $("trainerDraw");
+  cv.style.pointerEvents = _trDrawOn ? "auto" : "none";
+  cv.style.cursor = _trDrawOn ? "crosshair" : "default";
+  $("trDraw").classList.toggle("active", _trDrawOn);
+  if (_trDrawOn) trResizeCanvas();  // подгоняем буфер под текущий размер графика
+}
+function _trPos(e) {
+  const cv = $("trainerDraw"); const rect = cv.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+}
+function trBindDraw() {
+  const cv = $("trainerDraw");
+  if (!cv || cv._bound) return; cv._bound = true;
+  const ctx = cv.getContext("2d");
+  const start = (e) => { if (!_trDrawOn) return; _trDrawing = true; _trLast = _trPos(e); e.preventDefault(); };
+  const move = (e) => {
+    if (!_trDrawing || !_trDrawOn) return;
+    const p = _trPos(e);
+    ctx.strokeStyle = "#a855f7"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(_trLast.x, _trLast.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    _trLast = p; e.preventDefault();
+  };
+  const end = () => { _trDrawing = false; };
+  cv.addEventListener("mousedown", start); cv.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  cv.addEventListener("touchstart", start, { passive: false }); cv.addEventListener("touchmove", move, { passive: false });
+  cv.addEventListener("touchend", end);
+}
+$("trDraw")?.addEventListener("click", trToggleDraw);
+$("trClear")?.addEventListener("click", trClearDraw);
+$("trDraw") && trBindDraw();

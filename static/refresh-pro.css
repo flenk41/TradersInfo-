@@ -1536,3 +1536,34 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .pb-rec { display: grid; grid-template-columns: 1.4fr .8fr .7fr auto; gap: 6px; align-items: center; padding: 6px 8px;
   border-bottom: 1px solid rgba(255,255,255,.05); font-size: .8rem; font-variant-numeric: tabular-nums; }
 .pb-rec .up { color: #34d399; } .pb-rec .down { color: #fb7185; } .pb-rec .pb-ago { color: var(--muted); font-size: .7rem; text-align: right; }
+
+/* ════ Тренажёр чтения графика ════ */
+.trainer-panel { display: flex; flex-direction: column; gap: 14px; }
+.trainer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.trainer-head h2 { margin: 0 0 4px; }
+.trainer-sub { color: var(--muted); font-size: .85rem; max-width: 560px; margin: 0; }
+.trainer-score { display: flex; gap: 14px; }
+.ts-item { display: flex; flex-direction: column; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); }
+.ts-item b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.ts-item small { font-size: .64rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.trainer-toolbar { display: flex; align-items: center; gap: 8px; }
+.tr-tf { font-size: .8rem; color: var(--muted); }
+.tr-spacer { flex: 1; }
+.trainer-toolbar .btn-secondary.active { background: var(--accent); color: #fff; border-color: transparent; }
+.trainer-chart-wrap { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); }
+#trainerChart { width: 100%; height: 380px; }
+.trainer-draw { position: absolute; inset: 0; pointer-events: none; }
+.trainer-actions { display: flex; gap: 12px; }
+.tr-predict { flex: 1; padding: 16px; border: 0; border-radius: 14px; cursor: pointer; font-size: 1.1rem; font-weight: 800; transition: transform .12s var(--ease); }
+.tr-predict:hover { transform: translateY(-2px); }
+.tr-predict.up { background: rgba(34,197,94,.18); color: #34d399; border: 1px solid rgba(34,197,94,.35); }
+.tr-predict.down { background: rgba(239,68,68,.18); color: #fb7185; border: 1px solid rgba(239,68,68,.35); }
+.tr-next { width: 100%; padding: 14px; font-size: 1rem; }
+.trainer-result { padding: 16px; border-radius: 14px; border: 1px solid; }
+.trainer-result.hidden { display: none; }
+.trainer-result.good { background: rgba(34,197,94,.10); border-color: rgba(34,197,94,.3); }
+.trainer-result.bad { background: rgba(251,113,133,.10); border-color: rgba(251,113,133,.3); }
+.tr-res-h { font-size: 1.15rem; font-weight: 800; margin-bottom: 6px; }
+.tr-res-d { font-size: .9rem; margin-bottom: 6px; } .tr-res-d .up { color: #34d399; } .tr-res-d .down { color: #fb7185; }
+.tr-res-tip { font-size: .8rem; color: var(--muted); }
+@media (max-width: 600px) { .trainer-score { width: 100%; justify-content: space-between; gap: 6px; } .ts-item { flex: 1; padding: 6px; } }
