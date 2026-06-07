@@ -407,7 +407,7 @@ const TradingChart = (() => {
       removeLines();
     }
     live = { pair, market: m, interval: tf };
-    const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=200&market=${encodeURIComponent(m)}`;
+    const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=500&market=${encodeURIComponent(m)}`;
     const kRes = await fetch(`/api/klines?${base}`);
     const kJson = await kRes.json();
     if (kJson.ok) setCandles(kJson.candles);

@@ -4335,3 +4335,37 @@ document.querySelectorAll("#trLevels button").forEach((b) =>
     trLoadRound();
   })
 );
+
+// ── Рисование на основном графике (линии для анализа, как в TradingView) ─────
+let _mcDrawOn = false, _mcDrawing = false, _mcLast = null;
+function mcResizeCanvas() {
+  const cv = $("mcDrawCanvas"), wrap = $("chartContainer");
+  if (!cv || !wrap) return;
+  cv.width = wrap.clientWidth || cv.parentElement.clientWidth || 800;
+  cv.height = wrap.clientHeight || 360;
+}
+function mcClearDraw() { const cv = $("mcDrawCanvas"); if (cv) cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); }
+function mcToggleDraw() {
+  _mcDrawOn = !_mcDrawOn;
+  const cv = $("mcDrawCanvas"), btn = $("mcDraw");
+  if (!cv) return;
+  cv.style.pointerEvents = _mcDrawOn ? "auto" : "none";
+  cv.style.cursor = _mcDrawOn ? "crosshair" : "default";
+  btn.classList.toggle("active", _mcDrawOn);
+  btn.textContent = _mcDrawOn ? "✏️ ВКЛ" : "✏️ Рисовать";
+  if (_mcDrawOn) mcResizeCanvas();
+}
+function _mcPos(e) { const cv = $("mcDrawCanvas"), r = cv.getBoundingClientRect(); const t = e.touches ? e.touches[0] : e; return { x: t.clientX - r.left, y: t.clientY - r.top }; }
+function mcBindDraw() {
+  const cv = $("mcDrawCanvas"); if (!cv || cv._bound) return; cv._bound = true;
+  const ctx = cv.getContext("2d");
+  const start = (e) => { if (!_mcDrawOn) return; _mcDrawing = true; _mcLast = _mcPos(e); e.preventDefault(); };
+  const move = (e) => { if (!_mcDrawing || !_mcDrawOn) return; const p = _mcPos(e); ctx.strokeStyle = "#a855f7"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(_mcLast.x, _mcLast.y); ctx.lineTo(p.x, p.y); ctx.stroke(); _mcLast = p; e.preventDefault(); };
+  const end = () => { _mcDrawing = false; };
+  cv.addEventListener("mousedown", start); cv.addEventListener("mousemove", move); window.addEventListener("mouseup", end);
+  cv.addEventListener("touchstart", start, { passive: false }); cv.addEventListener("touchmove", move, { passive: false }); cv.addEventListener("touchend", end);
+}
+$("mcDraw")?.addEventListener("click", mcToggleDraw);
+$("mcClear")?.addEventListener("click", mcClearDraw);
+$("mcDrawCanvas") && mcBindDraw();
+window.addEventListener("resize", () => { if (_mcDrawOn) mcResizeCanvas(); });
