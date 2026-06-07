@@ -2287,6 +2287,12 @@ $("btnRiskCalc")?.addEventListener("click", () => openRiskCalc());
 
 // ── Бэктест стратегии (история, без реальных сделок) ────────────────────────
 let btInterval = "1d";  // по умолчанию длинный/ранний период
+function btFilterQS() {
+  const ema = $("btEma200")?.checked ? 1 : 0;
+  const adx = $("btAdx")?.checked ? 1 : 0;
+  const macd = $("btMacd")?.checked ? 1 : 0;
+  return `&ema200=${ema}&adx=${adx}&macd=${macd}`;
+}
 function openBacktest() {
   if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
   $("backtestOverlay").classList.remove("hidden");
@@ -2297,7 +2303,7 @@ async function runBacktest() {
   const body = $("backtestBody");
   body.innerHTML = '<p class="modal-note">Прогоняю стратегию по истории (до 1000 баров)…</p>';
   try {
-    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${btInterval}&limit=1000`)).json();
+    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${btInterval}&limit=1000${btFilterQS()}`)).json();
     if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
     renderBacktest(j.result, j.interval);
   } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
@@ -2407,12 +2413,13 @@ document.querySelectorAll("#btInterval button").forEach((b) =>
   b.addEventListener("click", () => { btInterval = b.dataset.int; document.querySelectorAll("#btInterval button").forEach((x) => x.classList.toggle("active", x === b)); runBacktest(); })
 );
 $("btScanBtn")?.addEventListener("click", () => runBacktestScan());
+["btEma200", "btAdx", "btMacd"].forEach((id) => $(id)?.addEventListener("change", () => runBacktest()));
 async function runBacktestScan() {
   const body = $("backtestBody");
   body.innerHTML = '<p class="modal-note">Прогоняю стратегию по многим инструментам (≈10–20с)…</p>';
   const region = activeMarket === "stock" ? (activeStockRegion || "all") : "all";
   try {
-    const j = await (await fetch(`/api/backtest/scan?market=${encodeURIComponent(activeMarket)}&region=${region}&interval=${btInterval}`)).json();
+    const j = await (await fetch(`/api/backtest/scan?market=${encodeURIComponent(activeMarket)}&region=${region}&interval=${btInterval}${btFilterQS()}`)).json();
     if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
     renderBacktestScan(j);
   } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }

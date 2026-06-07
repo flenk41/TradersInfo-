@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-_WARMUP = 60
+_WARMUP = 210  # достаточно для прогрева EMA200
 
 
 def _ema(s: pd.Series, span: int) -> pd.Series:
@@ -36,13 +36,41 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
+def _adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    h, l, c = df["high"], df["low"], df["close"]
+    up = h.diff()
+    down = -l.diff()
+    plus_dm = ((up > down) & (up > 0)) * up
+    minus_dm = ((down > up) & (down > 0)) * down
+    pc = c.shift(1)
+    tr = pd.concat([(h - l), (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan)
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr.replace(0, np.nan)
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def _macd_hist(close: pd.Series) -> pd.Series:
+    macd = _ema(close, 12) - _ema(close, 26)
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd - signal
+
+
 def backtest(
     df: pd.DataFrame,
     rr: float = 2.0,
     atr_mult: float = 2.0,
     breakeven: bool = True,
+    use_ema200: bool = True,
+    adx_min: float = 0.0,
+    use_macd: bool = False,
 ) -> dict:
-    """Прогон стратегии. Возвращает статистику, кривую депозита (в R) и сделки."""
+    """Прогон стратегии. Возвращает статистику, кривую депозита (в R) и сделки.
+
+    Фильтры качества входа (поднимают винрейт): EMA200-режим (торгуем по главному
+    тренду), ADX (только сильный тренд, не флэт), MACD (подтверждение импульса).
+    """
     if df is None or len(df) < _WARMUP + 20:
         return {"available": False, "reason": "not_enough_data"}
 
@@ -52,8 +80,11 @@ def backtest(
     low = df["low"].astype(float)
     ema20 = _ema(close, 20)
     ema50 = _ema(close, 50)
+    ema200 = _ema(close, 200)
     rsi = _rsi(close)
     atr = _atr(df)
+    adx = _adx(df)
+    macdh = _macd_hist(close)
 
     pos = None  # {side, entry, stop, tp, risk, be, bar}
     trades: list[dict] = []
@@ -106,16 +137,26 @@ def backtest(
         sep = abs(ema20.iloc[i] - ema50.iloc[i]) / close.iloc[i]  # «сила» тренда
         if sep < 0.002:   # почти флэт — пропускаем (как гейт «не флэт»)
             continue
-        if up and 45 <= r <= 68:
+        # Фильтры качества входа.
+        adx_ok = (np.isnan(adx.iloc[i])) or (adx.iloc[i] >= adx_min)
+        if not adx_ok:
+            continue
+        e200 = ema200.iloc[i]
+        mh = macdh.iloc[i]
+        long_regime = (not use_ema200) or (np.isnan(e200)) or close.iloc[i] > e200
+        short_regime = (not use_ema200) or (np.isnan(e200)) or close.iloc[i] < e200
+        long_momo = (not use_macd) or (mh > 0)
+        short_momo = (not use_macd) or (mh < 0)
+        if up and long_regime and long_momo and 45 <= r <= 70:
             pos = _open("long", i)
-        elif (not up) and 32 <= r <= 55:
+        elif (not up) and short_regime and short_momo and 30 <= r <= 55:
             pos = _open("short", i)
 
     return _stats(trades, rr)
 
 
 def backtest_universe(market: str, region: str = "all", interval: str = "4h",
-                      limit: int = 1000, cap: int = 14) -> dict:
+                      limit: int = 1000, cap: int = 14, filters: dict | None = None) -> dict:
     """Бэктест стратегии по набору инструментов — таблица устойчивости.
 
     Прогоняет backtest() на каждом инструменте вселенной (с потолком) и сводит:
@@ -137,10 +178,12 @@ def backtest_universe(market: str, region: str = "all", interval: str = "4h",
     if not uni:
         return {"available": False, "rows": []}
 
+    fk = filters or {}
+
     def _one(inst):
         try:
             df = fetch_klines(inst.id, interval=interval, limit=limit, market=market)
-            r = backtest(df)
+            r = backtest(df, **fk)
         except Exception:
             return None
         if not r.get("available") or not r.get("trades"):

@@ -162,6 +162,20 @@ def _lang_param() -> str:
     return "en" if request.args.get("lang", "ru").strip().lower() == "en" else "ru"
 
 
+def _bt_filters() -> dict:
+    """Фильтры бэктеста из query (ema200/adx/macd). По умолчанию — только EMA200."""
+    def _b(name, default):
+        v = request.args.get(name)
+        if v is None:
+            return default
+        return v.strip().lower() in ("1", "true", "on", "yes")
+    return {
+        "use_ema200": _b("ema200", True),
+        "adx_min": 20.0 if _b("adx", False) else 0.0,
+        "use_macd": _b("macd", False),
+    }
+
+
 @app.route("/api/analyze")
 @rate_limit(30, 60)
 def api_analyze():
@@ -323,14 +337,16 @@ def api_backtest():
         limit = 1000
     if not pair:
         return jsonify({"ok": False, "error": "Укажите инструмент"}), 400
+    flt = _bt_filters()
     try:
         from tis.analysis.backtester import backtest
         from tis.data.market_data import fetch_klines
 
-        key = f"backtest:{market or 'auto'}:{interval}:{limit}:{pair.upper()}"
+        fkey = f"{int(flt['use_ema200'])}{int(flt['adx_min'])}{int(flt['use_macd'])}"
+        key = f"backtest:{market or 'auto'}:{interval}:{limit}:{fkey}:{pair.upper()}"
         result = get_cached(
             key,
-            lambda: backtest(fetch_klines(pair, interval=interval, limit=limit, market=market)),
+            lambda: backtest(fetch_klines(pair, interval=interval, limit=limit, market=market), **flt),
             ttl=600,
         )
         return jsonify({"ok": True, "interval": interval, "bars": limit, "result": result})
@@ -349,12 +365,14 @@ def api_backtest_scan():
     if region not in ("ru", "us", "all"):
         region = "all"
     interval = request.args.get("interval", "4h")
+    flt = _bt_filters()
     try:
         from tis.analysis.backtester import backtest_universe
 
+        fkey = f"{int(flt['use_ema200'])}{int(flt['adx_min'])}{int(flt['use_macd'])}"
         data = get_cached(
-            f"btscan:{market}:{region}:{interval}",
-            lambda: backtest_universe(market, region, interval),
+            f"btscan:{market}:{region}:{interval}:{fkey}",
+            lambda: backtest_universe(market, region, interval, filters=flt),
             ttl=600,
         )
         return jsonify({"ok": True, "market": market, **data})
