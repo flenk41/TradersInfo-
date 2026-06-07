@@ -716,7 +716,11 @@
     <div class="app-view hidden" id="view-portfolio">
       <section class="panel portfolio-panel">
         <div class="pf-section">
-          <h2>⭐ Список наблюдения</h2>
+          <div class="pf-head">
+            <h2>⭐ Список наблюдения</h2>
+            <button type="button" class="btn-secondary" id="wlScanRules" title="Найти в списке сетапы под ваши правила">🎯 Сетапы по правилам</button>
+          </div>
+          <div class="wl-scan hidden" id="wlScanResult"></div>
           <div class="watchlist" id="watchlist">
             <p class="news-empty">Пусто. Откройте инструмент и нажмите «☆ В список» над графиком.</p>
           </div>

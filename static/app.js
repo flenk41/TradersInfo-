@@ -4130,6 +4130,69 @@ async function renderWatchlist() {
   });
 }
 
+// ── Скан watchlist по правилам профиля ──────────────────────────────────────
+// Прогоняет анализ по инструментам списка и показывает, где сетап подходит под
+// торговый профиль пользователя (та же логика, что в карточке плана сделки).
+let _wlScanning = false;
+async function scanWatchlistByRules() {
+  const box = $("wlScanResult");
+  const wl = getWatchlist();
+  if (!box) return;
+  if (!wl.length) { box.classList.remove("hidden"); box.innerHTML = '<p class="news-empty">Список пуст — добавьте инструменты.</p>'; return; }
+  if (_wlScanning) return;
+  _wlScanning = true;
+  box.classList.remove("hidden");
+  box.innerHTML = `<p class="wl-scan-status">Сканирую ${wl.length} инстр. по вашим правилам…</p>`;
+
+  const results = [];
+  const queue = wl.slice();
+  async function worker() {
+    while (queue.length) {
+      const w = queue.shift();
+      try {
+        const j = await (await fetch(`/api/analyze?pair=${encodeURIComponent(w.id)}&market=${encodeURIComponent(w.market)}`)).json();
+        if (j.ok) {
+          const d = Object.assign({}, j.data, { position_preview: j.position_preview, pair: w.id, market: w.market });
+          const plan = computeTradePlan(d);
+          const rule = evaluateProfile(plan, d);
+          results.push({ w, d, plan, rule, score: (d.accuracy && d.accuracy.overall_pct) || 0 });
+        } else {
+          results.push({ w, err: true });
+        }
+      } catch (_) { results.push({ w, err: true }); }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]); // 3 параллельных
+
+  // сортировка: подходящие сетапы сверху, затем по баллу
+  const rank = (r) => (r.rule && r.rule.applicable && r.rule.pass ? 2 : r.plan && r.plan.state !== "wait" ? 1 : 0);
+  results.sort((a, b) => rank(b) - rank(a) || (b.score || 0) - (a.score || 0));
+
+  const matches = results.filter((r) => r.rule && r.rule.applicable && r.rule.pass).length;
+  box.innerHTML =
+    `<div class="wl-scan-head">Подходит под правила: <b>${matches}</b> из ${wl.length}</div>` +
+    results.map((r) => {
+      if (r.err) return `<div class="wl-scan-row err" data-id="${r.w.id}" data-market="${r.w.market}"><span>${r.w.name}</span><span class="wl-scan-tag">нет данных</span></div>`;
+      const st = r.plan ? r.plan.state : "wait";
+      const sideRu = r.plan && r.plan.side === "short" ? "ШОРТ" : r.plan && r.plan.side === "long" ? "ЛОНГ" : "—";
+      const pass = r.rule && r.rule.applicable && r.rule.pass;
+      const tag = st === "wait" ? "ждать"
+        : pass ? "✓ по правилам"
+        : (r.rule && r.rule.violations && r.rule.violations.length ? "✗ " + r.rule.violations[0] : "не по правилам");
+      const cls = st === "wait" ? "wait" : pass ? "pass" : "fail";
+      const rr = r.plan && r.plan.rr != null && isFinite(r.plan.rr) ? " · R:R 1:" + r.plan.rr.toFixed(1) : "";
+      return `<div class="wl-scan-row ${cls}" data-id="${r.w.id}" data-market="${r.w.market}">` +
+        `<span class="wl-scan-name">${r.w.name}<small>${st === "wait" ? "" : sideRu} · балл ${Math.round(r.score)}${rr}</small></span>` +
+        `<span class="wl-scan-tag">${tag}</span></div>`;
+    }).join("");
+
+  box.querySelectorAll(".wl-scan-row").forEach((row) => {
+    row.addEventListener("click", () => { switchView("market", row.dataset.market); analyze(row.dataset.id); });
+  });
+  _wlScanning = false;
+}
+$("wlScanRules")?.addEventListener("click", scanWatchlistByRules);
+
 function pfAddHolding() {
   const pair = ($("pfPair").value || "").trim();
   const qty = parseFloat($("pfQty").value);
