@@ -4101,6 +4101,17 @@ function trInitChart() {
     if (TRAINER.chart && $("trainerChart")) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth });
     trResizeCanvas();
   });
+  // Надёжная подгонка под контейнер (на случай позднего/нулевого размера при входе).
+  try {
+    const wrap = $("trainerChart");
+    if (window.ResizeObserver && wrap) {
+      const ro = new ResizeObserver(() => {
+        const w = wrap.clientWidth;
+        if (w > 0 && TRAINER.chart) { TRAINER.chart.applyOptions({ width: w }); trResizeCanvas(); }
+      });
+      ro.observe(wrap.parentElement || wrap);
+    }
+  } catch (e) {}
 }
 
 let trLevel = "medium";
@@ -4266,7 +4277,9 @@ function trToggleDraw() {
   const cv = $("trainerDraw");
   cv.style.pointerEvents = _trDrawOn ? "auto" : "none";
   cv.style.cursor = _trDrawOn ? "crosshair" : "default";
-  $("trDraw").classList.toggle("active", _trDrawOn);
+  const btn = $("trDraw");
+  btn.classList.toggle("active", _trDrawOn);
+  btn.textContent = _trDrawOn ? "✏️ Рисование ВКЛ" : "✏️ Рисовать";
   if (_trDrawOn) trResizeCanvas();  // подгоняем буфер под текущий размер графика
 }
 function _trPos(e) {
