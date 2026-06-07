@@ -1429,3 +1429,8 @@ input[type="text"], input[type="number"], input[type="search"], input[type="pass
 .q-hold-sum { font-size: .85rem; color: var(--text2); margin-bottom: 8px; }
 .q-hold-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.05); font-size: .82rem; }
 .q-hold-row span { flex: 1; min-width: 0; } .q-hold-row b { font-variant-numeric: tabular-nums; } .q-hold-row small { color: var(--muted); }
+
+/* Мульти-ТФ тренд в баре над графиком (локальный отскок vs глобальный тренд) */
+.ct-tf-row { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.ct-tf { font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.05); }
+.ct-tf.up { color: #34d399; } .ct-tf.down { color: #fb7185; } .ct-tf.flat { color: var(--muted, #94a3b8); }

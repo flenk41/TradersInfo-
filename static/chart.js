@@ -314,10 +314,31 @@ const TradingChart = (() => {
     if (current) addLine("current", current, COLORS.current, "Сейчас", LightweightCharts.LineStyle.Solid);
   }
 
+  const _TF_RU = { "5m": "5м", "15m": "15м", "1h": "1ч", "4h": "4ч", "1d": "1д" };
+  function _tfArrow(trend) {
+    const t = (trend || "").toUpperCase();
+    if (t.includes("БЫЧ") || t.includes("ВОСХ") || t.includes("BULL")) return { a: "↑", c: "up" };
+    if (t.includes("МЕДВ") || t.includes("НИСХ") || t.includes("BEAR")) return { a: "↓", c: "down" };
+    return { a: "→", c: "flat" };
+  }
+  function _tfTrendHtml(timeframes) {
+    if (!Array.isArray(timeframes) || !timeframes.length) return "";
+    const order = ["15m", "1h", "4h", "1d"];
+    const parts = order
+      .map((tf) => timeframes.find((t) => t.timeframe === tf))
+      .filter(Boolean)
+      .map((t) => {
+        const ar = _tfArrow(t.trend);
+        return `<span class="ct-tf ${ar.c}">${_TF_RU[t.timeframe] || t.timeframe} ${ar.a}</span>`;
+      });
+    return parts.join("");
+  }
+
   function setTrendBar(data) {
     const el = document.getElementById("chartTrendBar");
     if (!el || !data) return;
     const bias = data.bias;
+    const tfHtml = _tfTrendHtml(data.timeframes);
     el.innerHTML = `
       <div class="chart-trend-item">
         <span class="ct-label">Тренд</span>
@@ -326,8 +347,9 @@ const TradingChart = (() => {
       <div class="chart-trend-item">
         <span class="ct-label">HTF Bias</span>
         <strong class="ct-value bias-${bias?.direction || "neutral"}">${bias?.direction?.toUpperCase() || "—"}</strong>
-      </div>
-      <div class="chart-trend-item wide">
+      </div>` +
+      (tfHtml ? `<div class="chart-trend-item ct-tfs"><span class="ct-label">По ТФ</span><span class="ct-tf-row">${tfHtml}</span></div>` : "") +
+      `<div class="chart-trend-item wide">
         <span class="ct-label">Сводка</span>
         <span class="ct-summary">${data.trend_summary || ""}</span>
       </div>
