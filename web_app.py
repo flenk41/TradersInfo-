@@ -733,6 +733,44 @@ def api_ai_persona():
         return jsonify({"ok": False, "error": f"Ошибка AI-персоны: {e}"}), 500
 
 
+def _format_profile(profile, lang: str) -> str:
+    """Торговый профиль пользователя → текст для промпта AI-аналитика."""
+    if not isinstance(profile, dict):
+        return ""
+    style = str(profile.get("style", "any"))
+    sides = str(profile.get("sides", "both"))
+    try:
+        min_score = float(profile.get("minScore", 0))
+        min_rr = float(profile.get("minRR", 0))
+        risk = float(profile.get("riskPct", 0))
+    except (TypeError, ValueError):
+        min_score = min_rr = risk = 0
+    flags = []
+    if profile.get("requireHtf"):
+        flags.append("только по тренду старших ТФ" if lang != "en" else "only with HTF trend")
+    if profile.get("requireSmc"):
+        flags.append("требуется подтверждение SMC" if lang != "en" else "require SMC confluence")
+    if profile.get("noFlat"):
+        flags.append("не входить во флэте" if lang != "en" else "skip flat market")
+    sides_ru = {"both": "лонг и шорт", "long": "только лонг", "short": "только шорт"}.get(sides, sides)
+    sides_en = {"both": "long & short", "long": "long only", "short": "short only"}.get(sides, sides)
+    if lang == "en":
+        head = "\n\nUSER TRADING RULES (judge if this setup fits, reflect it in action/plan):"
+        body = (
+            f"\n- style: {style}; directions: {sides_en}; min consistency score: {min_score:g};"
+            f" min R:R: 1:{min_rr:g}; risk per trade: {risk:g}%."
+        )
+    else:
+        head = "\n\nПРАВИЛА ПОЛЬЗОВАТЕЛЯ (оцени, подходит ли сетап под них, отрази в action/plan):"
+        body = (
+            f"\n- стиль: {style}; направления: {sides_ru}; мин. балл согласованности: {min_score:g};"
+            f" мин. R:R: 1:{min_rr:g}; риск на сделку: {risk:g}%."
+        )
+    if flags:
+        body += "\n- " + "; ".join(flags) + "."
+    return head + body
+
+
 @app.route("/api/ai-analyst", methods=["POST"])
 @rate_limit(15, 60)
 def api_ai_analyst():
@@ -774,6 +812,10 @@ def api_ai_analyst():
         snapshot = build_analyst_snapshot(
             analysis_to_dict(analysis, pair=pair), lang, level, source, positions
         )
+        # Личные правила пользователя (торговый профиль) — ИИ оценивает сетап под них.
+        prof_txt = _format_profile(body.get("profile"), lang)
+        if prof_txt:
+            snapshot += prof_txt
         has_pos = bool(positions)
         result = analyze_market(
             snapshot, lang, level, has_pos,

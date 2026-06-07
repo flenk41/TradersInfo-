@@ -225,7 +225,113 @@ function renderTradePlan(d) {
       ? "+" + Math.abs(((plan.take - plan.entry) / plan.entry) * 100).toFixed(1) + "%" : "";
     $("tpRR").textContent = plan.rr != null && isFinite(plan.rr) ? "1:" + plan.rr.toFixed(1) : "—";
   }
+  renderTradePlanRule(plan, d);
 }
+
+// ── Торговый профиль (личные правила, как rules.json) ───────────────────────
+const DEFAULT_PROFILE = {
+  style: "any", sides: "both", minScore: 65, minRR: 2,
+  riskPct: 1, requireHtf: true, requireSmc: false, noFlat: true,
+};
+function getTradingProfile() {
+  try {
+    const p = JSON.parse(localStorage.getItem("trading_profile") || "{}");
+    return Object.assign({}, DEFAULT_PROFILE, p && typeof p === "object" ? p : {});
+  } catch (_) { return { ...DEFAULT_PROFILE }; }
+}
+function saveTradingProfile(p) {
+  try { localStorage.setItem("trading_profile", JSON.stringify(p)); } catch (_) {}
+}
+function _clampNum(v, lo, hi, def) {
+  const n = parseFloat(v);
+  return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
+}
+
+// Проверка плана сделки на соответствие правилам пользователя.
+function evaluateProfile(plan, d) {
+  if (!plan || plan.state === "wait" || !plan.side) return { applicable: false };
+  const p = getTradingProfile();
+  const side = plan.side, viol = [], ok = [];
+
+  if (p.sides !== "both") {
+    if (p.sides === side) ok.push("направление разрешено");
+    else viol.push("только " + (p.sides === "long" ? "лонг" : "шорт"));
+  }
+  const score = d && d.accuracy && d.accuracy.overall_pct;
+  if (score != null) {
+    if (score < p.minScore) viol.push("балл " + score + " < " + p.minScore);
+    else ok.push("балл " + score + " ≥ " + p.minScore);
+  }
+  if (plan.rr != null && isFinite(plan.rr)) {
+    if (plan.rr < p.minRR) viol.push("R:R 1:" + plan.rr.toFixed(1) + " < 1:" + p.minRR);
+    else ok.push("R:R 1:" + plan.rr.toFixed(1));
+  }
+  if (p.requireHtf) {
+    const bias = d && d.bias && d.bias.direction;
+    if (bias === side) ok.push("по тренду HTF");
+    else if (bias && bias !== "neutral") viol.push("против тренда HTF");
+  }
+  if (p.requireSmc) {
+    const smc = (typeof smcForTf === "function") ? smcForTf(d) : (d && d.smc);
+    if (smc && smc.smc_bias === side) ok.push("SMC подтверждает");
+    else viol.push("нет SMC-подтверждения");
+  }
+  if (p.noFlat) {
+    const adxs = ((d && d.timeframes) || []).map((t) => t.adx).filter((x) => x);
+    const adx = adxs.length ? adxs.reduce((a, b) => a + b, 0) / adxs.length : null;
+    if (adx != null && adx < 18) viol.push("флэт (ADX " + adx.toFixed(0) + ")");
+  }
+  return { applicable: true, pass: viol.length === 0, violations: viol, ok };
+}
+
+function renderTradePlanRule(plan, d) {
+  const el = $("tpRule");
+  if (!el) return;
+  const r = evaluateProfile(plan, d);
+  if (!r.applicable) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  if (r.pass) {
+    el.className = "tp-rule pass";
+    el.textContent = "✓ По вашим правилам" + (r.ok.length ? ": " + r.ok.slice(0, 3).join(" · ") : "");
+  } else {
+    el.className = "tp-rule fail";
+    el.textContent = "✗ Не по правилам: " + r.violations.join(" · ");
+  }
+}
+
+function openProfileModal() {
+  const p = getTradingProfile();
+  if ($("profStyle")) $("profStyle").value = p.style;
+  if ($("profSides")) $("profSides").value = p.sides;
+  if ($("profMinScore")) $("profMinScore").value = p.minScore;
+  if ($("profMinRR")) $("profMinRR").value = p.minRR;
+  if ($("profRisk")) $("profRisk").value = p.riskPct;
+  if ($("profHtf")) $("profHtf").checked = !!p.requireHtf;
+  if ($("profSmc")) $("profSmc").checked = !!p.requireSmc;
+  if ($("profNoFlat")) $("profNoFlat").checked = !!p.noFlat;
+  $("profileOverlay")?.classList.remove("hidden");
+}
+function readProfileForm() {
+  return {
+    style: $("profStyle")?.value || "any",
+    sides: $("profSides")?.value || "both",
+    minScore: _clampNum($("profMinScore")?.value, 0, 100, 65),
+    minRR: _clampNum($("profMinRR")?.value, 0, 10, 2),
+    riskPct: _clampNum($("profRisk")?.value, 0.1, 100, 1),
+    requireHtf: !!$("profHtf")?.checked,
+    requireSmc: !!$("profSmc")?.checked,
+    noFlat: !!$("profNoFlat")?.checked,
+  };
+}
+$("btnProfile")?.addEventListener("click", openProfileModal);
+$("profileClose")?.addEventListener("click", () => $("profileOverlay")?.classList.add("hidden"));
+$("profileOverlay")?.addEventListener("click", (e) => { if (e.target === $("profileOverlay")) $("profileOverlay").classList.add("hidden"); });
+$("profileSave")?.addEventListener("click", () => {
+  saveTradingProfile(readProfileForm());
+  $("profileOverlay")?.classList.add("hidden");
+  if (lastAnalysisData) renderTradePlan(lastAnalysisData);
+});
+$("profileReset")?.addEventListener("click", () => { saveTradingProfile({ ...DEFAULT_PROFILE }); openProfileModal(); });
 
 // ── Интерактивный сценарий «Что будет, если войти» ──────────────────────────
 // Показывается, когда есть направленный сигнал (лонг/шорт). Наглядно объясняет,
@@ -2792,6 +2898,7 @@ async function runAiAnalyst(level) {
         source: cryptoSource(), level, lang,
         ai_key: cfg.key || "", ai_base: cfg.base || "", ai_model: cfg.model || "",
         positions,
+        profile: getTradingProfile(),
       }),
     })).json();
     const a = j.ok ? j.analyst : null;

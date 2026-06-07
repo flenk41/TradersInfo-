@@ -1648,6 +1648,26 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .tp-why { margin: 11px 0 0; font-size: .82rem; color: var(--muted, #9fb0c6); line-height: 1.45; }
 @media (max-width: 560px) { .tp-grid { grid-template-columns: repeat(2, 1fr); } }
 
+/* Соответствие правилам в карточке плана */
+.tp-rule {
+  margin-top: 10px; padding: 7px 10px; border-radius: 9px; font-size: .8rem; font-weight: 600;
+}
+.tp-rule.hidden { display: none; }
+.tp-rule.pass { background: rgba(34,197,94,.12); color: #6ee7a8; border: 1px solid rgba(34,197,94,.3); }
+.tp-rule.fail { background: rgba(234,179,8,.12); color: #fde047; border: 1px solid rgba(234,179,8,.3); }
+
+/* Модалка торгового профиля */
+.prof-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 6px 0 12px; }
+.prof-field { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--muted, #9fb0c6); }
+.prof-field select, .prof-field input {
+  padding: 7px 9px; border-radius: 9px; background: var(--surface2, #141b2b);
+  border: 1px solid var(--border, rgba(255,255,255,.1)); color: var(--text, #e5e7eb);
+  font-size: .9rem;
+}
+.prof-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: .85rem; cursor: pointer; }
+.prof-check input { width: 16px; height: 16px; accent-color: var(--accent, #6366f1); }
+@media (max-width: 560px) { .prof-grid { grid-template-columns: 1fr; } }
+
 /* Рисование на основном графике */
 .lw-chart-pane { position: relative; }
 .mc-draw-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 5; }

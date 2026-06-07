@@ -199,11 +199,13 @@
               <div class="tp-cell tp-c-rr"><span class="tp-k">R:R</span><strong id="tpRR">—</strong></div>
             </div>
             <p class="tp-why" id="tpWhy"></p>
+            <div class="tp-rule hidden" id="tpRule"></div>
           </section>
 
           <div class="overview-actions" id="overviewActions">
             <button type="button" class="ov-action" id="btnScenario">🎯 <span>Сценарий входа</span><small id="btnScenarioSub">вход · стоп · тейк · плечо</small></button>
             <button type="button" class="ov-action" id="btnRiskCalc">🧮 <span>Калькулятор риска</span><small>плечо и размер под ваш риск</small></button>
+            <button type="button" class="ov-action" id="btnProfile">📋 <span>Мои правила</span><small>сигналы под вашу стратегию</small></button>
             <button type="button" class="ov-action ov-action-wide" id="btnBacktest">📊 <span>Бэктест стратегии</span><small>винрейт и прибыль на истории</small></button>
           </div>
 
@@ -1090,6 +1092,52 @@
         <div class="colors-actions">
           <button type="button" class="btn-primary" id="colorsSave">Сохранить</button>
           <button type="button" class="btn-secondary" id="colorsReset">Сбросить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="profileOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📋 Мои правила торговли</h2>
+        <button type="button" class="modal-close" id="profileClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">Сигналы и план сделки проверяются на соответствие вашим правилам. Хранится в браузере; влияет на пометку «по правилам» и на AI-аналитика.</p>
+        <div class="prof-grid">
+          <label class="prof-field"><span>Стиль</span>
+            <select id="profStyle">
+              <option value="any">Любой</option>
+              <option value="trend">Трендовый</option>
+              <option value="smc">Smart Money (SMC)</option>
+              <option value="scalp">Скальпинг</option>
+              <option value="swing">Свинг</option>
+            </select>
+          </label>
+          <label class="prof-field"><span>Направления</span>
+            <select id="profSides">
+              <option value="both">Лонг и шорт</option>
+              <option value="long">Только лонг</option>
+              <option value="short">Только шорт</option>
+            </select>
+          </label>
+          <label class="prof-field"><span>Мин. балл (0–100)</span>
+            <input type="number" id="profMinScore" min="0" max="100" step="1" value="65">
+          </label>
+          <label class="prof-field"><span>Мин. R:R</span>
+            <input type="number" id="profMinRR" min="0" max="10" step="0.1" value="2">
+          </label>
+          <label class="prof-field"><span>Риск на сделку, %</span>
+            <input type="number" id="profRisk" min="0.1" max="100" step="0.1" value="1">
+          </label>
+        </div>
+        <label class="prof-check"><input type="checkbox" id="profHtf" checked> Входить только по тренду старших ТФ</label>
+        <label class="prof-check"><input type="checkbox" id="profSmc"> Требовать подтверждение SMC</label>
+        <label class="prof-check"><input type="checkbox" id="profNoFlat" checked> Не входить во флэте (слабый тренд)</label>
+        <div class="colors-actions">
+          <button type="button" class="btn-primary" id="profileSave">Сохранить</button>
+          <button type="button" class="btn-secondary" id="profileReset">Сбросить</button>
         </div>
       </div>
     </div>
