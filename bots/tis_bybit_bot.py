@@ -27,9 +27,11 @@ TIS Bybit bot — самостоятельный торговый бот по с
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
 import os
+import sys
 import time
 
 import numpy as np
@@ -76,6 +78,39 @@ _BASE = "https://api-testnet.bybit.com" if TESTNET else "https://api.bybit.com"
 _RECV = "5000"
 API_KEY = os.environ.get("BYBIT_API_KEY", "")
 API_SECRET = os.environ.get("BYBIT_API_SECRET", "")
+
+# Контроль: CSV-лог, Telegram-уведомления (опц.), отслеживание закрытий.
+CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trades.csv")
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "")
+_last_closed_ts = 0
+
+
+def log_csv(event: str, **fields):
+    """Дописывает строку в trades.csv (создаёт с заголовком при первом запуске)."""
+    cols = ["time", "event", "symbol", "side", "qty", "entry", "exit", "stop", "tp", "pnl", "note"]
+    row = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "event": event}
+    row.update({k: fields.get(k, "") for k in cols if k not in ("time", "event")})
+    try:
+        new = not os.path.exists(CSV_PATH)
+        with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            if new:
+                w.writeheader()
+            w.writerow(row)
+    except Exception as e:
+        print("csv:", e)
+
+
+def tg(text: str):
+    """Шлёт сообщение в Telegram, если заданы TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID."""
+    if not TG_TOKEN or not TG_CHAT:
+        return
+    try:
+        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                      json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"}, timeout=10)
+    except Exception:
+        pass
 
 
 # ── Публичные данные (без ключа) ──────────────────────────────────
@@ -244,14 +279,65 @@ def place_order(sig: dict, deposit: float, info: dict):
             print("  set-leverage:", e)
     res = _signed("POST", "/v5/order/create", body)
     print("  orderId:", res.get("orderId"))
+    msg = f"🟢 Открыта {sig['side']} {SYMBOL} qty={qty}\nвход~{sig['entry']} стоп {sig['stop']} тейк {sig['tp']} плечо≤{lev}x риск≈{risk_usd:.2f}$"
+    tg(msg)
+    log_csv("opened", symbol=SYMBOL, side=sig["side"], qty=qty,
+            entry=sig["entry"], stop=sig["stop"], tp=sig["tp"], note=f"lev<={lev}")
 
 
 def _live_allowed() -> bool:
     return MODE == "live" and not TESTNET and os.environ.get("TIS_BOT_CONFIRM_LIVE") == "YES"
 
 
+def close_all_positions():
+    """KILL-SWITCH: закрывает ВСЕ открытые позиции reduce-only рыночными ордерами."""
+    res = _signed("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
+    closed = 0
+    for p in res.get("list") or []:
+        size = float(p.get("size") or 0)
+        if size == 0:
+            continue
+        opp = "Sell" if p.get("side") == "Buy" else "Buy"
+        _signed("POST", "/v5/order/create", {
+            "category": "linear", "symbol": p["symbol"], "side": opp,
+            "orderType": "Market", "qty": str(size), "reduceOnly": True, "timeInForce": "IOC",
+        })
+        closed += 1
+        print(f"  закрыта позиция {p['symbol']} ({size})")
+    msg = f"🛑 Kill-switch: закрыто позиций — {closed}"
+    print(msg); tg(msg); log_csv("kill_switch", note=f"closed={closed}")
+    return closed
+
+
+def poll_closed():
+    """Логирует/уведомляет о закрытых сделках (реальный PnL) с прошлой проверки."""
+    global _last_closed_ts
+    try:
+        res = _signed("GET", "/v5/position/closed-pnl", {"category": "linear", "limit": 20})
+    except Exception:
+        return
+    rows = sorted(res.get("list") or [], key=lambda x: int(x.get("updatedTime") or 0))
+    for r in rows:
+        ts = int(r.get("updatedTime") or 0)
+        if ts <= _last_closed_ts:
+            continue
+        _last_closed_ts = ts
+        pnl = float(r.get("closedPnl") or 0)
+        sym = r.get("symbol", "")
+        emoji = "✅" if pnl >= 0 else "❌"
+        msg = f"{emoji} Закрыта {sym}: PnL {pnl:+.2f} USDT"
+        print(" ", msg); tg(msg)
+        log_csv("closed", symbol=sym, side=r.get("side", ""),
+                entry=r.get("avgEntryPrice", ""), exit=r.get("avgExitPrice", ""), pnl=round(pnl, 4))
+
+
 def main():
     _apply_config()
+    # KILL-SWITCH: закрыть все позиции и выйти.
+    if "--close-all" in sys.argv:
+        print("Kill-switch: закрываю все позиции…")
+        close_all_positions()
+        return
     real = MODE == "live"
     if real and not TESTNET and os.environ.get("TIS_BOT_CONFIRM_LIVE") != "YES":
         print("⛔ LIVE на mainnet требует TIS_BOT_CONFIRM_LIVE=YES. Останавливаюсь (защита).")
@@ -275,6 +361,7 @@ def main():
                 print(f"{ts} нет сигнала (цена {float(df['close'].iloc[-1])})")
             else:
                 print(f"{ts} СИГНАЛ {sig['side']} вход {sig['entry']} стоп {sig['stop']} тейк {sig['tp']}")
+                log_csv("signal", symbol=SYMBOL, side=sig["side"], entry=sig["entry"], stop=sig["stop"], tp=sig["tp"])
                 if real:
                     if not _live_allowed():
                         print("  (live не подтверждён — ордер не отправлен)")
@@ -282,6 +369,8 @@ def main():
                         print("  уже есть позиция — пропуск")
                     else:
                         place_order(sig, wallet_balance(), info)
+            if real and _live_allowed():
+                poll_closed()  # уведомления/лог о закрытых сделках (реальный PnL)
         except Exception as e:
             print("Ошибка цикла:", e)
         time.sleep(POLL_SEC)
