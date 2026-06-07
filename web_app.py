@@ -1009,15 +1009,54 @@ def api_journal_evaluate():
         return jsonify({"ok": False, "error": f"Ошибка оценки журнала: {e}"}), 500
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """Занят ли порт. Проверяем по 127.0.0.1, если host=0.0.0.0 (он не коннектится)."""
+    import socket
+
+    probe_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((probe_host, port)) == 0
+
+
+def _safe_open_browser(host: str, port: int) -> None:
+    open_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    try:
+        webbrowser.open(f"http://{open_host}:{port}")
+    except Exception:
+        pass  # нет браузера/headless — не критично, сервер уже поднят
+
+
 def run_server(host: str = "127.0.0.1", port: int = 5000, open_browser: bool = True) -> None:
+    # Если порт уже занят — почти наверняка работает СТАРЫЙ экземпляр сервера
+    # (он будет отдавать устаревшую страницу). Падаем с понятным сообщением,
+    # а не с сырым OSError, чтобы было ясно, что делать.
+    if _port_in_use(host, port):
+        print(
+            f"\n  ⚠ Порт {port} уже занят — вероятно, старый сервер ещё работает.\n"
+            f"    Закройте его (Ctrl+C в том окне) или завершите процесс на порту {port},\n"
+            f"    иначе в браузере будет открываться УСТАРЕВШАЯ версия страницы.\n"
+            f"    Windows:  Get-NetTCPConnection -LocalPort {port} | Stop-Process -Id {{$_.OwningProcess}}\n",
+            flush=True,
+        )
+        raise SystemExit(1)
     if open_browser:
-        Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
-    print(f"\n  Торговый помощник: http://{host}:{port}\n")
+        Timer(1.2, lambda: _safe_open_browser(host, port)).start()
+    print(f"\n  Торговый помощник: http://{host}:{port}\n", flush=True)
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
     import os
+    import sys
+
+    # Консоль Windows по умолчанию cp1251/866 → кириллица и эмодзи в print
+    # роняют процесс UnicodeEncodeError. Переводим вывод в UTF-8 (errors=replace).
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
     port = int(os.environ.get("PORT", 5000))
     local = os.environ.get("PORT") is None
