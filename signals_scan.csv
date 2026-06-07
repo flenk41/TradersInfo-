@@ -1,9 +1,0 @@
-﻿display,pair,market,side,entry,stop,take_profit,rr,accuracy_pct
-Avalanche,AVAX/USDT,crypto,short,8.11999989,8.27345,7.8131,2.0,73.8
-Bitcoin,BTC/USDT,crypto,short,65783.3828125,67528.077358,62293.993722,2.0,71.7
-Solana,SOL/USDT,crypto,short,72.98999786,75.912311,67.145372,2.0,71.7
-Ethereum,ETH/USDT,crypto,short,1824.22998047,1893.51493,1685.660081,2.0,71.0
-XRP,XRP/USDT,crypto,short,1.21879995,1.233886,1.1883,2.02,70.8
-Cardano,ADA/USDT,crypto,short,0.2094,0.21548,0.19724,2.0,69.3
-BNB,BNB/USDT,crypto,short,625.95001221,652.040062,573.769913,2.0,67.3
-Dogecoin,DOGE/USDT,crypto,short,0.09238,0.09349,0.09016,2.0,66.0

@@ -31,3 +31,5 @@ research/insider_winrate_summary.csv
 research/insider_report.html
 paper_bot.json
 bots/trades.csv
+signals_journal.json
+signals_scan.csv
