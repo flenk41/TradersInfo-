@@ -1509,3 +1509,17 @@ button.bt-tr { cursor: pointer; } button.bt-tr:hover { background: rgba(255,255,
 .bot-step { display: flex; gap: 10px; font-size: .86rem; line-height: 1.45; }
 .bot-step .bot-n { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .78rem; background: var(--accent, #6366f1); color: #fff; }
 .bot-step code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 5px; font-size: .82em; }
+
+/* Конфигуратор бота */
+.bot-cfg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-bottom: 12px; }
+.bot-cfg .div-field select, .bot-cfg .div-field input { width: 100%; padding: 8px 10px; border-radius: 10px;
+  background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.1); color: var(--text, #f1f5f9); font-size: .9rem; }
+.bot-filters { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.bot-dl { margin-bottom: 12px; } .bot-dl .btn-primary { width: 100%; }
+.bot-run { margin-bottom: 8px; }
+.bot-warn { padding: 8px 10px; border-radius: 10px; background: rgba(251,113,133,.14); color: #fb7185; font-size: .8rem; font-weight: 600; margin-bottom: 8px; }
+.bot-note-ok { padding: 8px 10px; border-radius: 10px; background: rgba(52,211,153,.12); color: #34d399; font-size: .8rem; font-weight: 600; margin-bottom: 8px; }
+.bot-cmd-label { font-size: .72rem; color: var(--muted); margin-bottom: 4px; }
+.bot-cmd { background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 10px;
+  font-size: .76rem; font-family: ui-monospace, monospace; white-space: pre-wrap; overflow-x: auto; color: var(--text2, #c7c4d7); margin: 0; }
+@media (max-width: 560px) { .bot-cfg { grid-template-columns: 1fr; } }

@@ -2396,6 +2396,52 @@ function renderScan(setups, scanned) {
 }
 $("botInfoClose")?.addEventListener("click", () => $("botInfoOverlay")?.classList.add("hidden"));
 $("botInfoOverlay")?.addEventListener("click", (e) => { if (e.target === $("botInfoOverlay")) $("botInfoOverlay").classList.add("hidden"); });
+
+// ── Конфигуратор бота: настройки → bot_config.json ──────────────────────────
+function openBotConfig() {
+  const sym = (lastAnalysisData?.pair || activePair || "SOLUSDT").replace("/", "");
+  if ($("botSymbol")) $("botSymbol").value = sym;
+  $("botInfoOverlay")?.classList.remove("hidden");
+  botUpdateRun();
+}
+function botBuildConfig() {
+  const mode = $("botMode").value;  // paper / testnet / mainnet
+  return {
+    symbol: ($("botSymbol").value || "SOLUSDT").trim().toUpperCase().replace("/", ""),
+    interval: $("botInterval").value,
+    mode: mode === "paper" ? "paper" : "live",
+    testnet: mode !== "mainnet",
+    risk_pct: parseFloat($("botRisk").value) || 1,
+    leverage_cap: parseInt($("botLev").value, 10) || 10,
+    rr: parseFloat($("botRR").value) || 2,
+    use_ema200: $("botEma200").checked,
+    adx_min: $("botAdx").checked ? 20 : 0,
+    use_macd: $("botMacd").checked,
+  };
+}
+function botUpdateRun() {
+  const c = botBuildConfig();
+  let run = "python bots/tis_bybit_bot.py";
+  if (c.mode === "live" && !c.testnet) run = "export TIS_BOT_CONFIRM_LIVE=YES\n" + run;
+  const warn = (c.mode === "live" && !c.testnet)
+    ? '<div class="bot-warn">⚠ Mainnet: реальные деньги. Нужен ключ Read+Trade (без вывода) и подтверждение TIS_BOT_CONFIRM_LIVE=YES.</div>'
+    : (c.mode === "live" ? '<div class="bot-note-ok">Testnet: тестовые деньги, риска нет.</div>'
+       : '<div class="bot-note-ok">Бумажный режим: реальные ордера НЕ отправляются.</div>');
+  $("botRun").innerHTML = warn +
+    `<div class="bot-cmd-label">Запуск (ключи — в окружении):</div>` +
+    `<pre class="bot-cmd">export BYBIT_API_KEY="ваш_ключ"\nexport BYBIT_API_SECRET="ваш_секрет"\n${run}</pre>`;
+}
+$("botDownloadCfg")?.addEventListener("click", () => {
+  const cfg = botBuildConfig();
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bot_config.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+["botSymbol", "botInterval", "botMode", "botRisk", "botLev", "botRR", "botEma200", "botAdx", "botMacd"]
+  .forEach((id) => { $(id)?.addEventListener("input", botUpdateRun); $(id)?.addEventListener("change", botUpdateRun); });
 $("scannerClose")?.addEventListener("click", closeScanner);
 $("scannerOverlay")?.addEventListener("click", (e) => { if (e.target === $("scannerOverlay")) closeScanner(); });
 $("scanRun")?.addEventListener("click", () => runScan());
@@ -2761,7 +2807,7 @@ document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
   card.addEventListener("click", () => {
     switch (card.dataset.ctrl) {
       case "scanner": openScanner(); break;
-      case "bot": $("botInfoOverlay")?.classList.remove("hidden"); break;
+      case "bot": openBotConfig(); break;
       case "journal": openJournalAdd(); break;
       case "dividends": openDividends(); break;
       case "colors": openColorsModal(); break;

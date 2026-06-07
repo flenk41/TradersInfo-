@@ -753,14 +753,29 @@
       </div>
       <div class="modal-body">
         <p class="modal-note">⚠ Бот — это отдельный скрипт, который запускаете <b>вы у себя</b>, со <b>своими</b> ключами. Сайт его не запускает и ключи не хранит. Торговля с плечом — высокий риск. Не финансовый совет.</p>
-        <div class="bot-steps">
-          <div class="bot-step"><span class="bot-n">1</span><div><b>Стратегия</b> — та же, что в «📊 Бэктест» (тренд EMA + EMA200-фильтр, RSI, стоп ATR, тейк R:R, размер от риска %). Сначала прогоните бэктест: PF&gt;1.3 при ≥30 сделках.</div></div>
-          <div class="bot-step"><span class="bot-n">2</span><div><b>Файл:</b> <code>bots/tis_bybit_bot.py</code> + инструкция <code>bots/README.md</code> в репозитории.</div></div>
-          <div class="bot-step"><span class="bot-n">3</span><div><b>Ключи</b> — только в переменных окружения (<code>BYBIT_API_KEY/SECRET</code>), права Read+Trade <b>без вывода</b>, лучше суб-аккаунт.</div></div>
-          <div class="bot-step"><span class="bot-n">4</span><div><b>По умолчанию</b> — бумажный режим на testnet (реальные ордера не идут). Live на mainnet включается тремя явными условиями (см. README).</div></div>
-          <div class="bot-step"><span class="bot-n">5</span><div>Запуск: <code>python bots/tis_bybit_bot.py</code></div></div>
+        <div class="bot-cfg">
+          <label class="div-field"><span>Инструмент</span><input type="text" id="botSymbol" placeholder="SOLUSDT"></label>
+          <label class="div-field"><span>Таймфрейм</span>
+            <select id="botInterval"><option value="5">5м</option><option value="15">15м</option><option value="60" selected>1ч</option><option value="240">4ч</option><option value="D">1д</option></select>
+          </label>
+          <label class="div-field"><span>Режим</span>
+            <select id="botMode"><option value="paper" selected>Бумажный (без сделок)</option><option value="testnet">Testnet (тест. деньги)</option><option value="mainnet">Mainnet (реальные ⚠)</option></select>
+          </label>
+          <label class="div-field"><span>Риск на сделку, %</span><input type="number" id="botRisk" value="1" min="0.1" max="10" step="0.1"></label>
+          <label class="div-field"><span>Плечо, не более</span><input type="number" id="botLev" value="10" min="1" max="50" step="1"></label>
+          <label class="div-field"><span>R:R (тейк/риск)</span><input type="number" id="botRR" value="2" min="1" max="5" step="0.5"></label>
         </div>
-        <p class="modal-note">Бот сам подбирает плечо так, чтобы стоп срабатывал раньше ликвидации, и ставит ордер с прикреплёнными стопом и тейком. Вывод средств не делает никогда.</p>
+        <div class="bot-filters">
+          <span class="bt-ctl-label">Фильтры:</span>
+          <label class="bt-flt"><input type="checkbox" id="botEma200" checked> EMA200</label>
+          <label class="bt-flt"><input type="checkbox" id="botAdx"> ADX</label>
+          <label class="bt-flt"><input type="checkbox" id="botMacd"> MACD</label>
+        </div>
+        <div class="bot-dl">
+          <button type="button" class="btn-primary" id="botDownloadCfg">📥 Скачать bot_config.json</button>
+        </div>
+        <div class="bot-run" id="botRun"></div>
+        <p class="modal-note">Скачай <code>bot_config.json</code> и положи рядом с <code>bots/tis_bybit_bot.py</code>. Бот подхватит настройки. Ключи — только в переменных окружения (<code>BYBIT_API_KEY/SECRET</code>, права Read+Trade, БЕЗ вывода). Бот сам подбирает плечо так, чтобы стоп был раньше ликвидации; средства не выводит.</p>
       </div>
     </div>
   </div>

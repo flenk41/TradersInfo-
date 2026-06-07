@@ -46,8 +46,31 @@ LEVERAGE_CAP = 10            # потолок плеча (бот не превы
 RR           = 2.0           # соотношение риск/прибыль (тейк = RR×риск)
 ATR_MULT     = 2.0           # множитель ATR для стопа
 USE_EMA200   = True          # фильтр главного тренда (лучший по бэктесту)
+ADX_MIN      = 0.0           # мин. ADX (0 = выключено); 20 — только сильный тренд
+USE_MACD     = False         # подтверждение импульса по MACD
 POLL_SEC     = 60            # как часто проверять рынок, сек
 # ─────────────────────────────────────────────────────────────────
+
+
+def _apply_config():
+    """Подхватывает bot_config.json (или путь из TIS_BOT_CONFIG), если есть —
+    чтобы менять настройки без правки кода (его генерит интерфейс TIS)."""
+    import json
+    path = os.environ.get("TIS_BOT_CONFIG", "bot_config.json")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        print("Не удалось прочитать", path, ":", e)
+        return
+    g = globals()
+    for k, v in cfg.items():
+        key = k.upper()
+        if key in g:
+            g[key] = v
+    print(f"Загружен конфиг: {path}")
 
 _BASE = "https://api-testnet.bybit.com" if TESTNET else "https://api.bybit.com"
 _RECV = "5000"
@@ -94,6 +117,25 @@ def _atr(df, n=14):
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
+def _adx(df, n=14):
+    h, lo, c = df["high"], df["low"], df["close"]
+    up, dn = h.diff(), -lo.diff()
+    plus = ((up > dn) & (up > 0)) * up
+    minus = ((dn > up) & (dn > 0)) * dn
+    pc = c.shift(1)
+    tr = pd.concat([(h - lo), (h - pc).abs(), (lo - pc).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / n, adjust=False).mean()
+    pdi = 100 * plus.ewm(alpha=1 / n, adjust=False).mean() / atr.replace(0, np.nan)
+    mdi = 100 * minus.ewm(alpha=1 / n, adjust=False).mean() / atr.replace(0, np.nan)
+    dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, np.nan)
+    return dx.ewm(alpha=1 / n, adjust=False).mean()
+
+
+def _macdh(c):
+    macd = _ema(c, 12) - _ema(c, 26)
+    return macd - macd.ewm(span=9, adjust=False).mean()
+
+
 def signal(df: pd.DataFrame) -> dict | None:
     """Возвращает {'side','entry','stop','tp'} или None (нет сигнала)."""
     if len(df) < 220:
@@ -111,8 +153,11 @@ def signal(df: pd.DataFrame) -> dict | None:
     sep = abs(ema20.iloc[i] - ema50.iloc[i]) / price
     if sep < 0.002:
         return None  # флэт
-    long_ok = (not USE_EMA200) or price > ema200.iloc[i]
-    short_ok = (not USE_EMA200) or price < ema200.iloc[i]
+    if ADX_MIN and not np.isnan(_adx(df).iloc[i]) and _adx(df).iloc[i] < ADX_MIN:
+        return None  # слабый тренд
+    mh = _macdh(c).iloc[i] if USE_MACD else 0
+    long_ok = ((not USE_EMA200) or price > ema200.iloc[i]) and (not USE_MACD or mh > 0)
+    short_ok = ((not USE_EMA200) or price < ema200.iloc[i]) and (not USE_MACD or mh < 0)
     r = rsi.iloc[i]
     if up and long_ok and 45 <= r <= 70:
         stop = price - ATR_MULT * a
@@ -206,6 +251,7 @@ def _live_allowed() -> bool:
 
 
 def main():
+    _apply_config()
     real = MODE == "live"
     if real and not TESTNET and os.environ.get("TIS_BOT_CONFIRM_LIVE") != "YES":
         print("⛔ LIVE на mainnet требует TIS_BOT_CONFIRM_LIVE=YES. Останавливаюсь (защита).")
