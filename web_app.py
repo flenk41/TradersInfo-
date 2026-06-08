@@ -1085,7 +1085,10 @@ def run_server(host: str = "127.0.0.1", port: int = 5000, open_browser: bool = T
     if open_browser:
         Timer(1.2, lambda: _safe_open_browser(host, port)).start()
     print(f"\n  Торговый помощник: http://{host}:{port}\n", flush=True)
-    app.run(host=host, port=port, debug=False, use_reloader=False)
+    # threaded=True обязателен: фронт (SPA) шлёт много параллельных запросов
+    # (live-поллинг + анализ + котировки). Без потоков один долгий cold-analyze
+    # блокирует весь сервер, и в браузере всё «зависает».
+    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
 
 
 if __name__ == "__main__":
