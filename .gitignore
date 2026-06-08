@@ -16,6 +16,7 @@ Thumbs.db
 *.swo
 dist/
 build/
+release/
 *.egg-info/
 .coverage
 htmlcov/
