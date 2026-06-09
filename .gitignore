@@ -17,8 +17,7 @@ Thumbs.db
 dist/
 build/
 release/
-marketing/tiktok/frames/
-marketing/tiktok/frames_en/
+marketing/
 *.egg-info/
 .coverage
 htmlcov/
