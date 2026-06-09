@@ -1,5 +1,7 @@
 # Trading Info Stats (TIS)
 
+[![CI](https://github.com/flenk41/TradersInfo-/actions/workflows/ci.yml/badge.svg)](https://github.com/flenk41/TradersInfo-/actions/workflows/ci.yml)
+
 > Веб-терминал торговой аналитики. Проект под **двойной лицензией**:
 > открытый по **AGPL-3.0** для сообщества и **платный по коммерческой лицензии**
 > для закрытого/коммерческого использования (см. раздел [Лицензия](#лицензия)).

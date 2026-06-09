@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="ru"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0e17;
+            color: #dfe2ef;
+            overflow-x: hidden;
+        }
+        .glass-card {
+            background: rgba(19, 26, 40, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            transition: border-color 0.3s ease, transform 0.2s ease;
+        }
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .aurora-blur {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            filter: blur(120px);
+            opacity: 0.15;
+            z-index: -1;
+            border-radius: 50%;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container-lowest": "#0a0e17",
+                      "inverse-primary": "#4b49d8",
+                      "primary-fixed-dim": "#c1c1ff",
+                      "on-background": "#dfe2ef",
+                      "surface-dim": "#0f131c",
+                      "surface-container-high": "#262a34",
+                      "on-surface-variant": "#c7c4d7",
+                      "outline-variant": "#464554",
+                      "error-container": "#93000a",
+                      "secondary": "#d0bcff",
+                      "secondary-fixed-dim": "#d0bcff",
+                      "on-secondary-fixed-variant": "#5516be",
+                      "outline": "#908fa0",
+                      "surface-bright": "#353943",
+                      "on-primary-container": "#120094",
+                      "surface": "#0f131c",
+                      "surface-container-low": "#181b25",
+                      "on-secondary-container": "#c4abff",
+                      "tertiary-container": "#ba6bff",
+                      "primary-container": "#8283ff",
+                      "inverse-surface": "#dfe2ef",
+                      "surface-container-highest": "#31353f",
+                      "on-surface": "#dfe2ef",
+                      "background": "#0f131c",
+                      "secondary-container": "#571bc1",
+                      "surface-tint": "#c1c1ff",
+                      "on-primary-fixed": "#0a006b",
+                      "on-tertiary-fixed": "#2d004f",
+                      "on-error": "#690005",
+                      "on-tertiary-container": "#41006f",
+                      "on-secondary": "#3c0091",
+                      "primary": "#c1c1ff",
+                      "tertiary": "#dfb7ff",
+                      "tertiary-fixed": "#f1daff",
+                      "secondary-fixed": "#e9ddff",
+                      "on-primary": "#1600a8",
+                      "surface-variant": "#31353f",
+                      "inverse-on-surface": "#2c303a",
+                      "on-error-container": "#ffdad6",
+                      "primary-fixed": "#e2dfff",
+                      "on-tertiary-fixed-variant": "#6b00b0",
+                      "on-tertiary": "#4b007e",
+                      "tertiary-fixed-dim": "#dfb7ff",
+                      "surface-container": "#1c1f29",
+                      "error": "#ffb4ab",
+                      "on-primary-fixed-variant": "#312cc0",
+                      "on-secondary-fixed": "#23005c"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "input-padding": "12px 16px",
+                      "unit": "4px",
+                      "section-gap": "32px",
+                      "gutter": "16px",
+                      "container-margin": "24px"
+              },
+              "fontFamily": {
+                      "label-caps": ["Inter"],
+                      "title-md": ["Inter"],
+                      "display-xl": ["Inter"],
+                      "headline-lg": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "body-sm": ["Inter"],
+                      "data-mono": ["Inter"]
+              },
+              "fontSize": {
+                      "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "display-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "data-mono": ["14px", {"lineHeight": "20px", "fontWeight": "500"}]
+              }
+            }
+          }
+        }
+    </script>
+</head>
+<body class="bg-surface-container-lowest">
+<!-- Atmospheric Background -->
+<div class="aurora-blur bg-primary top-[-10%] left-[-10%]"></div>
+<div class="aurora-blur bg-tertiary bottom-[-10%] right-[-10%]"></div>
+<!-- Side Navigation Shell -->
+<aside class="fixed left-0 top-0 h-full w-[280px] bg-surface-dim/80 backdrop-blur-2xl border-r border-white/10 flex flex-col py-6 z-50 hidden md:flex">
+<div class="px-6 mb-10">
+<h1 class="font-title-md text-title-md text-primary">TRADING INFO STATS</h1>
+</div>
+<nav class="flex-1 space-y-1 px-4">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">leaderboard</span>
+<span class="font-label-caps text-label-caps">Терминал</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">filter_alt</span>
+<span class="font-label-caps text-label-caps">Скринер</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary-container/20 text-primary border-r-4 border-primary transition-all duration-300" href="#">
+<span class="material-symbols-outlined">import_contacts</span>
+<span class="font-label-caps text-label-caps">Журнал</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">sensors</span>
+<span class="font-label-caps text-label-caps">Сигналы</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">calculate</span>
+<span class="font-label-caps text-label-caps">Калькулятор</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-on-surface-variant hover:bg-white/5 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-label-caps text-label-caps">Профиль</span>
+</a>
+</nav>
+<div class="mt-auto px-4 space-y-1">
+<div class="flex items-center gap-3 px-4 py-4 mb-4 rounded-2xl bg-surface-container-high/40">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold">A</div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface">Аналитик</span>
+<span class="text-[10px] text-primary/70 uppercase tracking-widest">Premium Plan</span>
+</div>
+</div>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-label-caps text-label-caps">Помощь</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-error hover:opacity-80 transition-colors" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-caps text-label-caps">Выход</span>
+</a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="md:ml-[280px] min-h-screen">
+<!-- Header -->
+<header class="sticky top-0 z-40 bg-surface/80 backdrop-blur-xl border-b border-white/10 px-container-margin h-16 flex items-center justify-between shadow-2xl">
+<div class="flex items-center gap-4">
+<h2 class="font-title-md text-title-md text-on-surface flex items-center gap-2">
+<span class="text-2xl">📒</span> Журнал сигналов
+                </h2>
+</div>
+<div class="flex items-center gap-3">
+<button class="bg-primary text-on-primary-fixed px-5 py-2 rounded-lg font-label-caps text-label-caps flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                    Записать сигнал
+                </button>
+<button class="p-2 text-on-surface-variant hover:bg-white/5 rounded-lg transition-colors">
+<span class="material-symbols-outlined">refresh</span>
+</button>
+<button class="p-2 text-error hover:bg-error/10 rounded-lg transition-colors group">
+<span class="material-symbols-outlined">delete_sweep</span>
+<span class="hidden group-hover:inline ml-1 font-label-caps text-label-caps">Очистить</span>
+</button>
+</div>
+</header>
+<div class="p-container-margin max-w-7xl mx-auto space-y-8">
+<!-- Stats Row: Bento Grid Style -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="glass-card p-6 rounded-2xl flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">Winrate</span>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-primary">68.4%</span>
+<span class="text-xs text-green-400 font-medium">+2.1% с пр. недели</span>
+</div>
+<div class="w-full bg-white/5 h-1.5 rounded-full mt-4 overflow-hidden">
+<div class="bg-primary h-full w-[68.4%]"></div>
+</div>
+</div>
+<div class="glass-card p-6 rounded-2xl flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">Risk : Reward (Средний)</span>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-on-surface">1 : 3.4</span>
+</div>
+<div class="flex gap-1 mt-4">
+<div class="h-1 flex-1 bg-primary/20 rounded-full"></div>
+<div class="h-1 flex-1 bg-primary/40 rounded-full"></div>
+<div class="h-1 flex-1 bg-primary rounded-full"></div>
+</div>
+</div>
+<div class="glass-card p-6 rounded-2xl flex flex-col relative overflow-hidden">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">Profit Factor</span>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-lg text-headline-lg text-tertiary">2.18</span>
+</div>
+<!-- Small decorative chart logic -->
+<div class="absolute bottom-0 right-0 w-32 h-16 opacity-30">
+<svg class="w-full h-full" viewbox="0 0 100 40">
+<path class="text-tertiary" d="M0 40 Q 20 30, 40 35 T 80 10 L 100 0" fill="none" stroke="currentColor" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</section>
+<!-- Signals List -->
+<section class="space-y-4">
+<div class="flex items-center justify-between">
+<h3 class="font-title-md text-title-md text-on-surface">Последние сигналы</h3>
+<div class="flex gap-2">
+<span class="px-3 py-1 bg-surface-container-high rounded-full font-label-caps text-label-caps text-on-surface-variant cursor-pointer hover:text-on-surface transition-colors">Все</span>
+<span class="px-3 py-1 hover:bg-surface-container-high rounded-full font-label-caps text-label-caps text-on-surface-variant cursor-pointer transition-colors">В процессе</span>
+<span class="px-3 py-1 hover:bg-surface-container-high rounded-full font-label-caps text-label-caps text-on-surface-variant cursor-pointer transition-colors">Закрытые</span>
+</div>
+</div>
+<div class="space-y-3">
+<!-- Signal Card 1 (TP) -->
+<div class="glass-card p-5 rounded-2xl flex flex-wrap md:flex-nowrap items-center gap-6 group">
+<div class="flex items-center gap-4 min-w-[160px]">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center border border-white/5">
+<span class="material-symbols-outlined text-primary">currency_bitcoin</span>
+</div>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md">BTC/USDT</span>
+<span class="text-xs text-on-surface-variant">14 Окт, 14:30</span>
+</div>
+</div>
+<div class="px-4 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 font-label-caps text-label-caps">
+                            LONG
+                        </div>
+<div class="grid grid-cols-3 flex-1 gap-4">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Вход</span>
+<span class="font-data-mono text-data-mono">67,240.50</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Стоп-лосс</span>
+<span class="font-data-mono text-data-mono text-error/80">66,800.00</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Тейк-профит</span>
+<span class="font-data-mono text-data-mono text-green-400">69,500.00</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="px-3 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded-full font-label-caps text-label-caps flex items-center gap-1">
+                                TP <span class="material-symbols-outlined text-sm">done</span>
+</div>
+<button class="p-2 opacity-0 group-hover:opacity-100 transition-opacity text-on-surface-variant hover:text-on-surface">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Signal Card 2 (SL) -->
+<div class="glass-card p-5 rounded-2xl flex flex-wrap md:flex-nowrap items-center gap-6 group">
+<div class="flex items-center gap-4 min-w-[160px]">
+<div class="w-12 h-12 rounded-xl bg-surface-container-highest flex items-center justify-center border border-white/5">
+<span class="material-symbols-outlined text-primary">atm</span>
+</div>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md">ETH/USDT</span>
+<span class="text-xs text-on-surface-variant">14 Окт, 12:15</span>
+</div>
+</div>
+<div class="px-4 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 font-label-caps text-label-caps">
+                            SHORT
+                        </div>
+<div class="grid grid-cols-3 flex-1 gap-4">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Вход</span>
+<span class="font-data-mono text-data-mono">2,640.20</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Стоп-лосс</span>
+<span class="font-data-mono text-data-mono text-error/80">2,680.00</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Тейк-профит</span>
+<span class="font-data-mono text-data-mono text-green-400">2,500.00</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="px-3 py-1 bg-error/20 text-error border border-error/30 rounded-full font-label-caps text-label-caps flex items-center gap-1">
+                                SL <span class="material-symbols-outlined text-sm">close</span>
+</div>
+<button class="p-2 opacity-0 group-hover:opacity-100 transition-opacity text-on-surface-variant hover:text-on-surface">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Signal Card 3 (Open) -->
+<div class="glass-card p-5 rounded-2xl flex flex-wrap md:flex-nowrap items-center gap-6 group border-primary/20">
+<div class="flex items-center gap-4 min-w-[160px]">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 relative">
+<span class="material-symbols-outlined text-primary">token</span>
+<span class="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full animate-pulse"></span>
+</div>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md">SOL/USDT</span>
+<span class="text-xs text-on-surface-variant">Только что</span>
+</div>
+</div>
+<div class="px-4 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 font-label-caps text-label-caps">
+                            LONG
+                        </div>
+<div class="grid grid-cols-3 flex-1 gap-4">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Вход</span>
+<span class="font-data-mono text-data-mono">154.25</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Текущая</span>
+<span class="font-data-mono text-data-mono text-primary">156.10</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-tighter">Тейк-профит</span>
+<span class="font-data-mono text-data-mono text-green-400">170.00</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="px-3 py-1 bg-surface-container-highest text-on-surface border border-white/10 rounded-full font-label-caps text-label-caps flex items-center gap-1">
+                                В РАБОТЕ
+                            </div>
+<button class="p-2 opacity-0 group-hover:opacity-100 transition-opacity text-on-surface-variant hover:text-on-surface">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Journal Notes / Asymmetric Detail Section -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8">
+<div class="glass-card p-8 rounded-3xl relative group overflow-hidden">
+<div class="flex justify-between items-start mb-6">
+<h4 class="font-title-md text-title-md text-on-surface">Заметки трейдера</h4>
+<button class="text-primary text-sm hover:underline">Добавить</button>
+</div>
+<div class="space-y-4">
+<div class="p-4 rounded-xl bg-white/5 border-l-4 border-primary">
+<p class="text-body-sm font-body-sm text-on-surface-variant italic">"BTC пробил зону 66к, закрепление выше 67к дает надежный вход. Следует ожидать волатильность перед открытием Нью-Йорка."</p>
+<span class="text-[10px] text-on-surface-variant/50 mt-2 block uppercase">14 Окт • Рыночный контекст</span>
+</div>
+<div class="p-4 rounded-xl bg-white/5 border-l-4 border-tertiary">
+<p class="text-body-sm font-body-sm text-on-surface-variant italic">"SOL показывает силу на 4Ч. Дивергенция по RSI подтверждает разворот."</p>
+<span class="text-[10px] text-on-surface-variant/50 mt-2 block uppercase">13 Окт • ТА Анализ</span>
+</div>
+</div>
+</div>
+<!-- Abstract Visual/Promo -->
+<div class="relative rounded-3xl overflow-hidden min-h-[300px]">
+<img alt="Financial Market Concept" class="absolute inset-0 w-full h-full object-cover grayscale opacity-40 group-hover:grayscale-0 transition-all duration-700" data-alt="A professional high-tech workspace for a financial trader, featuring multiple ultra-wide curved monitors displaying complex dark-themed trading charts and analytical data. The lighting is low and moody with cyan and purple neon accents reflecting off sleek glass surfaces. The aesthetic is extremely high-end and modern, emphasizing precision and technological advancement in a dark mode environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcZvHpaEq7ms86h4xiLpfTEIrahA96NKykwjTmLqmKDgv3TF2P5rzEDY6GBobbMs5sBJ93RSF1FWZ5bgl3yP4nJXeixoobMN049xtvJP8Q8bo5-gl1xUmbL3aPp7aT2XGTBU6iR8YqqZIxlKB3-AapKDV8x5UlfXU-VrrQ8vKfqGns8pwFpAM3m2g0P3bvra1xZFx1aYZBZVnvcwScGBJflL8Gc-q0Nj6qYDv9s1Ogb7LL_-AVPR13251aH4H3XrGgzeCZ2ojV1tce"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/40 to-transparent p-8 flex flex-col justify-end">
+<h4 class="font-headline-lg text-headline-lg text-primary">Анализ Эффективности</h4>
+<p class="text-on-surface-variant text-body-lg max-w-sm mb-4">Автоматизируйте свои отчеты и находите закономерности в своих сделках с помощью ИИ.</p>
+<button class="self-start px-6 py-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 transition-all font-label-caps text-label-caps">Подробнее об AI-аналитике</button>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Mobile Navigation (visible only on mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-surface-dim/90 backdrop-blur-xl border-t border-white/10 flex items-center justify-around px-4 z-50">
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">leaderboard</span>
+<span class="text-[10px] uppercase font-bold tracking-tighter">Терминал</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">import_contacts</span>
+<span class="text-[10px] uppercase font-bold tracking-tighter">Журнал</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">sensors</span>
+<span class="text-[10px] uppercase font-bold tracking-tighter">Сигналы</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="text-[10px] uppercase font-bold tracking-tighter">Профиль</span>
+</button>
+</nav>
+<script>
+        // Micro-interactions and subtle effects
+        document.querySelectorAll('.glass-card').forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            });
+        });
+
+        // Simplified clear logic (visual only)
+        const clearBtn = document.querySelector('.text-error.group');
+        if(clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if(confirm('Вы уверены, что хотите очистить журнал?')) {
+                    alert('Журнал очищен (демо)');
+                }
+            });
+        }
+    </script>
+</body></html>

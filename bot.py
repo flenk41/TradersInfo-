@@ -10,9 +10,9 @@ import sys
 
 from colorama import Fore, Style, init
 
-from data_fetcher import BinanceDataError
-from engine import analyze_pair
-from formatter import format_analysis
+from tis.data.data_fetcher import BinanceDataError
+from tis.engine import analyze_pair
+from tis.core.formatter import format_analysis
 
 init(autoreset=True)
 

@@ -18,11 +18,16 @@ const TradingChart = (() => {
   let lastCandles = [];
   let mainContainer = null;
   let zoneOverlay = null;
+  let tradePlanCanvas = null;
+  let tpCtx = null;
+  let tradePlan = null;
+  let smcData = null;
+  let smcVisible = false;
   let resizeObserver = null;
   let liveTimer = null;
   let curSymbol = "$";
   let live = { pair: null, market: "crypto", interval: "1h" };
-  const LIVE_MS = 8000;
+  const LIVE_MS = 2000;
   const VOL_UP = "rgba(52, 211, 153, 0.7)";
   const VOL_DOWN = "rgba(251, 113, 133, 0.7)";
 
@@ -86,6 +91,11 @@ const TradingChart = (() => {
       borderDownColor: "#ef4444",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+      // Живая ценовая линия + метка последней цены (двигается при каждом обновлении)
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineStyle: LightweightCharts.LineStyle.Dotted,
+      lastValueVisible: true,
       // Масштаб цены строим ТОЛЬКО по свечам, игнорируя ценовые линии (входы/стоп/тейк),
       // иначе линия с чужого масштаба растягивает шкалу и сплющивает свечи.
       autoscaleInfoProvider: (original) => {
@@ -133,6 +143,151 @@ const TradingChart = (() => {
       resize();
     });
     resizeObserver.observe(parent || mainEl);
+
+    tradePlanCanvas = document.getElementById("tradePlanCanvas");
+    if (tradePlanCanvas) {
+      tpCtx = tradePlanCanvas.getContext("2d");
+      sizeTradeCanvas();
+    }
+
+    if (window.ChartDraw) {
+      window.ChartDraw.attach({
+        chart: mainChart,
+        series: candleSeries,
+        container: mainEl,
+        canvas: document.getElementById("mcDrawCanvas"),
+      });
+    }
+  }
+
+  function sizeTradeCanvas() {
+    if (!tradePlanCanvas || !mainContainer) return;
+    const w = mainContainer.clientWidth || 800;
+    const h = mainContainer.clientHeight || 360;
+    const dpr = window.devicePixelRatio || 1;
+    tradePlanCanvas.width = Math.round(w * dpr);
+    tradePlanCanvas.height = Math.round(h * dpr);
+    tradePlanCanvas.style.width = w + "px";
+    tradePlanCanvas.style.height = h + "px";
+    tpCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Аналитический оверлей на одной канве: SMC (фон) + зоны сделки (передний план).
+  function setTradePlan(plan) {
+    tradePlan = plan && (plan.state === "enter" || plan.state === "wait_pullback") ? plan : null;
+    drawOverlay();
+  }
+
+  function setSmc(data) {
+    smcData = data || null;
+    drawOverlay();
+  }
+
+  function toggleSmc(show) {
+    smcVisible = show == null ? !smcVisible : !!show;
+    drawOverlay();
+    return smcVisible;
+  }
+
+  function drawOverlay() {
+    if (!tpCtx || !tradePlanCanvas) return;
+    const W = tradePlanCanvas.clientWidth, H = tradePlanCanvas.clientHeight;
+    tpCtx.clearRect(0, 0, W, H);
+    if (!candleSeries || !lastCandles.length) return;
+    if (smcVisible && smcData) drawSmc(W, H);
+    if (tradePlan) drawTradePlan(W, H);
+  }
+
+  function _band(y, text, col, align, W) {
+    tpCtx.save();
+    tpCtx.font = "11px ui-monospace, monospace";
+    const tw = tpCtx.measureText(text).width + 10;
+    const x = align === "left" ? 6 : W - tw - 6;
+    tpCtx.fillStyle = col;
+    tpCtx.fillRect(x, y - 8, tw, 16);
+    tpCtx.fillStyle = "#fff";
+    tpCtx.fillText(text, x + 5, y + 3.5);
+    tpCtx.restore();
+  }
+
+  function drawTradePlan(W, H) {
+    const { entry, stop, take, side } = tradePlan;
+    const yE = candleSeries.priceToCoordinate(entry);
+    const yS = stop != null ? candleSeries.priceToCoordinate(stop) : null;
+    const yT = take != null ? candleSeries.priceToCoordinate(take) : null;
+    if (yE == null) return;
+
+    const sideCol = side === "short" ? "#a855f7" : "#3b82f6";
+    if (yT != null) {
+      tpCtx.fillStyle = "rgba(34, 197, 94, 0.13)";
+      tpCtx.fillRect(0, Math.min(yE, yT), W, Math.abs(yT - yE));
+      _band(yT, "Цель " + _fmtP(take), "#22c55e", "right", W);
+    }
+    if (yS != null) {
+      tpCtx.fillStyle = "rgba(239, 68, 68, 0.13)";
+      tpCtx.fillRect(0, Math.min(yE, yS), W, Math.abs(yS - yE));
+      _band(yS, "Стоп " + _fmtP(stop), "#ef4444", "right", W);
+    }
+    tpCtx.save();
+    tpCtx.strokeStyle = sideCol; tpCtx.lineWidth = 2; tpCtx.setLineDash([6, 3]);
+    tpCtx.beginPath(); tpCtx.moveTo(0, yE); tpCtx.lineTo(W, yE); tpCtx.stroke();
+    tpCtx.restore();
+    _band(yE, (side === "short" ? "ШОРТ" : "ЛОНГ") + " вход " + _fmtP(entry), sideCol, "left", W);
+  }
+
+  // SMC-оверлей: ордер-блоки (зоны), снятие ликвидности (линии), равновесие (EQ).
+  function drawSmc(W, H) {
+    const yOf = (p) => candleSeries.priceToCoordinate(p);
+
+    // ордер-блоки — полупрозрачные зоны
+    (smcData.order_blocks || []).forEach((ob) => {
+      const y1 = yOf(ob.high), y2 = yOf(ob.low);
+      if (y1 == null || y2 == null) return;
+      const top = Math.min(y1, y2), h = Math.abs(y2 - y1) || 2;
+      const bull = ob.kind === "bullish";
+      tpCtx.save();
+      tpCtx.fillStyle = bull ? "rgba(45, 212, 191, 0.16)" : "rgba(168, 85, 247, 0.16)";
+      tpCtx.fillRect(0, top, W, h);
+      tpCtx.strokeStyle = bull ? "rgba(45, 212, 191, 0.7)" : "rgba(168, 85, 247, 0.7)";
+      tpCtx.lineWidth = 1; tpCtx.setLineDash([3, 3]);
+      tpCtx.strokeRect(0, top, W - 1, h);
+      tpCtx.restore();
+      _band(top + 7, (bull ? "OB ↑ " : "OB ↓ ") + _fmtP(ob.mid),
+        bull ? "#14b8a6" : "#a855f7", "left", W);
+    });
+
+    // снятие ликвидности — горизонтальные линии у пробитого свинга
+    (smcData.liquidity_sweeps || []).forEach((s) => {
+      const y = yOf(s.level);
+      if (y == null) return;
+      const col = s.side === "bullish" ? "#22c55e" : "#ef4444";
+      tpCtx.save();
+      tpCtx.strokeStyle = col; tpCtx.lineWidth = 1.5; tpCtx.setLineDash([2, 4]);
+      tpCtx.beginPath(); tpCtx.moveTo(0, y); tpCtx.lineTo(W, y); tpCtx.stroke();
+      tpCtx.restore();
+      _band(y, "✖ ликвидность " + _fmtP(s.level), col, "right", W);
+    });
+
+    // равновесие диапазона (premium/discount)
+    const pd = smcData.premium_discount;
+    if (pd && pd.eq != null) {
+      const y = yOf(pd.eq);
+      if (y != null) {
+        tpCtx.save();
+        tpCtx.strokeStyle = "rgba(148,163,184,0.6)"; tpCtx.lineWidth = 1; tpCtx.setLineDash([1, 5]);
+        tpCtx.beginPath(); tpCtx.moveTo(0, y); tpCtx.lineTo(W, y); tpCtx.stroke();
+        tpCtx.restore();
+        _band(y, "EQ 50% · " + (pd.zone === "premium" ? "выше=premium" : pd.zone === "discount" ? "ниже=discount" : "равновесие"),
+          "#64748b", "left", W);
+      }
+    }
+  }
+
+  function _fmtP(v) {
+    if (v == null) return "";
+    const a = Math.abs(v);
+    const d = a >= 1000 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
+    return v.toFixed(d);
   }
 
   function resize() {
@@ -145,6 +300,9 @@ const TradingChart = (() => {
       const fc = document.getElementById("fundingChartContainer");
       fundingChart.applyOptions({ width: fc?.clientWidth || width, height: 88 });
     }
+    sizeTradeCanvas();
+    drawOverlay();
+    if (window.ChartDraw) window.ChartDraw.resize();
   }
 
   function clearFunding() {
@@ -199,6 +357,9 @@ const TradingChart = (() => {
       zoneOverlay.appendChild(box);
     };
 
+    if (window.ChartDraw) window.ChartDraw.redraw();
+    drawOverlay();
+
     zoneData.longEntry.forEach((z) => drawZone(z, "long-entry"));
     zoneData.shortEntry.forEach((z) => drawZone(z, "short-entry"));
     zoneData.support.forEach((z) => drawZone(z, "support"));
@@ -235,6 +396,7 @@ const TradingChart = (() => {
     lastCandles = candles;
     candleSeries.setData(candles);
     if (volumeSeries) volumeSeries.setData(candles.map(_volBar));
+    if (window.ChartDraw) window.ChartDraw.setBars(candles.length);
     mainChart.timeScale().fitContent();
     // принудительно пересчитываем ценовую шкалу под новые свечи
     try {
@@ -314,10 +476,31 @@ const TradingChart = (() => {
     if (current) addLine("current", current, COLORS.current, "Сейчас", LightweightCharts.LineStyle.Solid);
   }
 
+  const _TF_RU = { "5m": "5м", "15m": "15м", "1h": "1ч", "4h": "4ч", "1d": "1д" };
+  function _tfArrow(trend) {
+    const t = (trend || "").toUpperCase();
+    if (t.includes("БЫЧ") || t.includes("ВОСХ") || t.includes("BULL")) return { a: "↑", c: "up" };
+    if (t.includes("МЕДВ") || t.includes("НИСХ") || t.includes("BEAR")) return { a: "↓", c: "down" };
+    return { a: "→", c: "flat" };
+  }
+  function _tfTrendHtml(timeframes) {
+    if (!Array.isArray(timeframes) || !timeframes.length) return "";
+    const order = ["15m", "1h", "4h", "1d"];
+    const parts = order
+      .map((tf) => timeframes.find((t) => t.timeframe === tf))
+      .filter(Boolean)
+      .map((t) => {
+        const ar = _tfArrow(t.trend);
+        return `<span class="ct-tf ${ar.c}">${_TF_RU[t.timeframe] || t.timeframe} ${ar.a}</span>`;
+      });
+    return parts.join("");
+  }
+
   function setTrendBar(data) {
     const el = document.getElementById("chartTrendBar");
     if (!el || !data) return;
     const bias = data.bias;
+    const tfHtml = _tfTrendHtml(data.timeframes);
     el.innerHTML = `
       <div class="chart-trend-item">
         <span class="ct-label">Тренд</span>
@@ -326,8 +509,9 @@ const TradingChart = (() => {
       <div class="chart-trend-item">
         <span class="ct-label">HTF Bias</span>
         <strong class="ct-value bias-${bias?.direction || "neutral"}">${bias?.direction?.toUpperCase() || "—"}</strong>
-      </div>
-      <div class="chart-trend-item wide">
+      </div>` +
+      (tfHtml ? `<div class="chart-trend-item ct-tfs"><span class="ct-label">По ТФ</span><span class="ct-tf-row">${tfHtml}</span></div>` : "") +
+      `<div class="chart-trend-item wide">
         <span class="ct-label">Сводка</span>
         <span class="ct-summary">${data.trend_summary || ""}</span>
       </div>
@@ -380,12 +564,19 @@ const TradingChart = (() => {
     // с другого ценового масштаба (напр. BTC 76000 vs EUR 1.16) растягивают автошкалу
     // и новые свечи сплющиваются в невидимую полоску.
     const pairChanged = live.pair !== pair;
+    // Глушим опрос прошлой пары на время загрузки — чтобы ни один поллинг
+    // не дописал чужую свечу, пока грузятся новые klines.
+    stopLive();
     if (pairChanged) {
       clearEntryZones();
       removeLines();
+      setTradePlan(null);
+      setSmc(null);
     }
     live = { pair, market: m, interval: tf };
-    const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=200&market=${encodeURIComponent(m)}`;
+    // Рисунки привязаны к паре+ТФ (логические индексы/время свечей зависят от ТФ).
+    if (window.ChartDraw) window.ChartDraw.setPair(m, pair + "@" + tf);
+    const base = `pair=${encodeURIComponent(pair)}&interval=${tf}&limit=500&market=${encodeURIComponent(m)}`;
     const kRes = await fetch(`/api/klines?${base}`);
     const kJson = await kRes.json();
     if (kJson.ok) setCandles(kJson.candles);
@@ -419,14 +610,25 @@ const TradingChart = (() => {
     const el = document.getElementById("chartTimer");
     if (!el) return;
     if (!live.pair) {
-      el.textContent = "↻ —";
+      el.classList.remove("is-live");
+      el.innerHTML = "↻ —";
       return;
     }
     if (document.hidden) {
-      el.textContent = "↻ пауза";
+      el.classList.remove("is-live");
+      el.innerHTML = "❚❚ пауза";
       return;
     }
-    el.textContent = `↻ ${Math.max(0, liveCountdown)}с`;
+    el.classList.add("is-live");
+    el.innerHTML = `<span class="live-dot"></span>LIVE <span class="live-cd">${Math.max(0, liveCountdown)}с</span>`;
+  }
+
+  // короткая вспышка индикатора при реальном обновлении свечи
+  function flashLive() {
+    const el = document.getElementById("chartTimer");
+    if (!el) return;
+    el.classList.add("live-tick");
+    setTimeout(() => el.classList.remove("live-tick"), 350);
   }
 
   function startLive() {
@@ -457,19 +659,28 @@ const TradingChart = (() => {
 
   async function pollLive() {
     if (!live.pair || !candleSeries || document.hidden) return;
+    // Фиксируем пару на момент запроса: пока идёт await, пользователь мог
+    // переключить инструмент. Если ответ пришёл уже для ДРУГОЙ пары — отбрасываем,
+    // иначе чужая свеча (с другим масштабом цены) попадёт в lastCandles и
+    // растянет автошкалу, сплющив свечи нового инструмента.
+    const reqPair = live.pair, reqInterval = live.interval, reqMarket = live.market;
     try {
-      const base = `pair=${encodeURIComponent(live.pair)}&interval=${live.interval}&limit=3&market=${encodeURIComponent(live.market)}`;
+      const base = `pair=${encodeURIComponent(reqPair)}&interval=${reqInterval}&limit=3&market=${encodeURIComponent(reqMarket)}`;
       const res = await fetch(`/api/klines?${base}`);
       const json = await res.json();
+      if (live.pair !== reqPair || live.interval !== reqInterval || live.market !== reqMarket) return;
       if (!json.ok || !json.candles?.length) return;
       // lightweight-charts .update() кидает ошибку для свечей СТАРШЕ последней,
       // поэтому обновляем только текущую (или более новую) свечу.
       const lastTime = lastCandles.length ? lastCandles[lastCandles.length - 1].time : 0;
+      let ticked = false;
       json.candles.forEach((c) => {
         if (c.time < lastTime) return;
         candleSeries.update(c);
         if (volumeSeries) volumeSeries.update(_volBar(c));
+        ticked = true;
       });
+      if (ticked) flashLive();
       const latest = json.candles[json.candles.length - 1];
       if (lastCandles.length) {
         if (latest.time === lastTime) {
@@ -627,5 +838,8 @@ const TradingChart = (() => {
     setImbalances,
     toggleImbalances,
     setEntryColors,
+    setTradePlan,
+    setSmc,
+    toggleSmc,
   };
 })();

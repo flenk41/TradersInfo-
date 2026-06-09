@@ -133,7 +133,462 @@ function renderVerdict(d) {
   }
   // Блок «позиции» (Вход/Стоп/Тейк/R:R/Ликвидация) убран: уровни входа со
   // стопом и тейком показываются на графике.
+  renderScenario(d);
+  renderTradePlan(d);
   applyI18n();
+}
+
+// ── «Что делать сейчас»: где/когда/куда заходить ────────────────────────────
+// Считает наглядный план сделки из готовых данных анализа (рекомендованная
+// сторона + зоны входа текущего ТФ + position_preview). Показывает светофор:
+// 🟢 заходить сейчас (цена в зоне) / 🟡 ждать отката к цене X / 🔴 не входить.
+function computeTradePlan(d) {
+  if (!d) return null;
+  const side = d.accuracy && d.accuracy.recommended_side;
+  const cur = d.price || 0;
+  if (side !== "long" && side !== "short") {
+    return { state: "wait", side: side || "wait", currentPrice: cur,
+      why: d.trend_summary || (d.bias && d.bias.summary) || "Нет согласия сигналов — лучше пропустить." };
+  }
+  const z = (typeof zonesForTf === "function")
+    ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const arr = side === "long" ? z.long : z.short;
+  const zone = arr && arr.length
+    ? arr.reduce((b, x) => (Math.abs(x.price - cur) < Math.abs(b.price - cur) ? x : b)) : null;
+  const pv = (d.position_preview && d.position_preview[side]) || null;
+
+  const entry = zone ? zone.price : (pv ? pv.entry_price : cur);
+  const entryLow = zone && zone.low != null ? zone.low : entry;
+  const entryHigh = zone && zone.high != null ? zone.high : entry;
+  const stop = zone && zone.stop != null ? zone.stop : (pv ? pv.stop_loss : null);
+  const take = zone && zone.take != null ? zone.take : (pv ? pv.take_profit : null);
+  let rr = pv ? pv.risk_reward : null;
+  if ((rr == null || !isFinite(rr)) && stop != null && take != null && entry !== stop)
+    rr = Math.abs(take - entry) / Math.abs(entry - stop);
+
+  const lo = Math.min(entryLow, entryHigh), hi = Math.max(entryLow, entryHigh);
+  const inZone = cur >= lo && cur <= hi;
+  const dist = cur ? ((entry - cur) / cur) * 100 : 0;
+  const state = inZone ? "enter" : "wait_pullback";
+
+  return { state, side, currentPrice: cur, entry, entryLow, entryHigh, stop, take, rr, dist,
+    approx: !!(zone && zone.approx),
+    why: (d.trade && d.trade.best_action ? d.trade.best_action + ". " : "") +
+         (d.trend_summary || "") };
+}
+
+function _tpFmt(v) {
+  if (v == null || !isFinite(v)) return "—";
+  const a = Math.abs(v), dgt = a >= 1000 ? 1 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6;
+  return Number(v).toFixed(dgt);
+}
+
+function renderTradePlan(d) {
+  const card = $("tradePlanCard");
+  if (!card) return;
+  const plan = computeTradePlan(d);
+  if (!plan) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+
+  const sideRu = plan.side === "short" ? "ШОРТ" : "ЛОНГ";
+  let light, text, why;
+  if (plan.state === "wait") {
+    light = "red"; text = "НЕ ВХОДИТЬ"; why = plan.why || "Чёткого сигнала нет — лучше подождать.";
+  } else if (plan.state === "enter") {
+    light = "green"; text = "ЗАХОДИТЬ — " + sideRu;
+    why = "Цена в зоне входа — можно открывать " + sideRu + ". " + (plan.why || "");
+  } else {
+    light = "yellow";
+    const dir = plan.dist < 0 ? "вниз" : "вверх";
+    text = "ЖДАТЬ ОТКАТА к " + _tpFmt(plan.entry);
+    why = sideRu + " от " + _tpFmt(plan.entry) + " (цена " + _tpFmt(plan.currentPrice) +
+      ", ждём " + (plan.dist >= 0 ? "+" : "") + plan.dist.toFixed(1) + "% " + dir + "). " + (plan.why || "");
+  }
+  card.className = "trade-plan tp-" + light;
+  $("tpState").className = "tp-state";
+  $("tpStateText").textContent = text + (plan.approx ? " (приблизит.)" : "");
+  $("tpWhy").textContent = why.trim();
+
+  const grid = card.querySelector(".tp-grid");
+  if (plan.state === "wait") {
+    if (grid) grid.style.display = "none";
+  } else {
+    if (grid) grid.style.display = "";
+    $("tpEntry").textContent = _tpFmt(plan.entry);
+    $("tpEntryDist").textContent = plan.currentPrice
+      ? (plan.dist >= 0 ? "+" : "") + plan.dist.toFixed(1) + "%" : "";
+    $("tpStop").textContent = _tpFmt(plan.stop);
+    $("tpStopDist").textContent = (plan.stop != null && plan.entry)
+      ? (((plan.stop - plan.entry) / plan.entry) * 100).toFixed(1) + "%" : "";
+    $("tpTake").textContent = _tpFmt(plan.take);
+    $("tpTakeDist").textContent = (plan.take != null && plan.entry)
+      ? "+" + Math.abs(((plan.take - plan.entry) / plan.entry) * 100).toFixed(1) + "%" : "";
+    $("tpRR").textContent = plan.rr != null && isFinite(plan.rr) ? "1:" + plan.rr.toFixed(1) : "—";
+  }
+  renderTradePlanRule(plan, d);
+}
+
+// ── Торговый профиль (личные правила, как rules.json) ───────────────────────
+const DEFAULT_PROFILE = {
+  style: "any", sides: "both", minScore: 65, minRR: 2,
+  riskPct: 1, requireHtf: true, requireSmc: false, noFlat: true,
+};
+function getTradingProfile() {
+  try {
+    const p = JSON.parse(localStorage.getItem("trading_profile") || "{}");
+    return Object.assign({}, DEFAULT_PROFILE, p && typeof p === "object" ? p : {});
+  } catch (_) { return { ...DEFAULT_PROFILE }; }
+}
+function saveTradingProfile(p) {
+  try { localStorage.setItem("trading_profile", JSON.stringify(p)); } catch (_) {}
+}
+function _clampNum(v, lo, hi, def) {
+  const n = parseFloat(v);
+  return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
+}
+
+// Проверка плана сделки на соответствие правилам пользователя.
+function evaluateProfile(plan, d) {
+  if (!plan || plan.state === "wait" || !plan.side) return { applicable: false };
+  const p = getTradingProfile();
+  const side = plan.side, viol = [], ok = [];
+
+  if (p.sides !== "both") {
+    if (p.sides === side) ok.push("направление разрешено");
+    else viol.push("только " + (p.sides === "long" ? "лонг" : "шорт"));
+  }
+  const score = d && d.accuracy && d.accuracy.overall_pct;
+  if (score != null) {
+    if (score < p.minScore) viol.push("балл " + score + " < " + p.minScore);
+    else ok.push("балл " + score + " ≥ " + p.minScore);
+  }
+  if (plan.rr != null && isFinite(plan.rr)) {
+    if (plan.rr < p.minRR) viol.push("R:R 1:" + plan.rr.toFixed(1) + " < 1:" + p.minRR);
+    else ok.push("R:R 1:" + plan.rr.toFixed(1));
+  }
+  if (p.requireHtf) {
+    const bias = d && d.bias && d.bias.direction;
+    if (bias === side) ok.push("по тренду HTF");
+    else if (bias && bias !== "neutral") viol.push("против тренда HTF");
+  }
+  if (p.requireSmc) {
+    const smc = (typeof smcForTf === "function") ? smcForTf(d) : (d && d.smc);
+    if (smc && smc.smc_bias === side) ok.push("SMC подтверждает");
+    else viol.push("нет SMC-подтверждения");
+  }
+  if (p.noFlat) {
+    const adxs = ((d && d.timeframes) || []).map((t) => t.adx).filter((x) => x);
+    const adx = adxs.length ? adxs.reduce((a, b) => a + b, 0) / adxs.length : null;
+    if (adx != null && adx < 18) viol.push("флэт (ADX " + adx.toFixed(0) + ")");
+  }
+  return { applicable: true, pass: viol.length === 0, violations: viol, ok };
+}
+
+function renderTradePlanRule(plan, d) {
+  const el = $("tpRule");
+  if (!el) return;
+  const r = evaluateProfile(plan, d);
+  if (!r.applicable) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  if (r.pass) {
+    el.className = "tp-rule pass";
+    el.textContent = "✓ По вашим правилам" + (r.ok.length ? ": " + r.ok.slice(0, 3).join(" · ") : "");
+  } else {
+    el.className = "tp-rule fail";
+    el.textContent = "✗ Не по правилам: " + r.violations.join(" · ");
+  }
+}
+
+function openProfileModal() {
+  const p = getTradingProfile();
+  if ($("profStyle")) $("profStyle").value = p.style;
+  if ($("profSides")) $("profSides").value = p.sides;
+  if ($("profMinScore")) $("profMinScore").value = p.minScore;
+  if ($("profMinRR")) $("profMinRR").value = p.minRR;
+  if ($("profRisk")) $("profRisk").value = p.riskPct;
+  if ($("profHtf")) $("profHtf").checked = !!p.requireHtf;
+  if ($("profSmc")) $("profSmc").checked = !!p.requireSmc;
+  if ($("profNoFlat")) $("profNoFlat").checked = !!p.noFlat;
+  $("profileOverlay")?.classList.remove("hidden");
+}
+function readProfileForm() {
+  return {
+    style: $("profStyle")?.value || "any",
+    sides: $("profSides")?.value || "both",
+    minScore: _clampNum($("profMinScore")?.value, 0, 100, 65),
+    minRR: _clampNum($("profMinRR")?.value, 0, 10, 2),
+    riskPct: _clampNum($("profRisk")?.value, 0.1, 100, 1),
+    requireHtf: !!$("profHtf")?.checked,
+    requireSmc: !!$("profSmc")?.checked,
+    noFlat: !!$("profNoFlat")?.checked,
+  };
+}
+$("btnProfile")?.addEventListener("click", openProfileModal);
+$("profileClose")?.addEventListener("click", () => $("profileOverlay")?.classList.add("hidden"));
+$("profileOverlay")?.addEventListener("click", (e) => { if (e.target === $("profileOverlay")) $("profileOverlay").classList.add("hidden"); });
+$("profileSave")?.addEventListener("click", () => {
+  saveTradingProfile(readProfileForm());
+  $("profileOverlay")?.classList.add("hidden");
+  if (lastAnalysisData) renderTradePlan(lastAnalysisData);
+});
+$("profileReset")?.addEventListener("click", () => { saveTradingProfile({ ...DEFAULT_PROFILE }); openProfileModal(); });
+
+// ── Интерактивный сценарий «Что будет, если войти» ──────────────────────────
+// Показывается, когда есть направленный сигнал (лонг/шорт). Наглядно объясняет,
+// сколько пользователь заработает на тейке и потеряет на стопе при заданной
+// сумме/плече. Уровни считает тот же бэкенд (/api/position → zone_stop_take),
+// что рисует вход на графике, поэтому цифры совпадают с линиями на чарте.
+const scState = { side: "long", timer: 0, reqId: 0, pair: null, rec: null };
+
+// Зона входа выбранной стороны, ближайшая к текущей цене (как на графике).
+function scenarioZonePrice(d, side) {
+  const z = (typeof zonesForTf === "function") ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const arr = side === "long" ? z.long : z.short;
+  if (!arr || !arr.length) return null;
+  const cur = d.price || 0;
+  return arr.reduce((best, x) => (Math.abs(x.price - cur) < Math.abs(best.price - cur) ? x : best)).price;
+}
+
+function renderScenario(d) {
+  const card = $("scenarioCard");
+  if (!card) return;
+  const rec = d.accuracy && d.accuracy.recommended_side;
+  const z = (typeof zonesForTf === "function") ? zonesForTf(d) : { long: d.long_entry_zones || [], short: d.short_entry_zones || [] };
+  const hasLong = (z.long || []).length > 0;
+  const hasShort = (z.short || []).length > 0;
+  // Карточка живёт в модалке; здесь только готовим данные и состояние кнопки.
+  const btn = $("btnScenario");
+  const ready = rec === "long" || rec === "short" || hasLong || hasShort || !!d.trade;
+  if (btn) {
+    btn.disabled = !ready;
+    btn.classList.toggle("ready", ready);
+  }
+  if (!ready) return;
+  scState.rec = rec;
+
+  // Поля и сторону инициализируем только при СМЕНЕ инструмента — иначе
+  // авто-refresh (раз в ~45с) затирал бы выбор и введённые суммы.
+  const pair = d.pair || activePair;
+  if (scState.pair !== pair) {
+    scState.pair = pair;
+    scState.side = (rec === "long" || rec === "short") ? rec : (hasLong ? "long" : "short");
+    const savedMargin = parseFloat(localStorage.getItem("sc_margin"));
+    const savedLev = parseInt(localStorage.getItem("sc_lev"), 10);
+    $("scMargin").value = !isNaN(savedMargin) && savedMargin > 0 ? savedMargin : 100;
+    const lev = !isNaN(savedLev) && savedLev >= 1 ? savedLev : 10;
+    $("scLev").value = lev;
+    $("scLevVal").textContent = lev + "×";
+    const zp = scenarioZonePrice(d, scState.side);
+    $("scEntry").value = zp != null ? zp : (d.price != null ? d.price : "");
+  }
+  updateScenarioSideUI(d);
+  scenarioRecalc();
+}
+
+// Обновляет заголовок/переключатель/бейдж согласия под ВЫБРАННУЮ сторону.
+// «Согласие» — балл именно этой стороны (long_score/short_score), а не общий.
+function updateScenarioSideUI(d) {
+  const isLong = scState.side === "long";
+  $("scenarioTitle").textContent = isLong
+    ? "Что будет, если войти в ЛОНГ 📈"
+    : "Что будет, если войти в ШОРТ 📉";
+  document.querySelectorAll("#scSide button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.side === scState.side)
+  );
+  const card = $("scenarioCard");
+  if (card) { card.classList.toggle("sc-side-long", isLong); card.classList.toggle("sc-side-short", !isLong); }
+
+  const trade = d.trade;
+  let score = trade ? (isLong ? trade.long_score : trade.short_score) : null;
+  if (score == null && d.accuracy) score = d.accuracy.overall_pct;
+  score = score != null ? Math.round(score) : 0;
+  scState.verdict = trade ? (isLong ? trade.long_verdict : trade.short_verdict) : "";
+
+  const agree = $("scenarioAgree");
+  const vshort = scenarioVerdictShort(scState.verdict);
+  agree.textContent = `Согласие за ${isLong ? "ЛОНГ" : "ШОРТ"}: ${score}%` + (vshort ? ` · ${vshort}` : "");
+  agree.classList.toggle("sc-strong", score > 60);
+  agree.classList.toggle("sc-weak", score <= 60);
+
+  scenarioUpdateEntryHint();
+}
+
+// Подпись-источник цены входа: зона с графика, текущая рыночная или своя.
+function scenarioUpdateEntryHint() {
+  const hint = $("scEntryHint");
+  const d = lastAnalysisData;
+  if (!hint || !d) return;
+  const zp = scenarioZonePrice(d, scState.side);
+  const cur = parseFloat($("scEntry").value);
+  if (isNaN(cur)) hint.textContent = "";
+  else if (zp != null && Math.abs(cur - zp) / zp < 0.0005) hint.textContent = "≈ зона входа с графика";
+  else if (d.price != null && Math.abs(cur - d.price) / d.price < 0.0005) hint.textContent = "текущая рыночная цена";
+  else hint.textContent = "ваша цена входа";
+}
+
+// Рисует горизонтальную дорожку цены: стоп / вход / тейк + текущая цена.
+// Расстояния пропорциональны реальным ценам — видно, что тейк дальше стопа (R:R).
+function scenarioPaintTrack(p, entry) {
+  const track = $("scTrack");
+  if (!track) return;
+  const sl = p.stop_loss, tp = p.take_profit, cur = p.current_price;
+  const lo = Math.min(sl, tp), hi = Math.max(sl, tp);
+  const span = hi - lo || 1;
+  const pos = (v) => Math.max(0, Math.min(100, (v - lo) / span * 100));
+  const slP = pos(sl), tpP = pos(tp), enP = pos(entry), curP = pos(cur);
+  // Красный сегмент — от входа к стопу, зелёный — от входа к тейку.
+  const redL = Math.min(enP, slP), redW = Math.abs(enP - slP);
+  const grL = Math.min(enP, tpP), grW = Math.abs(enP - tpP);
+  // Крайние метки прижимаем к краю дорожки (по положению, не по роли) —
+  // иначе подпись обрезается; стиль (left/right) задаём здесь.
+  const mark = (cls, p, label) => {
+    if (p <= 6) return `<div class="sc-tk-mark ${cls} at-start" style="left:0"><i></i><span>${label}</span></div>`;
+    if (p >= 94) return `<div class="sc-tk-mark ${cls} at-end" style="left:auto;right:0"><i></i><span>${label}</span></div>`;
+    return `<div class="sc-tk-mark ${cls}" style="left:${p}%"><i></i><span>${label}</span></div>`;
+  };
+  track.innerHTML =
+    `<div class="sc-tk-base"></div>` +
+    `<div class="sc-tk-fill red" style="left:${redL}%;width:${redW}%"></div>` +
+    `<div class="sc-tk-fill green" style="left:${grL}%;width:${grW}%"></div>` +
+    mark("sl", slP, `Стоп ${money(sl)}`) +
+    mark("en", enP, `Вход ${money(entry)}`) +
+    mark("tp", tpP, `Тейк ${money(tp)}`) +
+    `<div class="sc-tk-cur" style="left:${curP}%" title="Сейчас: ${money(cur)}"></div>`;
+}
+
+// Открыть запись в журнал, предзаполнив сторону и цену входа из сценария.
+function scenarioToJournal() {
+  openJournalAdd();
+  if ($("journalAddOverlay").classList.contains("hidden")) return; // не открылось (показана ошибка)
+  jaddState.side = scState.side;
+  document.querySelectorAll("#jaddSide button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.side === scState.side)
+  );
+  const sigPair = lastAnalysisData?.display_name || lastAnalysisData?.pair || activePair;
+  if (sigPair) $("jaddPair").textContent = sigPair + " · " + (scState.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉");
+  const e = parseFloat($("scEntry").value);
+  if (!isNaN(e) && e > 0) $("jaddEntry").value = e;
+  jaddRecalc();
+}
+
+// Короткая форма вердикта стороны для бейджа.
+function scenarioVerdictShort(v) {
+  if (!v) return "";
+  if (v.includes("НЕ ")) return "не входить";   // «НЕ ВХОДИТЬ» — проверять раньше «ВХОДИТЬ»
+  if (v.includes("ВХОДИТЬ")) return "входить";
+  if (v.includes("ЖДАТЬ")) return "ждать";
+  return "";
+}
+
+// Подсветить пресет-чип, если его значение совпадает с текущим.
+function scenarioMarkPresets(margin, lev) {
+  document.querySelectorAll("#scMarginPresets button").forEach((b) =>
+    b.classList.toggle("active", parseFloat(b.dataset.v) === margin)
+  );
+  document.querySelectorAll("#scLevPresets button").forEach((b) =>
+    b.classList.toggle("active", parseInt(b.dataset.v, 10) === lev)
+  );
+}
+
+function scenarioScheduleRecalc() {
+  clearTimeout(scState.timer);
+  scState.timer = setTimeout(scenarioRecalc, 280);
+}
+
+async function scenarioRecalc() {
+  const card = $("scenarioCard");
+  if (!card || card.classList.contains("hidden") || !lastAnalysisData) return;
+  const entry = parseFloat($("scEntry").value);
+  const margin = parseFloat($("scMargin").value);
+  const lev = parseInt($("scLev").value, 10);
+  $("scLevVal").textContent = (isNaN(lev) ? "—" : lev) + "×";
+  if (isNaN(margin) || margin > 0) localStorage.setItem("sc_margin", margin);
+  if (!isNaN(lev)) localStorage.setItem("sc_lev", lev);
+
+  scenarioUpdateEntryHint();
+  scenarioMarkPresets(margin, lev);
+  const lead = $("scenarioLead");
+  if (isNaN(entry) || entry <= 0 || isNaN(margin) || margin <= 0 || isNaN(lev) || lev < 1) {
+    lead.textContent = "Укажите корректные цену входа, сумму и плечо.";
+    return;
+  }
+
+  const pair = lastAnalysisData.pair || activePair;
+  const market = lastAnalysisData.market || activeMarket;
+  const myReq = ++scState.reqId;
+  lead.textContent = "Считаю сценарий…";
+  try {
+    const r = await fetch("/api/position", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair, market, entry, side: scState.side, margin, leverage: lev, source: cryptoSource() }),
+    });
+    const j = await r.json();
+    if (myReq !== scState.reqId) return; // пришёл ответ на устаревший запрос
+    if (!j.ok || !j.position) {
+      lead.textContent = j.error || "Не удалось рассчитать сценарий.";
+      return;
+    }
+    scenarioPaint(j.position, entry);
+  } catch (e) {
+    if (myReq === scState.reqId) lead.textContent = "Ошибка сети — попробуйте ещё раз.";
+  }
+}
+
+function scenarioPaint(p, entry) {
+  const isLong = scState.side === "long";
+  const tpPct = entry ? Math.abs((p.take_profit - entry) / entry * 100) : 0;
+  const slPct = entry ? Math.abs((p.stop_loss - entry) / entry * 100) : 0;
+  const win = Math.abs(p.pnl_tp_usdt);
+  const loss = Math.abs(p.pnl_sl_usdt);
+
+  $("scTpPrice").textContent = `${money(p.take_profit)} (${isLong ? "+" : "−"}${tpPct.toFixed(2)}%)`;
+  $("scTpPnl").textContent = `+${win.toFixed(2)} USDT (+${Math.abs(p.pnl_tp_pct).toFixed(0)}% к сумме)`;
+  $("scSlPrice").textContent = `${money(p.stop_loss)} (${isLong ? "−" : "+"}${slPct.toFixed(2)}%)`;
+  $("scSlPnl").textContent = `−${loss.toFixed(2)} USDT (−${Math.abs(p.pnl_sl_pct).toFixed(0)}% к сумме)`;
+
+  // Мини-дорожка цены: стоп ← вход → тейк, с маркером текущей цены.
+  scenarioPaintTrack(p, entry);
+
+  // Полоса риск↔прибыль (наглядно, кто больше).
+  const tot = win + loss || 1;
+  const riskPct = Math.round(loss / tot * 100);
+  $("scBarRisk").style.flexBasis = riskPct + "%";
+  $("scBarReward").style.flexBasis = (100 - riskPct) + "%";
+  $("scBarRisk").textContent = `риск ${riskPct}%`;
+  $("scBarReward").textContent = `прибыль ${100 - riskPct}%`;
+
+  const meta = $("scMeta");
+  const liq =
+    p.liquidation_price != null
+      ? `<span class="sc-meta-it sc-warn">💥 Ликвидация: ${money(p.liquidation_price)} (${p.liquidation_distance_pct}% от входа)</span>`
+      : "";
+  // Рекомендованное плечо: чтобы стоп срабатывал РАНЬШЕ ликвидации (с запасом 30%).
+  // L < 1/d, где d — дистанция стопа в долях; берём 0.7/d.
+  const recLev = slPct > 0 ? Math.max(1, Math.floor(70 / slPct)) : null;
+  const curLev = p.leverage;
+  const levOk = recLev == null || curLev <= recLev;
+  const levHtml = recLev != null
+    ? `<span class="sc-meta-it ${levOk ? "" : "sc-warn"}">🎚 Реком. плечо: <b>≤ ${recLev}x</b>${levOk ? "" : ` · у вас ${curLev}x — стоп может не сработать (ликвидация раньше)!`}</span>`
+    : "";
+  meta.innerHTML =
+    `<span class="sc-meta-it">⚖ Риск/прибыль: <b>1:${p.risk_reward}</b></span>` +
+    `<span class="sc-meta-it">📦 Объём позиции: <b>${money(p.position_notional_usdt)} USDT</b></span>` +
+    levHtml +
+    liq;
+
+  const verb = isLong ? "вырастет" : "упадёт";
+  // Оговорка, если пользователь смотрит сторону, которую движок НЕ советует.
+  let caveat = "";
+  if (scState.rec && scState.rec !== scState.side && (scState.rec === "long" || scState.rec === "short")) {
+    const recRu = scState.rec === "long" ? "ЛОНГ" : "ШОРТ";
+    caveat = `<b class="down">⚠ Движок советует ${recRu}.</b> Это сценарий, если вы всё же войдёте в ${isLong ? "лонг" : "шорт"}. `;
+  }
+  $("scenarioLead").innerHTML =
+    caveat +
+    `Если цена <b>${verb}</b> до тейка — заработаете <b class="up">+${win.toFixed(2)} USDT</b>. ` +
+    `Если развернётся к стопу — потеряете <b class="down">−${loss.toFixed(2)} USDT</b>. ` +
+    `Вы рискуете <b>${loss.toFixed(2)}</b> ради <b>${win.toFixed(2)}</b> (R:R 1:${p.risk_reward}).`;
 }
 
 const NEWS_LABEL = { good: "Позитив", bad: "Негатив", neutral: "Нейтрально" };
@@ -309,6 +764,7 @@ const JOURNAL_STATUS = {
   open: { label: "Открыт", cls: "open" },
   tp: { label: "TP ✓", cls: "good" },
   sl: { label: "SL ✗", cls: "bad" },
+  be: { label: "Безубыток", cls: "neutral" },
   expired: { label: "Истёк", cls: "neutral" },
 };
 
@@ -328,18 +784,43 @@ function fmtDate(ts) {
     " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
+// ---- Журнал хранится в localStorage (как watchlist/портфель, без сервера) ----
+const JKEY = "signal_journal";
+function jLoad() { try { return JSON.parse(localStorage.getItem(JKEY) || "[]"); } catch (e) { return []; } }
+function jSave(arr) { try { localStorage.setItem(JKEY, JSON.stringify(arr)); } catch (e) {} }
+function jStats(rows) {
+  const closed = rows.filter((r) => r.status === "tp" || r.status === "sl" || r.status === "be");
+  const wins = closed.filter((r) => r.status === "tp");
+  const losses = closed.filter((r) => r.status === "sl");
+  const be = closed.filter((r) => r.status === "be");
+  const decided = wins.length + losses.length;  // винрейт без безубытков
+  const rs = closed.map((r) => r.r_multiple).filter((v) => v != null);
+  const gw = rs.filter((v) => v > 0).reduce((a, b) => a + b, 0);
+  const gl = Math.abs(rs.filter((v) => v < 0).reduce((a, b) => a + b, 0));
+  return {
+    total: rows.length,
+    open: rows.filter((r) => r.status === "open").length,
+    closed: closed.length, wins: wins.length, losses: losses.length, breakeven: be.length,
+    expired: rows.filter((r) => r.status === "expired").length,
+    win_rate: decided ? Math.round((wins.length / decided) * 1000) / 10 : 0,
+    avg_r: rs.length ? Math.round((rs.reduce((a, b) => a + b, 0) / rs.length) * 100) / 100 : 0,
+    profit_factor: gl ? Math.round((gw / gl) * 100) / 100 : (gw ? Math.round(gw * 100) / 100 : 0),
+  };
+}
+
 function renderJournal(data) {
   const statsEl = $("journalStats");
   const list = $("journalList");
   if (!statsEl || !list) return;
   const s = data.stats || {};
+  const wr = s.win_rate || 0;
   statsEl.innerHTML =
-    `<div class="jstat"><span>Сделок закрыто</span><strong>${s.closed || 0}</strong></div>` +
-    `<div class="jstat"><span>Винрейт</span><strong class="${(s.win_rate || 0) >= 50 ? "good" : "bad"}">${s.win_rate || 0}%</strong></div>` +
-    `<div class="jstat"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${s.avg_r || 0}</strong></div>` +
-    `<div class="jstat"><span>Профит-фактор</span><strong>${s.profit_factor || 0}</strong></div>` +
-    `<div class="jstat"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
-    `<div class="jstat"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
+    `<div class="jstat hero"><span>Винрейт</span><strong class="${wr >= 50 ? "good" : "bad"}">${wr}%</strong><em>${s.closed || 0} закрытых</em><div class="jbar"><i class="${wr >= 50 ? "good" : "bad"}" style="width:${Math.min(100, wr)}%"></i></div></div>` +
+    `<div class="jstat hero"><span>Средний R</span><strong class="${(s.avg_r || 0) >= 0 ? "good" : "bad"}">${(s.avg_r || 0) > 0 ? "+" : ""}${s.avg_r || 0}R</strong><em>на сделку</em></div>` +
+    `<div class="jstat hero"><span>Профит-фактор</span><strong class="${(s.profit_factor || 0) >= 1 ? "good" : ""}">${s.profit_factor || 0}</strong><em>прибыль / убыток</em></div>` +
+    `<div class="jstat mini"><span>Открыто</span><strong>${s.open || 0}</strong></div>` +
+    (s.breakeven ? `<div class="jstat mini"><span>Безубыток</span><strong>${s.breakeven}</strong></div>` : "") +
+    `<div class="jstat mini"><span>Всего</span><strong>${s.total || 0}</strong></div>`;
 
   const sigs = data.signals || [];
   if (!sigs.length) {
@@ -352,39 +833,32 @@ function renderJournal(data) {
     const cur = sigCurrency(sig);
     const fmt = (v) => (v == null ? "—" : cur + formatPrice(v));
     const item = document.createElement("div");
-    item.className = `journal-item j-${st.cls}`;
+    item.className = `journal-item jcard j-${st.cls}`;
+    const sideCls = sig.side === "long" ? "long" : "short";
+    const mono = (sig.display || sig.pair || "?").replace(/[^A-Za-zА-Яа-я0-9]/g, "").slice(0, 3).toUpperCase();
     const rTxt = sig.r_multiple == null ? "" : `<span class="j-r ${sig.r_multiple >= 0 ? "good" : "bad"}">${sig.r_multiple > 0 ? "+" : ""}${sig.r_multiple}R</span>`;
-
-    const head = document.createElement("div");
-    head.className = "journal-item-head";
-    head.innerHTML =
-      `<span class="j-badge j-${st.cls}">${st.label}</span>` +
-      `<span class="j-pair">${sig.display || sig.pair} · ${sig.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉"}</span>` +
-      rTxt +
-      `<button class="j-del" data-id="${sig.id}" title="Удалить">✕</button>`;
-
-    const body = document.createElement("div");
-    body.className = "journal-item-body";
-    body.innerHTML =
-      `<span>Вход ${fmt(sig.entry)}</span>` +
-      `<span class="j-sl">Стоп ${fmt(sig.stop)}</span>` +
-      `<span class="j-tp">Тейк ${fmt(sig.take_profit)}</span>` +
-      `<span>R:R 1:${sig.rr}</span>` +
-      (sig.accuracy_pct != null ? `<span>Балл ${sig.accuracy_pct}</span>` : "") +
-      `<span class="j-date">${fmtDate(sig.created_ts)}</span>`;
-
-    item.append(head, body);
+    const rrTxt = sig.rr != null ? `<span class="jc-rr">R:R 1:${sig.rr}</span>` : "";
+    item.innerHTML =
+      `<div class="jc-asset">` +
+        `<div class="jc-ava ${sideCls} ${st.cls === "open" ? "pulse" : ""}">${mono}</div>` +
+        `<div class="jc-id"><span class="jc-pair">${sig.display || sig.pair}</span><span class="jc-date">${fmtDate(sig.created_ts)}</span></div>` +
+      `</div>` +
+      `<span class="jc-side ${sideCls}">${sig.side === "long" ? "LONG" : "SHORT"}</span>` +
+      `<div class="jc-levels">` +
+        `<div class="jc-lv"><span>Вход</span><b>${fmt(sig.entry)}</b></div>` +
+        `<div class="jc-lv"><span>Стоп-лосс</span><b class="down">${fmt(sig.stop)}</b></div>` +
+        `<div class="jc-lv"><span>Тейк-профит</span><b class="up">${fmt(sig.take_profit)}</b></div>` +
+      `</div>` +
+      `<div class="jc-right">${rrTxt}${rTxt}<span class="jc-status j-${st.cls}">${st.label}</span>` +
+        `<button class="j-del" data-id="${sig.id}" title="Удалить">✕</button></div>`;
     list.appendChild(item);
   });
 
   list.querySelectorAll(".j-del").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await fetch("/api/journal/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: btn.dataset.id }),
-      });
-      loadJournal();
+    btn.addEventListener("click", () => {
+      const arr = jLoad().filter((s) => s.id !== btn.dataset.id);
+      jSave(arr);
+      renderJournal({ signals: arr, stats: jStats(arr) });
     });
   });
   applyI18n();
@@ -394,13 +868,24 @@ let journalLoading = false;
 async function loadJournal() {
   const list = $("journalList");
   if (!list) return;
-  if (journalLoading) return;
+  const sigs = jLoad();
+  // Мгновенно рисуем из localStorage (статистика по сохранённым исходам)…
+  renderJournal({ signals: sigs, stats: jStats(sigs) });
+  // …затем сервер дооценивает открытые сигналы по истории цены (stateless).
+  if (journalLoading || !sigs.length) return;
   journalLoading = true;
   try {
-    const json = await (await fetch("/api/journal")).json();
-    if (json.ok) renderJournal(json);
+    const json = await (await fetch("/api/journal/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signals: sigs }),
+    })).json();
+    if (json.ok && json.signals) {
+      jSave(json.signals);
+      renderJournal({ signals: json.signals, stats: json.stats });
+    }
   } catch (e) {
-    /* keep previous */
+    /* нет сети — оставляем локальный рендер */
   } finally {
     journalLoading = false;
   }
@@ -448,7 +933,7 @@ async function jaddRecalc() {
     const r = await fetch("/api/position", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pair, market, entry, side: jaddState.side, margin: 100, leverage: 10 }),
+      body: JSON.stringify({ pair, market, entry, side: jaddState.side, margin: 100, leverage: 10, source: cryptoSource() }),
     });
     const j = await r.json();
     if (!j.ok || !j.position) { box.innerHTML = `<div class="dr-row bad"><span>${j.error || "Не удалось рассчитать"}</span><b>—</b></div>`; jaddState.levels = null; return; }
@@ -495,7 +980,10 @@ async function confirmJournalAdd() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })).json();
-    if (json.ok) {
+    if (json.ok && json.signal) {
+      const arr = jLoad();
+      arr.unshift(json.signal);   // сохраняем запись в localStorage
+      jSave(arr);
       closeJournalAdd();
       switchView("journal");
       loadJournal();
@@ -574,6 +1062,28 @@ function moverIconHtml(m) {
   return `<span class="inst-fallback" style="${style}">${fb}</span>`;
 }
 
+function sparklineSvg(spark, up, cls) {
+  if (!spark || spark.length < 2) return "";
+  const w = 100, h = 30;
+  let min = Infinity, max = -Infinity;
+  for (const v of spark) { if (v < min) min = v; if (v > max) max = v; }
+  const range = max - min || 1;
+  const pts = spark.map((v, i) => {
+    const x = (i / (spark.length - 1)) * w;
+    const y = h - ((v - min) / range) * (h - 3) - 1.5;
+    return x.toFixed(1) + "," + y.toFixed(1);
+  });
+  const col = up ? "#34d399" : "#fb7185";
+  const gid = "spg_" + Math.random().toString(36).slice(2, 8);
+  return `<svg class="${cls || "mc-spark"}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${col}" stop-opacity="0.28"/>` +
+    `<stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>` +
+    `<polygon points="0,${h} ${pts.join(" ")} ${w},${h}" fill="url(#${gid})"/>` +
+    `<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>` +
+    `</svg>`;
+}
+
 function moverCard(m) {
   const up = m.change_pct >= 0;
   const cur = moverCurrency(m);
@@ -587,19 +1097,23 @@ function moverCard(m) {
       `<span class="mc-titles"><span class="mc-name">${m.name}</span>` +
       `<span class="mc-sub">${m.subtitle || m.id}</span></span>` +
     `</span>` +
+    sparklineSvg(m.spark, up) +
     `<span class="mc-chg ${up ? "up" : "down"}">${up ? "+" : ""}${m.change_pct}%</span>` +
     `<span class="mc-price">${cur}${formatPrice(m.price)}</span>`;
-  btn.addEventListener("click", () => {
-    if (m.market === "stock") {
-      activeStockRegion = m.region || activeStockRegion;
-      document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
-        b.classList.toggle("active", b.dataset.region === activeStockRegion)
-      );
-    }
-    switchView("market", m.market);
-    analyze(m.id);
-  });
+  btn.addEventListener("click", () => moverOpen(m));
   return btn;
+}
+
+// Открыть инструмент из карточки/hero обзора рынка.
+function moverOpen(m) {
+  if (m.market === "stock") {
+    activeStockRegion = m.region || activeStockRegion;
+    document.querySelectorAll("#stockRegionTabs .btn-region").forEach((b) =>
+      b.classList.toggle("active", b.dataset.region === activeStockRegion)
+    );
+  }
+  switchView("market", m.market);
+  analyze(m.id);
 }
 
 function renderMovers(data) {
@@ -612,17 +1126,37 @@ function renderMovers(data) {
     return;
   }
   if (top) {
+    top.innerHTML = "";
     const big = (m, kind) => {
-      if (!m) return "";
+      if (!m) return;
       const cur = moverCurrency(m);
-      return `<div class="mover-big ${kind}">
-        <span class="mb-label">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>
-        <span class="mb-name">${m.name}</span>
-        <span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>
-        <span class="mb-price">${cur}${formatPrice(m.price)}</span>
-      </div>`;
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = `mover-big ${kind}`;
+      el.innerHTML =
+        `<span class="mb-glow"></span>` +
+        `<div class="mb-top">` +
+          `<div class="mb-id">` +
+            `<span class="mb-ico">${kind === "up" ? "📈" : "📉"}</span>` +
+            `<div class="mb-idtext">` +
+              `<span class="mb-label ${kind}">${kind === "up" ? "Лидер роста" : "Лидер падения"}</span>` +
+              `<span class="mb-name">${m.name}</span>` +
+            `</div>` +
+          `</div>` +
+          `<div class="mb-priceblock">` +
+            `<span class="mb-pricelabel">Текущая цена</span>` +
+            `<span class="mb-price">${cur}${formatPrice(m.price)}</span>` +
+          `</div>` +
+        `</div>` +
+        `<div class="mb-bottom">` +
+          `<span class="mb-chg ${kind}">${m.change_pct >= 0 ? "+" : ""}${m.change_pct}%</span>` +
+          sparklineSvg(m.spark, kind === "up", "mb-spark") +
+        `</div>`;
+      el.addEventListener("click", () => moverOpen(m));
+      top.appendChild(el);
     };
-    top.innerHTML = big(data.top_gainer, "up") + big(data.top_loser, "down");
+    big(data.top_gainer, "up");
+    big(data.top_loser, "down");
   }
   grid.innerHTML = "";
   data.items.forEach((m) => grid.appendChild(moverCard(m)));
@@ -812,6 +1346,7 @@ function switchView(view, market) {
 
   if (view === "market") {
     renderPairsGrid(activeMarket);
+    if (typeof syncSourceSeg === "function") syncSourceSeg();
     const ph = PLACEHOLDERS[activeMarket];
     if (ph && $("customPair")) $("customPair").placeholder = ph;
     if (loadedMarket !== activeMarket || !activePair) {
@@ -830,6 +1365,8 @@ function switchView(view, market) {
     loadNews();
   } else if (view === "journal") {
     loadJournal();
+  } else if (view === "trainer") {
+    openTrainer();
   }
   toggleDividendBtn();
   applyI18n();
@@ -944,14 +1481,24 @@ function imbalancesForTf(data) {
   return (data && data.imbalances) || [];
 }
 
+// SMC под текущий таймфрейм графика.
+function smcForTf(data) {
+  const byTf = data && data.smc_by_tf;
+  const tf = currentLwTf();
+  if (byTf && byTf[tf]) return byTf[tf];
+  return (data && data.smc) || null;
+}
+
 function updateChartTrend(data) {
   if (!data) return;
   const z = zonesForTf(data);
   const view = Object.assign({}, data, { long_entry_zones: z.long, short_entry_zones: z.short });
   TradingChart.applyAnalysis(view);
+  TradingChart.setTradePlan?.(computeTradePlan(data));
   buildEntryMenu(z.long, z.short);
   renderZonesStrip(view);
   TradingChart.setImbalances?.(imbalancesForTf(data));
+  TradingChart.setSmc?.(smcForTf(data));
   renderImbalance(data);
   if (document.querySelector('.panel-tabs button.active')?.dataset.tab === "patterns") renderPatternsView();
   applyI18n();
@@ -1266,6 +1813,7 @@ async function renderPairsGrid(market) {
   // пары Binance / все бумаги MOEX / расширенные США и форекс).
   fillInstrumentGrid(getCatalogItems(market));
   const seq = ++_listSeq;
+  enrichStrip(market);  // ранняя дельта по кураторскому списку (до полной загрузки)
   try {
     const region = market === "stock" ? activeStockRegion : "all";
     const json = await (await fetch(`/api/instruments/search?market=${market}&region=${region}&q=`)).json();
@@ -1274,6 +1822,34 @@ async function renderPairsGrid(market) {
     }
   } catch (e) {
     /* остаётся кураторский список */
+  }
+  enrichStrip(market);  // живая дельта % на верхних карточках (батч, кэш 60с)
+}
+
+// Живое изменение цены на первых ~12 карточках полосы инструментов.
+// 1 батч-запрос /api/strip-quotes (кэш 60с), только для видимых карточек.
+async function enrichStrip(market) {
+  const grid = $("pairsGrid");
+  if (!grid) return;
+  const btns = [...grid.querySelectorAll(".instrument-item")].slice(0, 12);
+  const ids = btns.map((b) => b.dataset.pair).filter(Boolean);
+  if (!ids.length) return;
+  const seq = _listSeq;
+  try {
+    const j = await (await fetch(`/api/strip-quotes?market=${encodeURIComponent(market)}&ids=${encodeURIComponent(ids.join(","))}`)).json();
+    if (seq !== _listSeq || !j.ok) return;  // список сменился — не пишем устаревшее
+    const q = j.quotes || {};
+    btns.forEach((b) => {
+      const d = q[b.dataset.pair];
+      if (!d || d.change_pct == null) return;
+      let el = b.querySelector(".inst-quote");
+      if (!el) { el = document.createElement("span"); el.className = "inst-quote"; b.appendChild(el); }
+      const up = d.change_pct >= 0;
+      el.className = "inst-quote " + (up ? "up" : "down");
+      el.textContent = (up ? "+" : "") + d.change_pct + "%";
+    });
+  } catch (e) {
+    /* тихо — полоса остаётся без дельты */
   }
 }
 
@@ -1620,6 +2196,16 @@ function render(data) {
   applyI18n();
 }
 
+// Источник крипто-данных для анализа: bybit (публичный V5) или авто (Binance→Yahoo).
+// Только для крипты; хранится в localStorage. Bybit полезен, когда Binance режут в РФ.
+// Анализ всегда на стандартном источнике (Binance→Yahoo). Bybit оставлен
+// только для просмотра аккаунта (кнопка «🔑 Bybit»), не как источник анализа.
+function cryptoSource() { return null; }
+function sourceParam() {
+  const s = cryptoSource();
+  return s ? "&source=" + s : "";
+}
+
 async function analyze(pair, forceRefresh = false) {
   if (!pair || !pair.trim()) return;
 
@@ -1632,7 +2218,7 @@ async function analyze(pair, forceRefresh = false) {
 
   try {
     let url =
-      "/api/analyze?pair=" + encodeURIComponent(pair) + "&market=" + encodeURIComponent(activeMarket);
+      "/api/analyze?pair=" + encodeURIComponent(pair) + "&market=" + encodeURIComponent(activeMarket) + sourceParam();
     if (forceRefresh) url += "&refresh=1";
     const res = await fetch(url);
     const json = await res.json();
@@ -1668,6 +2254,7 @@ async function analyze(pair, forceRefresh = false) {
     document.querySelectorAll(".persona-chip.active").forEach((c) => c.classList.remove("active"));
     loadFundamentals(pair, json.data.market_type);
     loadCorrelations(pair, json.data.market_type);
+    loadBybitSentiment(pair);
     updateWatchBtn();
     if (activeView === "news") loadNews();
   } catch (e) {
@@ -1686,7 +2273,7 @@ async function refreshAnalysis() {
     const refPair = activePair, refMarket = activeMarket;
     const url =
       "/api/analyze?pair=" + encodeURIComponent(refPair) +
-      "&market=" + encodeURIComponent(refMarket);
+      "&market=" + encodeURIComponent(refMarket) + sourceParam();
     const json = await (await fetch(url)).json();
     if (!json.ok) return;
     // Инструмент мог смениться, пока шёл запрос — не перетираем свежими чужими данными.
@@ -1824,6 +2411,716 @@ $("scrRefresh")?.addEventListener("click", () => loadScreener(true));
   $(id)?.addEventListener("change", () => applyScreenerFilters());
 });
 
+["scEntry", "scMargin"].forEach((id) =>
+  $(id)?.addEventListener("input", () => scenarioScheduleRecalc())
+);
+document.querySelectorAll("#scSide button").forEach((b) =>
+  b.addEventListener("click", () => {
+    if (!lastAnalysisData) return;
+    scState.side = b.dataset.side;
+    // Подставляем цену зоны входа выбранной стороны (как на графике).
+    const zp = scenarioZonePrice(lastAnalysisData, scState.side);
+    if (zp != null) $("scEntry").value = zp;
+    updateScenarioSideUI(lastAnalysisData);
+    scenarioRecalc();
+  })
+);
+$("scLev")?.addEventListener("input", () => {
+  $("scLevVal").textContent = $("scLev").value + "×";
+  scenarioScheduleRecalc();
+});
+$("scJournalBtn")?.addEventListener("click", () => scenarioToJournal());
+
+// Открытие сценария входа в отдельном окне
+$("btnScenario")?.addEventListener("click", () => {
+  if ($("btnScenario").disabled || !lastAnalysisData) return;
+  $("scenarioOverlay")?.classList.remove("hidden");
+  scenarioRecalc();  // освежить расчёт при открытии
+});
+$("scenarioClose")?.addEventListener("click", () => $("scenarioOverlay")?.classList.add("hidden"));
+$("scenarioOverlay")?.addEventListener("click", (e) => { if (e.target === $("scenarioOverlay")) $("scenarioOverlay").classList.add("hidden"); });
+
+// ── Калькулятор риска: безопасное плечо и размер позиции под риск ────────────
+let rcSide = "long", _rcTimer = 0;
+function openRiskCalc() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  rcSide = (lastAnalysisData.accuracy && lastAnalysisData.accuracy.recommended_side) || "long";
+  if (rcSide !== "long" && rcSide !== "short") rcSide = "long";
+  document.querySelectorAll("#rcSide button").forEach((b) => b.classList.toggle("active", b.dataset.side === rcSide));
+  $("riskCalcOverlay")?.classList.remove("hidden");
+  computeRiskCalc();
+}
+async function computeRiskCalc() {
+  const box = $("rcResults"), note = $("rcNote");
+  const deposit = parseFloat($("rcDeposit").value);
+  const riskPct = parseFloat($("rcRisk").value);
+  if (isNaN(deposit) || deposit <= 0 || isNaN(riskPct) || riskPct <= 0) {
+    box.innerHTML = ""; note.textContent = "Введите корректные депозит и риск."; return;
+  }
+  const pair = lastAnalysisData.pair || activePair, market = lastAnalysisData.market || activeMarket;
+  const entry = lastAnalysisData.price;
+  note.textContent = "Считаю стоп/тейк из анализа…";
+  try {
+    const j = await (await fetch("/api/position", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair, market, entry, side: rcSide, margin: 100, leverage: 10 }),
+    })).json();
+    if (!j.ok || !j.position) { box.innerHTML = ""; note.textContent = j.error || "Не удалось получить уровни."; return; }
+    const p = j.position;
+    const stopDist = Math.abs(entry - p.stop_loss) / entry;       // доля
+    if (stopDist <= 0) { box.innerHTML = ""; note.textContent = "Стоп слишком близко."; return; }
+    const riskUSD = deposit * riskPct / 100;
+    const notional = riskUSD / stopDist;                          // объём позиции, чтобы убыток на стопе = riskUSD
+    const maxLev = Math.max(1, Math.floor(70 / (stopDist * 100))); // стоп раньше ликвидации
+    const margin = notional / maxLev;
+    const tpDist = Math.abs(p.take_profit - entry) / entry;
+    const rewardUSD = notional * tpDist;
+    const f = (v) => money(v);
+    box.innerHTML =
+      `<div class="dr-row"><span>Сторона / вход</span><b>${rcSide === "long" ? "ЛОНГ" : "ШОРТ"} · ${f(entry)}</b></div>` +
+      `<div class="dr-row bad"><span>Стоп (−${(stopDist*100).toFixed(2)}%)</span><b>${f(p.stop_loss)}</b></div>` +
+      `<div class="dr-row good"><span>Тейк (+${(tpDist*100).toFixed(2)}%)</span><b>${f(p.take_profit)}</b></div>` +
+      `<div class="dr-row"><span>Рискуете на сделке</span><b>${f(riskUSD)} USDT (${riskPct}%)</b></div>` +
+      `<div class="dr-row"><span>Безопасное плечо</span><b>≤ ${maxLev}x</b></div>` +
+      `<div class="dr-row"><span>Размер позиции</span><b>${f(notional)} USDT</b></div>` +
+      `<div class="dr-row"><span>Маржа (при ${maxLev}x)</span><b>${f(margin)} USDT</b></div>` +
+      `<div class="dr-row good"><span>Прибыль на тейке</span><b>+${f(rewardUSD)} USDT</b></div>` +
+      `<div class="dr-row"><span>R:R</span><b>1:${p.risk_reward}</b></div>`;
+    note.textContent = `Если цена дойдёт до стопа — потеряете ${f(riskUSD)} (${riskPct}% депозита). Плечо ≤ ${maxLev}x держит стоп раньше ликвидации.`;
+  } catch (e) {
+    box.innerHTML = ""; note.textContent = "Ошибка сети — попробуйте ещё раз.";
+  }
+}
+$("btnRiskCalc")?.addEventListener("click", () => openRiskCalc());
+
+// ── Бэктест стратегии (история, без реальных сделок) ────────────────────────
+let btInterval = "1d";  // по умолчанию длинный/ранний период
+function btFilterQS() {
+  const ema = $("btEma200")?.checked ? 1 : 0;
+  const adx = $("btAdx")?.checked ? 1 : 0;
+  const macd = $("btMacd")?.checked ? 1 : 0;
+  return `&ema200=${ema}&adx=${adx}&macd=${macd}`;
+}
+function openBacktest() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  $("backtestOverlay").classList.remove("hidden");
+  document.querySelectorAll("#btInterval button").forEach((b) => b.classList.toggle("active", b.dataset.int === btInterval));
+  runBacktest();
+}
+async function runBacktest() {
+  const body = $("backtestBody");
+  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по истории (до 1000 баров)…</p>';
+  try {
+    const j = await (await fetch(`/api/backtest?pair=${encodeURIComponent(activePair)}&market=${encodeURIComponent(activeMarket)}&interval=${btInterval}&limit=1000${btFilterQS()}`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderBacktest(j.result, j.interval);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderBacktest(r, interval) {
+  const body = $("backtestBody");
+  if (!r || !r.available || !r.trades) {
+    body.innerHTML = '<p class="modal-note">Недостаточно данных/сделок для бэктеста на этом ТФ.</p>'; return;
+  }
+  const profit = r.total_r > 0 && r.profit_factor >= 1;
+  const verdict = r.profit_factor >= 1.5 ? { t: "Стратегия прибыльна ✅", c: "good" }
+    : r.profit_factor >= 1 ? { t: "Слабый плюс — осторожно", c: "ok" }
+    : { t: "Убыточна на этой истории ⛔", c: "bad" };
+  const spark = (typeof sparklineSvg === "function") ? sparklineSvg(r.equity, profit, "bt-spark") : "";
+  body.innerHTML =
+    `<div class="bt-verdict bt-${verdict.c}">${verdict.t} <small>R:R 1:${r.rr} · ТФ ${interval} · ${r.trades} сделок</small></div>` +
+    `<div class="bt-equity"><div class="bt-eq-label">Кривая депозита (в R)</div>${spark}<div class="bt-eq-total ${r.total_r>=0?'up':'down'}">${r.total_r>=0?'+':''}${r.total_r}R итого</div></div>` +
+    `<div class="bt-kpis">` +
+      `<div class="bt-kpi"><span>Винрейт</span><b class="${r.win_rate>=45?'up':''}">${r.win_rate}%</b></div>` +
+      `<div class="bt-kpi"><span>Средний R</span><b class="${r.avg_r>=0?'up':'down'}">${r.avg_r>0?'+':''}${r.avg_r}</b></div>` +
+      `<div class="bt-kpi"><span>Профит-фактор</span><b class="${r.profit_factor>=1?'up':'down'}">${r.profit_factor}</b></div>` +
+      `<div class="bt-kpi"><span>Макс. просадка</span><b class="down">−${r.max_drawdown_r}R</b></div>` +
+      `<div class="bt-kpi"><span>Сделок</span><b>${r.trades}</b></div>` +
+      `<div class="bt-kpi"><span>TP/SL/БУ</span><b>${r.wins}/${r.losses}/${r.breakeven}</b></div>` +
+    `</div>` +
+    `<div class="bt-sides">` +
+      `<div class="bt-side"><span>📈 Лонги</span><b>${r.long_trades} сд · WR ${r.long_wr}%</b></div>` +
+      `<div class="bt-side"><span>📉 Шорты</span><b>${r.short_trades} сд · WR ${r.short_wr}%</b></div>` +
+    `</div>` +
+    `<p class="modal-note">Упрощённая модель стратегии (тренд EMA + RSI, стоп ATR, тейк R:R 1:${r.rr}, безубыток после +1R) на истории ${interval}. Прошлые результаты не гарантируют будущих. Не финансовый совет.</p>`;
+}
+$("btnBacktest")?.addEventListener("click", () => openBacktest());
+
+// ── Сканер сигналов: бот находит сетапы по стратегии (без исполнения сделок) ──
+let scanMarket = "crypto", _scanTimer = 0, _scanSeen = new Set();
+function openScanner() {
+  $("scannerOverlay")?.classList.remove("hidden");
+  scanMarket = activeMarket || "crypto";
+  document.querySelectorAll("#scanMarkets button").forEach((b) => b.classList.toggle("active", b.dataset.market === scanMarket));
+  runScan();
+}
+function closeScanner() {
+  $("scannerOverlay")?.classList.add("hidden");
+  // авто-скан продолжается в фоне только если включён тумблер — иначе стоп.
+  if (!$("scanAuto")?.checked) { clearInterval(_scanTimer); _scanTimer = 0; }
+}
+async function runScan() {
+  const box = $("scanResults");
+  box.innerHTML = '<p class="modal-note">Сканирую рынок по стратегии… (первый скан ~10–15с)</p>';
+  const region = scanMarket === "stock" ? (activeStockRegion || "all") : "all";
+  try {
+    const j = await (await fetch(`/api/signals/scan?market=${encodeURIComponent(scanMarket)}&region=${region}`)).json();
+    if (!j.ok) { box.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderScan(j.setups || [], j.scanned);
+  } catch (e) { box.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderScan(setups, scanned) {
+  const box = $("scanResults");
+  if (!setups.length) {
+    box.innerHTML = `<p class="modal-note">Готовых сигналов сейчас нет (проверено ${scanned || 0}). Это нормально — стратегия селективна, ждёт сильные сетапы.</p>`;
+    return;
+  }
+  // Уведомления о новых сетапах.
+  if ($("scanNotify")?.checked && "Notification" in window && Notification.permission === "granted") {
+    setups.forEach((s) => {
+      const k = `${s.id}:${s.side}`;
+      if (!_scanSeen.has(k)) {
+        _scanSeen.add(k);
+        new Notification(`Сигнал: ${s.side === "long" ? "ЛОНГ 📈" : "ШОРТ 📉"} ${s.name}`, { body: `Балл ${s.score}/100 · вход ${money(s.entry)} · R:R 1:${s.rr}` });
+      }
+    });
+  }
+  box.innerHTML = `<div class="scan-head">Найдено сетапов: <b>${setups.length}</b> из ${scanned} · обновлено ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div>` +
+    setups.map((s) => {
+      const long = s.side === "long";
+      return `<button type="button" class="scan-card ${long ? "long" : "short"}" data-id="${s.id}" data-market="${s.market}">
+        <span class="sc-c-side ${long ? "long" : "short"}">${long ? "LONG" : "SHORT"}</span>
+        <span class="sc-c-main"><b>${s.name}</b><small>${s.trend || ""}</small></span>
+        <span class="sc-c-score">${s.score ?? "—"}<small>балл</small></span>
+        <span class="sc-c-levels"><span>Вход ${money(s.entry)}</span><span class="down">Стоп ${money(s.stop)}</span><span class="up">Тейк ${money(s.take_profit)}</span><span>R:R 1:${s.rr}</span></span>
+      </button>`;
+    }).join("");
+  box.querySelectorAll(".scan-card").forEach((c) =>
+    c.addEventListener("click", () => {
+      closeScanner();
+      switchView("market", c.dataset.market);
+      analyze(c.dataset.id);
+    })
+  );
+}
+$("botInfoClose")?.addEventListener("click", () => $("botInfoOverlay")?.classList.add("hidden"));
+$("botInfoOverlay")?.addEventListener("click", (e) => { if (e.target === $("botInfoOverlay")) $("botInfoOverlay").classList.add("hidden"); });
+
+// ── Бумажный бот (серверный, виртуальная торговля) ──────────────────────────
+let _paperTimer = 0;
+async function openPaperBot() {
+  $("paperBotOverlay")?.classList.remove("hidden");
+  await loadPaperBot();
+  clearInterval(_paperTimer);
+  _paperTimer = setInterval(loadPaperBot, 30000);  // обновление пока окно открыто
+}
+function closePaperBot() { $("paperBotOverlay")?.classList.add("hidden"); clearInterval(_paperTimer); }
+async function loadPaperBot() {
+  const ov = $("paperBotOverlay");
+  if (!ov || ov.classList.contains("hidden")) { clearInterval(_paperTimer); return; }
+  try {
+    const j = await (await fetch("/api/paper-bot")).json();
+    if (!j.ok) { $("paperBotBody").innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderPaperBot(j);
+  } catch (e) { $("paperBotBody").innerHTML = '<p class="modal-note">Ошибка сети.</p>'; }
+}
+function _ago(ts) {
+  if (!ts) return "—";
+  const m = Math.floor((Date.now() / 1000 - ts) / 60);
+  if (m < 1) return "только что"; if (m < 60) return m + " мин назад";
+  return Math.floor(m / 60) + " ч назад";
+}
+function renderPaperBot(j) {
+  const s = j.stats || {};
+  const up = (s.total_r || 0) >= 0;
+  const spark = (typeof sparklineSvg === "function" && j.equity && j.equity.length) ? sparklineSvg(j.equity, up, "bt-spark") : "";
+  const sideRu = (x) => x === "long" ? "LONG" : "SHORT";
+  const posHtml = (j.open_positions || []).length
+    ? j.open_positions.map((p) => `<div class="pb-pos ${p.side}"><span class="pb-sym">${p.symbol}</span><span class="${p.side === "long" ? "up" : "down"}">${sideRu(p.side)}</span><span>вход ${money(p.entry)}</span><span class="down">стоп ${money(p.stop)}</span><span class="up">тейк ${money(p.tp)}</span>${p.be ? '<span class="pb-be">БУ</span>' : ""}</div>`).join("")
+    : '<p class="modal-note">Открытых виртуальных позиций нет — бот ждёт сигналы.</p>';
+  const recHtml = (j.recent || []).filter((r) => r.outcome).slice(0, 8).map((r) => {
+    const cls = r.outcome === "tp" ? "up" : r.outcome === "sl" ? "down" : "";
+    const lbl = r.outcome === "tp" ? "TP ✓" : r.outcome === "sl" ? "SL ✗" : "БУ";
+    return `<div class="pb-rec"><span>${r.symbol} ${sideRu(r.side)}</span><span class="${cls}">${lbl}</span><span class="${r.r >= 0 ? "up" : "down"}">${r.r > 0 ? "+" : ""}${r.r}R</span><span class="pb-ago">${_ago(r.ts)}</span></div>`;
+  }).join("") || '<p class="modal-note">Закрытых сделок пока нет.</p>';
+  $("paperBotBody").innerHTML =
+    `<p class="modal-note">Бот торгует <b>виртуально</b> (без ключей и денег) на ${j.symbols?.length || 0} инструментах, ТФ ${j.interval}. Запущен ${_ago(j.started_ts)}, обновлён ${_ago(j.last_tick)}. Это демонстрация стратегии вживую, не реальная торговля.</p>` +
+    `<div class="bt-kpis">` +
+      `<div class="bt-kpi"><span>Винрейт</span><b class="${s.win_rate>=45?'up':''}">${s.win_rate||0}%</b></div>` +
+      `<div class="bt-kpi"><span>Итого</span><b class="${up?'up':'down'}">${up?'+':''}${s.total_r||0}R</b></div>` +
+      `<div class="bt-kpi"><span>Профит-фактор</span><b class="${(s.profit_factor||0)>=1?'up':'down'}">${s.profit_factor||0}</b></div>` +
+      `<div class="bt-kpi"><span>Сделок</span><b>${s.closed||0}</b></div>` +
+      `<div class="bt-kpi"><span>Открыто</span><b>${(j.open_positions||[]).length}</b></div>` +
+      `<div class="bt-kpi"><span>TP/SL/БУ</span><b>${s.wins||0}/${s.losses||0}/${s.breakeven||0}</b></div>` +
+    `</div>` +
+    (spark ? `<div class="bt-equity"><div class="bt-eq-label">Кривая депозита (в R)</div>${spark}</div>` : "") +
+    `<h4 class="pb-h">Открытые позиции</h4>${posHtml}` +
+    `<h4 class="pb-h">Последние сделки</h4>${recHtml}`;
+}
+$("paperBotClose")?.addEventListener("click", closePaperBot);
+$("paperBotOverlay")?.addEventListener("click", (e) => { if (e.target === $("paperBotOverlay")) closePaperBot(); });
+
+// ── Конфигуратор бота: настройки → bot_config.json ──────────────────────────
+function openBotConfig() {
+  const sym = (lastAnalysisData?.pair || activePair || "SOLUSDT").replace("/", "");
+  if ($("botSymbol")) $("botSymbol").value = sym;
+  $("botInfoOverlay")?.classList.remove("hidden");
+  botUpdateRun();
+}
+function botBuildConfig() {
+  const mode = $("botMode").value;  // paper / testnet / mainnet
+  return {
+    symbol: ($("botSymbol").value || "SOLUSDT").trim().toUpperCase().replace("/", ""),
+    interval: $("botInterval").value,
+    mode: mode === "paper" ? "paper" : "live",
+    testnet: mode !== "mainnet",
+    risk_pct: parseFloat($("botRisk").value) || 1,
+    leverage_cap: parseInt($("botLev").value, 10) || 10,
+    rr: parseFloat($("botRR").value) || 2,
+    use_ema200: $("botEma200").checked,
+    adx_min: $("botAdx").checked ? 20 : 0,
+    use_macd: $("botMacd").checked,
+  };
+}
+function botUpdateRun() {
+  const c = botBuildConfig();
+  let run = "python bots/tis_bybit_bot.py";
+  if (c.mode === "live" && !c.testnet) run = "export TIS_BOT_CONFIRM_LIVE=YES\n" + run;
+  const warn = (c.mode === "live" && !c.testnet)
+    ? '<div class="bot-warn">⚠ Mainnet: реальные деньги. Нужен ключ Read+Trade (без вывода) и подтверждение TIS_BOT_CONFIRM_LIVE=YES.</div>'
+    : (c.mode === "live" ? '<div class="bot-note-ok">Testnet: тестовые деньги, риска нет.</div>'
+       : '<div class="bot-note-ok">Бумажный режим: реальные ордера НЕ отправляются.</div>');
+  $("botRun").innerHTML = warn +
+    `<div class="bot-cmd-label">Запуск (ключи — в окружении):</div>` +
+    `<pre class="bot-cmd">export BYBIT_API_KEY="ваш_ключ"\nexport BYBIT_API_SECRET="ваш_секрет"\n${run}</pre>`;
+}
+$("botDownloadCfg")?.addEventListener("click", () => {
+  const cfg = botBuildConfig();
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bot_config.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+["botSymbol", "botInterval", "botMode", "botRisk", "botLev", "botRR", "botEma200", "botAdx", "botMacd"]
+  .forEach((id) => { $(id)?.addEventListener("input", botUpdateRun); $(id)?.addEventListener("change", botUpdateRun); });
+$("scannerClose")?.addEventListener("click", closeScanner);
+$("scannerOverlay")?.addEventListener("click", (e) => { if (e.target === $("scannerOverlay")) closeScanner(); });
+$("scanRun")?.addEventListener("click", () => runScan());
+document.querySelectorAll("#scanMarkets button").forEach((b) =>
+  b.addEventListener("click", () => { scanMarket = b.dataset.market; document.querySelectorAll("#scanMarkets button").forEach((x) => x.classList.toggle("active", x === b)); runScan(); })
+);
+$("scanAuto")?.addEventListener("change", () => {
+  clearInterval(_scanTimer); _scanTimer = 0;
+  if ($("scanAuto").checked) _scanTimer = setInterval(runScan, 300000);  // 5 мин
+});
+$("scanNotify")?.addEventListener("change", () => {
+  if ($("scanNotify").checked && "Notification" in window && Notification.permission === "default") Notification.requestPermission();
+});
+$("backtestClose")?.addEventListener("click", () => $("backtestOverlay")?.classList.add("hidden"));
+$("backtestOverlay")?.addEventListener("click", (e) => { if (e.target === $("backtestOverlay")) $("backtestOverlay").classList.add("hidden"); });
+document.querySelectorAll("#btInterval button").forEach((b) =>
+  b.addEventListener("click", () => { btInterval = b.dataset.int; document.querySelectorAll("#btInterval button").forEach((x) => x.classList.toggle("active", x === b)); runBacktest(); })
+);
+$("btScanBtn")?.addEventListener("click", () => runBacktestScan());
+["btEma200", "btAdx", "btMacd"].forEach((id) => $(id)?.addEventListener("change", () => runBacktest()));
+async function runBacktestScan() {
+  const body = $("backtestBody");
+  body.innerHTML = '<p class="modal-note">Прогоняю стратегию по многим инструментам (≈10–20с)…</p>';
+  const region = activeMarket === "stock" ? (activeStockRegion || "all") : "all";
+  try {
+    const j = await (await fetch(`/api/backtest/scan?market=${encodeURIComponent(activeMarket)}&region=${region}&interval=${btInterval}${btFilterQS()}`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderBacktestScan(j);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderBacktestScan(j) {
+  const body = $("backtestBody");
+  if (!j.rows || !j.rows.length) { body.innerHTML = '<p class="modal-note">Недостаточно данных для сравнения.</p>'; return; }
+  const verdict = j.robust > 0 ? { t: `Стратегия устойчива на ${j.robust} инстр. ✅`, c: "good" }
+    : j.profitable >= j.tested * 0.6 ? { t: "Прибыльна, но выборки малы — нужно больше сделок", c: "ok" }
+    : { t: "Неустойчива на этом периоде ⛔", c: "bad" };
+  body.innerHTML =
+    `<div class="bt-verdict bt-${verdict.c}">${verdict.t} <small>ТФ ${j.interval} · прибыльных ${j.profitable}/${j.tested} · средний PF ${j.avg_pf} · итого ${j.total_r>=0?'+':''}${j.total_r}R</small></div>` +
+    `<div class="bt-table"><div class="bt-tr bt-th"><span>Инструмент</span><span>PF</span><span>Винрейт</span><span>Сделок</span><span>Σ R</span></div>` +
+    j.rows.map((r) => {
+      const pfCls = r.profit_factor >= 1.3 ? "up" : r.profit_factor >= 1 ? "" : "down";
+      return `<button type="button" class="bt-tr" data-id="${r.id}"><span class="bt-td-name">${r.name}</span>` +
+        `<span class="${pfCls}"><b>${r.profit_factor}</b></span><span>${r.win_rate}%</span><span>${r.trades}</span>` +
+        `<span class="${r.total_r>=0?'up':'down'}">${r.total_r>=0?'+':''}${r.total_r}</span></button>`;
+    }).join("") + `</div>` +
+    `<p class="modal-note">«Устойчиво» = PF ≥ 1.3 при ≥20 сделках. Малые выборки (мало сделок) — не повод доверять. Клик по строке открывает инструмент.</p>`;
+  body.querySelectorAll(".bt-tr[data-id]").forEach((row) =>
+    row.addEventListener("click", () => { $("backtestOverlay").classList.add("hidden"); analyze(row.dataset.id); })
+  );
+}
+$("riskCalcClose")?.addEventListener("click", () => $("riskCalcOverlay")?.classList.add("hidden"));
+$("riskCalcOverlay")?.addEventListener("click", (e) => { if (e.target === $("riskCalcOverlay")) $("riskCalcOverlay").classList.add("hidden"); });
+document.querySelectorAll("#rcSide button").forEach((b) =>
+  b.addEventListener("click", () => { rcSide = b.dataset.side; document.querySelectorAll("#rcSide button").forEach((x) => x.classList.toggle("active", x === b)); computeRiskCalc(); })
+);
+["rcDeposit", "rcRisk"].forEach((id) => $(id)?.addEventListener("input", () => { clearTimeout(_rcTimer); _rcTimer = setTimeout(computeRiskCalc, 300); }));
+
+// ── Сентимент Bybit: Long/Short ratio + дисбаланс стакана (публично) ─────────
+async function loadBybitSentiment(pair) {
+  const card = $("bybitSentCard");
+  if (!card) return;
+  if (activeMarket !== "crypto") { card.classList.add("hidden"); return; }
+  try {
+    const j = await (await fetch(`/api/bybit/sentiment?pair=${encodeURIComponent(pair)}`)).json();
+    if (activePair !== pair) return;  // инструмент сменился
+    if (!j.ok || (!j.long_short && !j.orderbook)) { card.classList.add("hidden"); return; }
+    renderBybitSentiment(j);
+    card.classList.remove("hidden");
+  } catch (e) { card.classList.add("hidden"); }
+}
+function renderBybitSentiment(j) {
+  const box = $("bybitSentBody");
+  let html = "";
+  const ls = j.long_short;
+  if (ls) {
+    const lp = ls.long_pct, sp = ls.short_pct;
+    const skew = lp >= 60 ? "Толпа в лонге — осторожно с поздним входом в лонг" :
+                 sp >= 60 ? "Толпа в шорте — риск шорт-сквиза" : "Без перекоса";
+    html +=
+      `<div class="bs-row"><div class="bs-label"><span>Long/Short трейдеров</span><b>${lp}% / ${sp}%</b></div>` +
+      `<div class="bs-bar"><i class="up" style="flex-basis:${lp}%"></i><i class="down" style="flex-basis:${sp}%"></i></div>` +
+      `<div class="bs-note">${skew}</div></div>`;
+  }
+  const ob = j.orderbook;
+  if (ob) {
+    const bp = ob.bid_pct, ap = ob.ask_pct;
+    const press = bp >= 58 ? "Давление покупателей (биды толще)" :
+                  ap >= 58 ? "Давление продавцов (аски толще)" : "Стакан сбалансирован";
+    html +=
+      `<div class="bs-row"><div class="bs-label"><span>Стакан (бид/аск, ${ob.levels} ур.)</span><b>${bp}% / ${ap}%</b></div>` +
+      `<div class="bs-bar"><i class="up" style="flex-basis:${bp}%"></i><i class="down" style="flex-basis:${ap}%"></i></div>` +
+      `<div class="bs-note">${press}</div></div>`;
+  }
+  box.innerHTML = html;
+}
+
+// ── Bybit аккаунт (BYOK, только просмотр баланса/позиций) ───────────────────
+function bybitCfg() { try { return JSON.parse(localStorage.getItem("bybit_cfg") || "{}"); } catch (e) { return {}; } }
+function openBybitKey() {
+  const c = bybitCfg();
+  $("bybitKey").value = c.key || "";
+  $("bybitSecret").value = c.secret || "";
+  $("bybitResult").innerHTML = c.key ? '<p class="modal-note">Ключ сохранён. Нажмите «Показать счёт».</p>' : "";
+  $("bybitKeyOverlay").classList.remove("hidden");
+}
+function closeBybitKey() { $("bybitKeyOverlay")?.classList.add("hidden"); }
+function bybitClearKey() {
+  try { localStorage.removeItem("bybit_cfg"); } catch (e) {}
+  $("bybitKey").value = ""; $("bybitSecret").value = "";
+  $("bybitResult").innerHTML = '<p class="modal-note">Ключ удалён из браузера.</p>';
+}
+async function bybitFetchAccount() {
+  const key = $("bybitKey").value.trim();
+  const secret = $("bybitSecret").value.trim();
+  const box = $("bybitResult");
+  if (!key || !secret) { box.innerHTML = '<p class="dr-row bad"><span>Укажите ключ и секрет</span></p>'; return; }
+  try { localStorage.setItem("bybit_cfg", JSON.stringify({ key, secret })); } catch (e) {}
+  box.innerHTML = '<p class="modal-note">Загрузка счёта…</p>';
+  try {
+    const j = await (await fetch("/api/bybit/account", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, secret }),
+    })).json();
+    if (!j.ok) { box.innerHTML = `<p class="dr-row bad"><span>${j.error || "Ошибка"}</span></p>`; return; }
+    window._bybitPositions = j.positions || [];
+    renderBybitAccount(j.balance, j.positions);
+  } catch (e) {
+    box.innerHTML = '<p class="dr-row bad"><span>Не удалось подключиться к серверу</span></p>';
+  }
+}
+function renderBybitAccount(bal, positions) {
+  const box = $("bybitResult");
+  const pnlCls = (bal.unrealized_pnl || 0) >= 0 ? "up" : "down";
+  let html =
+    `<div class="bybit-bal">` +
+      `<div class="bb-kpi"><span>Капитал</span><b>${money(bal.total_equity)} $</b></div>` +
+      `<div class="bb-kpi"><span>Доступно</span><b>${money(bal.available)} $</b></div>` +
+      `<div class="bb-kpi"><span>Нереал. PnL</span><b class="${pnlCls}">${(bal.unrealized_pnl >= 0 ? "+" : "")}${money(bal.unrealized_pnl)} $</b></div>` +
+    `</div>`;
+  if (!positions || !positions.length) {
+    html += '<p class="modal-note">Открытых позиций нет.</p>';
+  } else {
+    html += '<div class="bybit-pos-head"><span>Позиция</span><span>Размер</span><span>Вход</span><span>PnL</span></div>';
+    positions.forEach((p) => {
+      const long = p.side === "buy";
+      const pc = (p.unrealized_pnl || 0) >= 0 ? "up" : "down";
+      html +=
+        `<div class="bybit-pos">` +
+          `<span class="bp-sym"><b>${p.symbol}</b> <em class="${long ? "up" : "down"}">${long ? "LONG" : "SHORT"} ${p.leverage}x</em></span>` +
+          `<span>${p.size}</span>` +
+          `<span>${money(p.entry_price)}</span>` +
+          `<span class="${pc}">${(p.unrealized_pnl >= 0 ? "+" : "")}${money(p.unrealized_pnl)}</span>` +
+        `</div>`;
+    });
+  }
+  box.innerHTML = html;
+}
+// ── AI-аналитик (заключение ИИ по нашему анализу + данные Bybit) ────────────
+const AIA_ACTION = {
+  long: { label: "ЛОНГ 📈", cls: "buy" },
+  short: { label: "ШОРТ 📉", cls: "sell" },
+  wait: { label: "ЖДАТЬ ⏳", cls: "wait" },
+};
+async function runAiAnalyst(level) {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  clearInterval(_localConclTimer);  // остановить авто-обновление «Без ИИ», чтобы не затирало AI-результат
+  const box = $("aiAnalystResult");
+  if (!getAiCfg().key) {
+    showError("Нужен AI-ключ — вставьте свой бесплатный ключ в открывшемся окне.");
+    if (typeof openAiKeyModal === "function") openAiKeyModal();
+    return;
+  }
+  const cfg = getAiCfg();
+  const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
+  // Открываем отдельное окно с результатом.
+  const ttl = $("aiAnalystModalTitle");
+  if (ttl) ttl.textContent = level === "full" ? "🤖 AI-анализ (полный)" : "🤖 AI-анализ";
+  $("aiAnalystOverlay")?.classList.remove("hidden");
+  document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
+  // Позиции Bybit учитываются, только если ты их уже открыл во вкладке «🔑 Bybit»
+  // (Bybit — для просмотра аккаунта). Сам анализ их не запрашивает.
+  const positions = level === "full" && Array.isArray(window._bybitPositions) && window._bybitPositions.length
+    ? window._bybitPositions : null;
+  box.innerHTML = '<p class="aia-loading">ИИ анализирует…</p>';
+  document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = true));
+  try {
+    const j = await (await fetch("/api/ai-analyst", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pair: lastAnalysisData.pair || activePair,
+        market: lastAnalysisData.market || activeMarket,
+        source: cryptoSource(), level, lang,
+        ai_key: cfg.key || "", ai_base: cfg.base || "", ai_model: cfg.model || "",
+        positions,
+        profile: getTradingProfile(),
+      }),
+    })).json();
+    const a = j.ok ? j.analyst : null;
+    // ИИ-модель не дала ответа / вернула мусор (частая беда free-моделей) —
+    // не показываем пустоту, а откатываемся на наше заключение «Без ИИ».
+    const junk = a && a.freeform && (!a.summary || a.summary.replace(/[^a-zа-я0-9]/gi, "").length < 20);
+    if (!a || junk) {
+      if (j.need_key) { showError(j.error || "Нужен AI-ключ"); if (typeof openAiKeyModal === "function") openAiKeyModal(); return; }
+      const local = buildLocalConclusion(lastAnalysisData);
+      local._aiFailed = true;
+      local._aiError = j.error || (junk ? "модель вернула пустой/невалидный ответ" : "нет ответа модели");
+      renderAiAnalyst(local, "local");
+      return;
+    }
+    renderAiAnalyst(a, level);
+  } catch (e) {
+    const local = buildLocalConclusion(lastAnalysisData);
+    local._aiFailed = true;
+    renderAiAnalyst(local, "local");
+  } finally {
+    document.querySelectorAll("#aiAnalystPanel .aia-actions button").forEach((b) => (b.disabled = false));
+  }
+}
+function renderAiAnalyst(r, level) {
+  const a = AIA_ACTION[r.action] || AIA_ACTION.wait;
+  const li = (arr) => (arr || []).map((x) => `<li>${x}</li>`).join("");
+  const lvlTag = r.local ? "Без ИИ" : level === "full" ? "Полный +Bybit" : "Простой";
+  // freeform — модель не отдала JSON, показываем её текст без бейджа действия.
+  const topHtml = r.freeform
+    ? `<div class="aia-top"><span class="aia-horizon">Заключение ИИ</span><span class="aia-lvl">${lvlTag}</span></div>`
+    : `<div class="aia-top">` +
+        `<span class="aia-badge ${a.cls}">${a.label}</span>` +
+        `<span class="aia-conf">Уверенность ИИ: <b>${r.confidence}%</b></span>` +
+        (r.horizon ? `<span class="aia-horizon">${r.horizon}</span>` : "") +
+        `<span class="aia-lvl">${lvlTag}</span>` +
+      `</div>`;
+  const failNote = r._aiFailed
+    ? `<p class="aia-need" style="margin:0 0 8px">⚠ ИИ недоступен${r._aiError ? ` (${r._aiError})` : ""} — показано заключение по нашему анализу. Если повторяется, смените модель/провайдера в «🔑 AI-ключ».</p>`
+    : "";
+  $("aiAnalystResult").innerHTML =
+    `<div class="aia-card">` +
+      failNote +
+      topHtml +
+      (r.position_note ? `<p class="aia-position ${r.position_note.startsWith("⚠") ? "danger" : ""}">${r.position_note}</p>` : "") +
+      `<p class="aia-summary">${r.summary || "—"}</p>` +
+      (r.key_points && r.key_points.length ? `<div class="aia-block"><h4>За/ключевое</h4><ul class="aia-pts">${li(r.key_points)}</ul></div>` : "") +
+      (r.risks && r.risks.length ? `<div class="aia-block"><h4>Риски</h4><ul class="aia-risks">${li(r.risks)}</ul></div>` : "") +
+      (r.plan ? `<p class="aia-plan">📋 ${r.plan}</p>` : "") +
+      `<p class="aia-foot">${r.local ? "Заключение по нашему анализу (без ИИ), обновляется в реальном времени" : "ИИ-заключение поверх нашего анализа" + (level === "full" ? " + данные Bybit" : "") + " · модель " + (r.model || "—")}. Не финансовый совет.</p>` +
+    `</div>`;
+}
+// Подтянуть открытые позиции Bybit (read-only), если ключ сохранён.
+async function ensureBybitPositions() {
+  if (window._bybitPositions && window._bybitPositions.length) return;
+  const bc = bybitCfg();
+  if (!bc.key || !bc.secret) return;
+  try {
+    const acc = await (await fetch("/api/bybit/account", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: bc.key, secret: bc.secret }),
+    })).json();
+    if (acc.ok) window._bybitPositions = acc.positions || [];
+  } catch (e) { /* без позиций — заключение всё равно сработает */ }
+}
+
+// Открытая позиция Bybit по текущему инструменту (или null).
+function bybitPositionFor(d) {
+  const arr = window._bybitPositions;
+  if (!Array.isArray(arr) || !arr.length) return null;
+  const sym = (d.pair || d.symbol || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (!sym) return null;
+  return arr.find((p) => String(p.symbol || "").toUpperCase().startsWith(sym.slice(0, 6))) || null;
+}
+
+// Детерминированное заключение по НАШЕМУ анализу — без ИИ, без ключа, всегда работает.
+function buildLocalConclusion(d) {
+  const acc = d.accuracy || {}, trade = d.trade || {}, vol = d.volatility || {}, deep = d.deep || {};
+  const side = acc.recommended_side;
+  const action = side === "long" || side === "short" ? side : "wait";
+  const checks = acc.checks || [];
+  const good = checks.filter((c) => c.status === "good").map((c) => c.name + (c.detail ? ` — ${c.detail}` : ""));
+  const bad = checks.filter((c) => c.status === "bad").map((c) => c.name + (c.detail ? ` — ${c.detail}` : ""));
+  const warnings = trade.warnings || [];
+  const sideRu = action === "long" ? "ЛОНГ" : action === "short" ? "ШОРТ" : "ЖДАТЬ";
+
+  let summary;
+  if (action === "wait") {
+    summary = `Чёткого сигнала нет — лучше подождать. Тренд: ${d.overall_trend}. Балл согласованности ${acc.overall_pct ?? "—"}/100 (${acc.reliability_label || "—"}).`;
+  } else {
+    summary = `Движок за ${sideRu}. Тренд: ${d.overall_trend}. Балл согласованности ${acc.overall_pct ?? "—"}/100 (${acc.reliability_label || "—"}). HTF-bias: ${d.bias ? d.bias.summary : "—"}.`;
+  }
+
+  // Дедуп по «имени» (текст до « — »), чтобы волатильность не повторялась.
+  const dedup = (arr) => {
+    const seen = new Set(), out = [];
+    for (const s of arr) {
+      const key = s.split(" — ")[0].toLowerCase().replace(/\(.*?\)/g, "").trim();
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(s);
+    }
+    return out;
+  };
+  const key_points = dedup(good).slice(0, 5);
+  if (deep.market_regime) key_points.push(`Режим: ${deep.market_regime}, риск ${deep.risk_score}/100`);
+  // Данные Bybit: фандинг (если доступен — деривативы Bybit/Binance).
+  const fund = d.funding;
+  if (fund && fund.rate_percent != null) {
+    key_points.push(`Фандинг ${fund.rate_percent > 0 ? "+" : ""}${fund.rate_percent}% — ${fund.sentiment || (fund.rate_percent > 0 ? "лонги платят шортам" : "шорты платят лонгам")}`);
+  }
+  const risks = dedup(bad.concat(warnings)).slice(0, 4);
+
+  // Оценка ТВОЕЙ открытой позиции Bybit по этому инструменту.
+  const pos = bybitPositionFor(d);
+  let posLine = "";
+  if (pos) {
+    const posSide = pos.side === "buy" ? "long" : "short";
+    const posRu = posSide === "long" ? "ЛОНГ" : "ШОРТ";
+    const pnl = pos.unrealized_pnl;
+    const pnlTxt = `${pnl >= 0 ? "+" : ""}${pnl} USDT`;
+    if (action === "wait") {
+      posLine = `Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt}. Чёткого сигнала нет — управляйте риском (стоп в безубыток / частичная фиксация).`;
+    } else if (posSide === action) {
+      posLine = `Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt} — ПО НАПРАВЛЕНИЮ сигнала. ${pnl >= 0 ? "Можно держать; защитите профит (стоп в БУ, частичный тейк у уровня)." : "Сигнал за вас, но вы в минусе — следите за стопом."}`;
+    } else {
+      posLine = `⚠ Ваша позиция: ${posRu} от ${money(pos.entry_price)} (${pos.leverage}x), PnL ${pnlTxt} — ПРОТИВ сигнала движка (${sideRu}). Высокий риск: рассмотрите сокращение/закрытие или жёсткий стоп.`;
+    }
+  }
+
+  let plan = "";
+  if (action !== "wait" && trade.entry_price_hint) {
+    plan = `Вход: ${trade.entry_price_hint} · Стоп: ${trade.stop_loss_hint} · Тейк: ${trade.take_profit_hint}`;
+  } else {
+    const sup = (d.support_levels || []).slice(0, 2).map(money).join(", ");
+    const res = (d.resistance_levels || []).slice(0, 2).map(money).join(", ");
+    plan = `Поддержки: ${sup || "—"} · Сопротивления: ${res || "—"} — ждать реакции у уровня`;
+  }
+
+  return {
+    local: true, action, confidence: acc.overall_pct ?? 0,
+    horizon: deep.market_regime || "",
+    summary, position_note: posLine,
+    key_points, risks, plan, model: "наш анализ (без ИИ)",
+  };
+}
+let _localConclTimer = 0;
+async function runLocalConclusion() {
+  if (!lastAnalysisData || !activePair) { showError("Сначала выберите инструмент и нажмите «Анализ»"); return; }
+  const ttl = $("aiAnalystModalTitle");
+  if (ttl) ttl.textContent = "📋 Заключение (без ИИ)";
+  $("aiAnalystOverlay")?.classList.remove("hidden");
+  renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
+  // Пока окно открыто — переобновляем заключение свежими данными (анализ освежается поллингом графика).
+  clearInterval(_localConclTimer);
+  _localConclTimer = setInterval(() => {
+    const ov = $("aiAnalystOverlay");
+    if (!ov || ov.classList.contains("hidden")) { clearInterval(_localConclTimer); return; }
+    if (lastAnalysisData) renderAiAnalyst(buildLocalConclusion(lastAnalysisData), "local");
+  }, 3000);
+}
+
+$("btnAiLocal")?.addEventListener("click", () => runLocalConclusion());
+$("btnAiSimple")?.addEventListener("click", () => runAiAnalyst("simple"));
+$("btnAiFull")?.addEventListener("click", () => runAiAnalyst("full"));
+$("aiAnalystClose")?.addEventListener("click", () => $("aiAnalystOverlay")?.classList.add("hidden"));
+$("aiAnalystOverlay")?.addEventListener("click", (e) => { if (e.target === $("aiAnalystOverlay")) $("aiAnalystOverlay").classList.add("hidden"); });
+
+// Центр управления — карточки открывают существующие модалки (без дублирования логики).
+document.querySelectorAll("#view-control .ctrl-card").forEach((card) =>
+  card.addEventListener("click", () => {
+    switch (card.dataset.ctrl) {
+      case "scanner": openScanner(); break;
+      case "paperbot": openPaperBot(); break;
+      case "bot": openBotConfig(); break;
+      case "journal": openJournalAdd(); break;
+      case "dividends": openDividends(); break;
+      case "colors": openColorsModal(); break;
+      case "aikey": (typeof openAiKeyModal === "function") && openAiKeyModal(); break;
+      case "bybit": openBybitKey(); break;
+      case "support": openModal("support"); break;
+    }
+  })
+);
+
+$("linkBybitKey")?.addEventListener("click", openBybitKey);
+$("bybitKeyClose")?.addEventListener("click", closeBybitKey);
+$("bybitKeyOverlay")?.addEventListener("click", (e) => { if (e.target === $("bybitKeyOverlay")) closeBybitKey(); });
+$("bybitFetch")?.addEventListener("click", bybitFetchAccount);
+$("bybitClear")?.addEventListener("click", bybitClearKey);
+
+// Переключатель источника крипто-данных (Binance ⇄ Bybit)
+function syncSourceSeg() {
+  const seg = $("cryptoSourceSeg");
+  if (!seg) return;
+  seg.style.display = activeMarket === "crypto" ? "" : "none";
+  const cur = cryptoSource() === "bybit" ? "bybit" : "auto";
+  seg.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.source === cur));
+}
+$("cryptoSourceSeg")?.querySelectorAll("button").forEach((b) =>
+  b.addEventListener("click", () => {
+    try { localStorage.setItem("crypto_source", b.dataset.source === "bybit" ? "bybit" : "auto"); } catch (e) {}
+    syncSourceSeg();
+    if (activePair && activeView === "market") analyze(activePair, true); // пересчёт с новым источником
+  })
+);
+$("scEntryReset")?.addEventListener("click", () => {
+  if (lastAnalysisData && lastAnalysisData.price != null) {
+    $("scEntry").value = lastAnalysisData.price;
+    scenarioRecalc();
+  }
+});
+$("scMarginPresets")?.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("scMargin").value = b.dataset.v;
+  scenarioRecalc();
+});
+$("scLevPresets")?.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("scLev").value = b.dataset.v;
+  $("scLevVal").textContent = b.dataset.v + "×";
+  scenarioRecalc();
+});
+
 $("btnNewsAi")?.addEventListener("click", () => loadNewsAi());
 $("btnJournalAdd")?.addEventListener("click", () => openJournalAdd());
 $("journalAddClose")?.addEventListener("click", closeJournalAdd);
@@ -1843,19 +3140,69 @@ document.querySelectorAll("#jaddSide button").forEach((b) =>
   })
 );
 $("btnJournalRefresh")?.addEventListener("click", () => loadJournal());
-$("btnJournalClear")?.addEventListener("click", async () => {
+$("btnJournalClear")?.addEventListener("click", () => {
   if (!confirm("Удалить ВСЕ записи журнала? Действие необратимо.")) return;
-  try {
-    const json = await (await fetch("/api/journal/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    })).json();
-    if (json.ok) loadJournal();
-    else showError(json.error || "Не удалось очистить журнал");
-  } catch (e) {
-    showError("Не удалось очистить журнал");
+  jSave([]);
+  loadJournal();
+});
+
+// ---- Экспорт журнала в .json (бэкап; журнал хранится только в localStorage) ----
+$("btnJournalExport")?.addEventListener("click", () => {
+  const arr = jLoad();
+  if (!arr.length) { showError("Журнал пуст — нечего экспортировать"); return; }
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `signal_journal_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ---- Импорт журнала из .json (массив записей; заменяет текущий после подтверждения) ----
+function jValidImport(arr) {
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  for (const r of arr) {
+    if (!r || (r.side !== "long" && r.side !== "short")) continue;
+    const entry = +r.entry, stop = +r.stop, tp = +r.take_profit;
+    if (!(entry > 0) || !(stop > 0) || !(tp > 0)) continue;
+    out.push({
+      id: r.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      created_ts: r.created_ts || Math.floor(Date.now() / 1000),
+      pair: r.pair || "", market: r.market || "", display: r.display || r.pair || "",
+      side: r.side, entry, stop, take_profit: tp,
+      take_profit_2: r.take_profit_2 != null ? +r.take_profit_2 : null,
+      rr: r.rr != null ? +r.rr : null, accuracy_pct: r.accuracy_pct ?? null,
+      status: r.status || "open", exit_price: r.exit_price ?? null,
+      outcome_ts: r.outcome_ts ?? null, r_multiple: r.r_multiple ?? null,
+      evaluated_ts: r.evaluated_ts ?? null,
+    });
   }
+  return out;
+}
+$("btnJournalImport")?.addEventListener("click", () => $("journalImportFile")?.click());
+$("journalImportFile")?.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(reader.result); }
+    catch (err) { showError("Не удалось прочитать файл: неверный JSON"); e.target.value = ""; return; }
+    const recs = jValidImport(parsed);
+    if (!recs || !recs.length) { showError("В файле нет корректных записей сигналов"); e.target.value = ""; return; }
+    const cur = jLoad();
+    const msg = cur.length
+      ? `Импортировать ${recs.length} записей? Текущие ${cur.length} будут ЗАМЕНЕНЫ.`
+      : `Импортировать ${recs.length} записей в журнал?`;
+    if (confirm(msg)) {
+      jSave(recs);
+      switchView("journal");
+      loadJournal();
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
 });
 
 let entryConfig = {};
@@ -1927,6 +3274,12 @@ $("btnImbalance")?.addEventListener("click", () => {
   imbalanceOn = !imbalanceOn;
   TradingChart.toggleImbalances?.(imbalanceOn);
   $("btnImbalance")?.classList.toggle("active", imbalanceOn);
+});
+
+let smcOn = false;
+$("btnSmc")?.addEventListener("click", () => {
+  smcOn = TradingChart.toggleSmc?.();
+  $("btnSmc")?.classList.toggle("active", !!smcOn);
 });
 document.addEventListener("click", (e) => {
   const dd = $("entryDropdown");
@@ -2006,6 +3359,11 @@ const MODAL_CONTENT = {
         <p class="modal-note">Любая сумма помогает держать сервис онлайн и развивать его дальше. Спасибо! 🙏</p>
         <div class="support-actions">
           <a class="btn-primary support-btn" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 Поддержать через СБП (Ozon Банк)</a>
+          <a class="support-btn-bybit" href="https://www.bybit.com/invite?ref=ANPNBR&medium=referral&utm_campaign=evergreen" target="_blank" rel="noopener">
+            <span class="sbb-logo">Bybit</span>
+            <span class="sbb-text"><b>Регистрация на Bybit по нашей ссылке</b><small>Бесплатно для вас — биржа делится с проектом частью комиссии</small></span>
+            <span class="sbb-arrow">↗</span>
+          </a>
           <a class="support-btn-alt" href="https://flenk41.github.io/" target="_blank" rel="noopener">Другие способы поддержки ↗</a>
         </div>`,
     },
@@ -2046,6 +3404,11 @@ const MODAL_CONTENT = {
         <p class="modal-note">Any amount helps keep the service online and growing. Thank you! 🙏</p>
         <div class="support-actions">
           <a class="btn-primary support-btn" href="https://flenk41.github.io/" target="_blank" rel="noopener">❤️ Support</a>
+          <a class="support-btn-bybit" href="https://www.bybit.com/invite?ref=ANPNBR&medium=referral&utm_campaign=evergreen" target="_blank" rel="noopener">
+            <span class="sbb-logo">Bybit</span>
+            <span class="sbb-text"><b>Sign up on Bybit via our link</b><small>Free for you — the exchange shares part of its fee with the project</small></span>
+            <span class="sbb-arrow">↗</span>
+          </a>
           <a class="support-btn-alt" href="https://finance.ozon.ru/apps/sbp/ozonbankpay/019e7ffd-85f4-732f-ad99-6a6ce7ede158" target="_blank" rel="noopener">🇷🇺 SBP / Ozon Bank (Russia) ↗</a>
         </div>`,
     },
@@ -2089,6 +3452,9 @@ const GUIDE_SLIDES = {
     { v: _GV.insider, t: "Инсайдеры / умные деньги", d: "Для акций США — живой сигнал по SEC Form 4: покупки инсайдеров (особенно топ-менеджмента/крупные/кластерные) бычьи и добавляют к баллу. Для РФ-акций — доли инсайдеров/институционалов. Виден в факторах согласованности." },
     { v: _GV.journal, t: "Журнал сигналов", d: "«Записать сигнал» → введите РЕАЛЬНУЮ цену входа (по умолчанию текущая) — стоп/тейк считаются от неё по той же методике, что на графике. Система сама проверит по истории, что сработало (тейк/стоп), и посчитает винрейт. Есть «🗑 Очистить»." },
     { v: _GV.aikey, t: "AI-ключ (свой, бесплатный)", d: "Для AI-разбора и мнений нажмите «🔑 AI-ключ» вверху и вставьте бесплатный ключ. Рекомендую OpenRouter ⭐ (openrouter.ai) — бесплатные модели, доступен из большинства регионов. Ключ хранится только в вашем браузере." },
+    { v: `<div class="gv-news"><span class="gv-nb good">Binance</span><span class="gv-nb">Bybit</span></div>`, t: "Источник данных Bybit", d: "В панели графика (для крипты) — переключатель Binance ⇄ Bybit. Bybit обычно доступен в РФ без VPN и отдаёт фандинг/открытый интерес. Анализ можно считать на данных Bybit — ключ для этого НЕ нужен." },
+    { v: `<div class="gv-aikey">🔑</div>`, t: "Аккаунт Bybit (только просмотр)", d: "Кнопка «🔑 Bybit» — вставьте read-only ключ Bybit: увидите баланс и открытые позиции. Ключ хранится только в браузере, торговать им нельзя. Создавайте на Bybit ключ с правами только на чтение." },
+    { v: `<div class="gv-aikey">🤖</div>`, t: "AI-аналитик и «Без ИИ»", d: "Вкладка «Анализ»: «📋 Без ИИ» — заключение по нашему анализу (работает всегда, без ключа); «⚡ Простой» и «🧠 Полный +Bybit» — заключение ИИ (нужен AI-ключ; «Полный» учитывает фандинг/OI Bybit и вашу позицию). Открывается в отдельном окне; если ИИ недоступен — автоматически показывается заключение «Без ИИ»." },
     { v: _GV.support, t: "Поддержать проект", d: "Кнопка «❤️ Поддержать» вверху. Для РФ — оплата через СБП (Ozon Банк). 100% средств идут на сервер для сайта и развитие проекта." },
   ],
   en: [
@@ -2107,6 +3473,9 @@ const GUIDE_SLIDES = {
     { v: _GV.insider, t: "Insiders / smart money", d: "US stocks — a live SEC Form 4 signal: insider buys (esp. executives/large/clustered) are bullish and add to the score. RU stocks — insider/institutional ownership. Shown in the agreement factors." },
     { v: `<div class="gv-stat"><span>Win rate</span><b class="up">62%</b><span>R:R</span><b>1:2</b></div>`, t: "Signal journal", d: "“Log signal” → enter your REAL entry price (defaults to current) — stop/take are computed from it with the same method as the chart. The system checks history for what hit first and computes a real win rate. There's a “🗑 Clear”." },
     { v: _GV.aikey, t: "AI key (your own, free)", d: "For the AI review and views, click “🔑 AI key” and paste a free key. Recommended: OpenRouter ⭐ (openrouter.ai) — free models, works in most regions. Stored only in your browser." },
+    { v: `<div class="gv-news"><span class="gv-nb good">Binance</span><span class="gv-nb">Bybit</span></div>`, t: "Bybit data source", d: "On the chart bar (for crypto) — a Binance ⇄ Bybit switch. Bybit is usually reachable without a VPN and provides funding/open interest. Analysis can run on Bybit data — no key needed for that." },
+    { v: `<div class="gv-aikey">🔑</div>`, t: "Bybit account (read-only)", d: "The “🔑 Bybit” button — paste a read-only Bybit key to see balance and open positions. The key is stored only in your browser; trading is not possible. Create a Read-Only key on Bybit." },
+    { v: `<div class="gv-aikey">🤖</div>`, t: "AI analyst & “No AI”", d: "Analysis tab: “📋 No AI” — a conclusion from our own analysis (always works, no key); “⚡ Simple” and “🧠 Full +Bybit” — an AI conclusion (needs an AI key; Full uses Bybit funding/OI and your position). Opens in a separate window; if AI is unavailable, the “No AI” conclusion is shown automatically." },
     { v: `<div class="gv-aikey">❤️</div>`, t: "Support the project", d: "The “❤️ Support” button at the top. For Russia — payment via SBP (Ozon Bank). 100% of funds go to the server and project development." },
   ],
 };
@@ -2193,9 +3562,9 @@ $("linkGuide")?.addEventListener("click", () => openGuide());
 let divData = null;
 
 function toggleDividendBtn() {
-  const btn = $("linkDividends");
-  if (!btn) return;
-  btn.classList.toggle("hidden", !(activeView === "market" && activeMarket === "stock"));
+  const isStock = activeView === "market" && activeMarket === "stock";
+  $("linkDividends")?.classList.toggle("hidden", !isStock);
+  $("linkQuality")?.classList.toggle("hidden", !isStock);
 }
 
 function divCur(cur) {
@@ -2278,6 +3647,59 @@ function computeDividends() {
 
 function closeDividends() { $("dividendOverlay")?.classList.add("hidden"); }
 $("linkDividends")?.addEventListener("click", openDividends);
+
+// ── Инвест-качество «по Баффету» + крупные держатели (акции) ─────────────────
+const QCHK = { good: "✓", ok: "~", bad: "✗" };
+async function openQuality() {
+  if (activeMarket !== "stock" || !activePair) { showError("Откройте акцию и нажмите «Анализ»"); return; }
+  $("qualityOverlay").classList.remove("hidden");
+  const body = $("qualityBody");
+  body.innerHTML = '<p class="modal-note">Загружаю фундаментал и держателей…</p>';
+  try {
+    const lang = window.I18N && I18N.get() === "en" ? "en" : "ru";
+    const j = await (await fetch(`/api/quality?pair=${encodeURIComponent(activePair)}&market=stock&lang=${lang}`)).json();
+    if (!j.ok) { body.innerHTML = `<p class="modal-note">${j.error || "Ошибка"}</p>`; return; }
+    renderQuality(j.scorecard, j.holders);
+  } catch (e) { body.innerHTML = '<p class="modal-note">Ошибка сети — попробуйте ещё раз.</p>'; }
+}
+function renderQuality(sc, hl) {
+  const body = $("qualityBody");
+  let html = "";
+  if (sc && sc.available) {
+    html +=
+      `<div class="q-score">` +
+        `<div class="q-ring q-${sc.grade}"><b>${sc.score}</b><span>из 100</span></div>` +
+        `<div class="q-score-meta"><strong>Класс ${sc.grade} · ${sc.label}</strong>` +
+        `<small>Пройдено сильных критериев: ${sc.passed}/${sc.total}</small></div>` +
+      `</div>` +
+      `<div class="q-checks">` +
+        sc.checks.map((c) =>
+          `<div class="q-chk q-${c.status}"><span class="q-ico">${QCHK[c.status] || "•"}</span>` +
+          `<span class="q-name">${c.name}</span><b class="q-val">${c.value}</b>` +
+          (c.detail ? `<small class="q-det">${c.detail}</small>` : "") + `</div>`
+        ).join("") +
+      `</div>`;
+  } else {
+    html += '<p class="modal-note">Фундаментал недоступен для этой бумаги (Yahoo не отдал данные).</p>';
+  }
+  if (hl && hl.available) {
+    html += `<div class="q-holders"><h4>🏦 Крупные держатели</h4>`;
+    const inst = hl.pct_institutions != null ? `Институционалы: <b>${hl.pct_institutions}%</b>` : "";
+    const ins = hl.pct_insiders != null ? `Инсайдеры: <b>${hl.pct_insiders}%</b>` : "";
+    if (inst || ins) html += `<div class="q-hold-sum">${[inst, ins].filter(Boolean).join(" · ")}</div>`;
+    if (hl.top && hl.top.length) {
+      html += `<div class="q-hold-list">` + hl.top.map((h) =>
+        `<div class="q-hold-row"><span>${h.holder}</span>${h.pct != null ? `<b>${h.pct}%</b>` : ""}${h.value ? `<small>${h.value}</small>` : ""}</div>`
+      ).join("") + `</div>`;
+    }
+    html += `</div>`;
+  }
+  html += '<p class="modal-note">Линза стоимостного инвестора (Баффет/Грэм): качество бизнеса и кто им владеет. Не индивидуальная рекомендация.</p>';
+  body.innerHTML = html;
+}
+$("linkQuality")?.addEventListener("click", openQuality);
+$("qualityClose")?.addEventListener("click", () => $("qualityOverlay")?.classList.add("hidden"));
+$("qualityOverlay")?.addEventListener("click", (e) => { if (e.target === $("qualityOverlay")) $("qualityOverlay").classList.add("hidden"); });
 $("dividendClose")?.addEventListener("click", closeDividends);
 $("dividendOverlay")?.addEventListener("click", (e) => { if (e.target === $("dividendOverlay")) closeDividends(); });
 ["divShares", "divBuy"].forEach((id) => $(id)?.addEventListener("input", computeDividends));
@@ -2289,6 +3711,22 @@ const AI_PROVIDERS = {
   gemini: { label: "Google Gemini — бесплатно", base: "https://generativelanguage.googleapis.com/v1beta/openai/", model: "gemini-2.0-flash", url: "https://aistudio.google.com/apikey" },
   ollama: { label: "Ollama — локально, бесплатно", base: "http://localhost:11434/v1", model: "llama3.1", url: "https://ollama.com/download" },
   openai: { label: "OpenAI — платно", base: "https://api.openai.com/v1", model: "gpt-4o-mini", url: "https://platform.openai.com/api-keys" },
+};
+
+// Рекомендованные модели по провайдеру — стабильно отдают валидный JSON.
+// Для OpenRouter — бесплатные (:free), проверенные на формат ответа.
+const RECOMMENDED_MODELS = {
+  openrouter: [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "google/gemini-2.0-flash-exp:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+  ],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-flash"],
+  openai: ["gpt-4o-mini", "gpt-4o"],
+  ollama: ["llama3.1", "qwen2.5"],
 };
 
 // Определяем провайдера по префиксу ключа — чтобы бесплатный ключ всегда ушёл
@@ -2336,6 +3774,7 @@ function openAiKeyModal() {
     `<a class="ai-getkey" id="aiGetKey" target="_blank" rel="noopener">${T.get}</a>` +
     `<label class="ai-field"><span>${T.key}</span><input type="password" id="aiKeyInput" placeholder="••••••••" autocomplete="off"></label>` +
     `<label class="ai-field"><span>${T.model}</span><input type="text" id="aiModelInput"></label>` +
+    `<div class="ai-model-rec"><span class="ai-rec-label">${en ? "Recommended (stable JSON):" : "Рекомендованные (стабильный JSON):"}</span><div class="ai-model-chips" id="aiModelChips"></div></div>` +
     `<div class="ai-actions"><button type="button" class="btn-primary" id="aiSave">${T.save}</button>` +
     `<button type="button" class="btn-secondary" id="aiClear">${T.clear}</button>` +
     `<span class="ai-status" id="aiStatus">${cfg.key ? T.saved : T.none}</span></div>` +
@@ -2345,11 +3784,33 @@ function openAiKeyModal() {
   if (cfg.key) keyInput.value = cfg.key;
   modelInput.value = cfg.model || AI_PROVIDERS[prov].model;
   getLink.href = AI_PROVIDERS[prov].url;
+
+  // Чипы рекомендованных моделей: клик подставляет модель в поле.
+  function renderModelChips(p) {
+    const box = $("aiModelChips");
+    if (!box) return;
+    const list = RECOMMENDED_MODELS[p] || [];
+    box.innerHTML = list.map((m) => {
+      const short = m.split("/").pop().replace(":free", "");
+      const active = modelInput.value.trim() === m ? " active" : "";
+      return `<button type="button" class="ai-model-chip${active}" data-model="${m}" title="${m}">${short}</button>`;
+    }).join("");
+    box.querySelectorAll(".ai-model-chip").forEach((c) =>
+      c.addEventListener("click", () => {
+        modelInput.value = c.dataset.model;
+        box.querySelectorAll(".ai-model-chip").forEach((x) => x.classList.toggle("active", x === c));
+      })
+    );
+  }
+  renderModelChips(prov);
+
   provSel.addEventListener("change", () => {
     const p = AI_PROVIDERS[provSel.value];
     modelInput.value = p.model;
     getLink.href = p.url;
+    renderModelChips(provSel.value);
   });
+  modelInput.addEventListener("input", () => renderModelChips(provSel.value));
   // Авто-подстройка провайдера по введённому ключу.
   keyInput.addEventListener("input", () => {
     const det = detectProviderByKey(keyInput.value);
@@ -2357,6 +3818,7 @@ function openAiKeyModal() {
       provSel.value = det;
       modelInput.value = AI_PROVIDERS[det].model;
       getLink.href = AI_PROVIDERS[det].url;
+      renderModelChips(det);
     }
   });
   $("aiSave").addEventListener("click", () => {
@@ -2668,6 +4130,69 @@ async function renderWatchlist() {
   });
 }
 
+// ── Скан watchlist по правилам профиля ──────────────────────────────────────
+// Прогоняет анализ по инструментам списка и показывает, где сетап подходит под
+// торговый профиль пользователя (та же логика, что в карточке плана сделки).
+let _wlScanning = false;
+async function scanWatchlistByRules() {
+  const box = $("wlScanResult");
+  const wl = getWatchlist();
+  if (!box) return;
+  if (!wl.length) { box.classList.remove("hidden"); box.innerHTML = '<p class="news-empty">Список пуст — добавьте инструменты.</p>'; return; }
+  if (_wlScanning) return;
+  _wlScanning = true;
+  box.classList.remove("hidden");
+  box.innerHTML = `<p class="wl-scan-status">Сканирую ${wl.length} инстр. по вашим правилам…</p>`;
+
+  const results = [];
+  const queue = wl.slice();
+  async function worker() {
+    while (queue.length) {
+      const w = queue.shift();
+      try {
+        const j = await (await fetch(`/api/analyze?pair=${encodeURIComponent(w.id)}&market=${encodeURIComponent(w.market)}`)).json();
+        if (j.ok) {
+          const d = Object.assign({}, j.data, { position_preview: j.position_preview, pair: w.id, market: w.market });
+          const plan = computeTradePlan(d);
+          const rule = evaluateProfile(plan, d);
+          results.push({ w, d, plan, rule, score: (d.accuracy && d.accuracy.overall_pct) || 0 });
+        } else {
+          results.push({ w, err: true });
+        }
+      } catch (_) { results.push({ w, err: true }); }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]); // 3 параллельных
+
+  // сортировка: подходящие сетапы сверху, затем по баллу
+  const rank = (r) => (r.rule && r.rule.applicable && r.rule.pass ? 2 : r.plan && r.plan.state !== "wait" ? 1 : 0);
+  results.sort((a, b) => rank(b) - rank(a) || (b.score || 0) - (a.score || 0));
+
+  const matches = results.filter((r) => r.rule && r.rule.applicable && r.rule.pass).length;
+  box.innerHTML =
+    `<div class="wl-scan-head">Подходит под правила: <b>${matches}</b> из ${wl.length}</div>` +
+    results.map((r) => {
+      if (r.err) return `<div class="wl-scan-row err" data-id="${r.w.id}" data-market="${r.w.market}"><span>${r.w.name}</span><span class="wl-scan-tag">нет данных</span></div>`;
+      const st = r.plan ? r.plan.state : "wait";
+      const sideRu = r.plan && r.plan.side === "short" ? "ШОРТ" : r.plan && r.plan.side === "long" ? "ЛОНГ" : "—";
+      const pass = r.rule && r.rule.applicable && r.rule.pass;
+      const tag = st === "wait" ? "ждать"
+        : pass ? "✓ по правилам"
+        : (r.rule && r.rule.violations && r.rule.violations.length ? "✗ " + r.rule.violations[0] : "не по правилам");
+      const cls = st === "wait" ? "wait" : pass ? "pass" : "fail";
+      const rr = r.plan && r.plan.rr != null && isFinite(r.plan.rr) ? " · R:R 1:" + r.plan.rr.toFixed(1) : "";
+      return `<div class="wl-scan-row ${cls}" data-id="${r.w.id}" data-market="${r.w.market}">` +
+        `<span class="wl-scan-name">${r.w.name}<small>${st === "wait" ? "" : sideRu} · балл ${Math.round(r.score)}${rr}</small></span>` +
+        `<span class="wl-scan-tag">${tag}</span></div>`;
+    }).join("");
+
+  box.querySelectorAll(".wl-scan-row").forEach((row) => {
+    row.addEventListener("click", () => { switchView("market", row.dataset.market); analyze(row.dataset.id); });
+  });
+  _wlScanning = false;
+}
+$("wlScanRules")?.addEventListener("click", scanWatchlistByRules);
+
 function pfAddHolding() {
   const pair = ($("pfPair").value || "").trim();
   const qty = parseFloat($("pfQty").value);
@@ -2811,4 +4336,289 @@ document.addEventListener("DOMContentLoaded", () => {
   activeMarket = "crypto";
   renderPairsGrid("crypto");
   analyze("ETH/USDT");
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  🎓 ТРЕНАЖЁР ЧТЕНИЯ ГРАФИКА (в стиле Forex Hero)
+// ════════════════════════════════════════════════════════════════════
+const TRAINER = { chart: null, series: null, round: null, answered: false, future: null,
+  ema20: null, ema50: null, priceLines: [], hintOn: false };
+
+function trGetScore() {
+  try { return JSON.parse(localStorage.getItem("trainer_score") || "{}"); } catch (e) { return {}; }
+}
+function trSaveScore(s) { try { localStorage.setItem("trainer_score", JSON.stringify(s)); } catch (e) {} }
+function trRenderScore() {
+  const s = trGetScore();
+  const c = s.correct || 0, t = s.total || 0;
+  $("tsCorrect").textContent = c;
+  $("tsTotal").textContent = t;
+  $("tsRate").textContent = t ? Math.round(c / t * 100) + "%" : "—";
+  $("tsStreak").textContent = s.streak || 0;
+}
+
+function trInitChart() {
+  if (TRAINER.chart || !window.LightweightCharts) return;
+  const el = $("trainerChart");
+  if (!el) return;
+  TRAINER.chart = LightweightCharts.createChart(el, {
+    layout: { background: { color: "#0f1623" }, textColor: "#8b9cb3" },
+    grid: { vertLines: { color: "rgba(255,255,255,0.05)" }, horzLines: { color: "rgba(255,255,255,0.05)" } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: "rgba(255,255,255,0.09)" },
+    timeScale: { borderColor: "rgba(255,255,255,0.09)", timeVisible: true },
+    width: el.clientWidth || 800, height: 380,
+  });
+  TRAINER.series = TRAINER.chart.addCandlestickSeries({
+    upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e",
+    borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444",
+  });
+  window.addEventListener("resize", () => {
+    if (TRAINER.chart && $("trainerChart")) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth });
+    trResizeCanvas();
+  });
+  // Надёжная подгонка под контейнер (на случай позднего/нулевого размера при входе).
+  try {
+    const wrap = $("trainerChart");
+    if (window.ResizeObserver && wrap) {
+      const ro = new ResizeObserver(() => {
+        const w = wrap.clientWidth;
+        if (w > 0 && TRAINER.chart) { TRAINER.chart.applyOptions({ width: w }); trResizeCanvas(); }
+      });
+      ro.observe(wrap.parentElement || wrap);
+    }
+  } catch (e) {}
+}
+
+let trLevel = "medium";
+async function openTrainer() {
+  trInitChart();
+  trRenderScore();
+  trRenderBadges();
+  setTimeout(() => { if (TRAINER.chart) TRAINER.chart.applyOptions({ width: $("trainerChart").clientWidth }); trResizeCanvas(); }, 60);
+  await trLoadRound();
+}
+
+async function trLoadRound() {
+  const res = $("trainerResult");
+  res.classList.add("hidden"); res.innerHTML = "";
+  $("trainerActions").innerHTML =
+    '<button type="button" class="tr-predict up" id="trUp">📈 Вверх</button>' +
+    '<button type="button" class="tr-predict flat" id="trFlat">↔ Вбок</button>' +
+    '<button type="button" class="tr-predict down" id="trDown">📉 Вниз</button>';
+  $("trUp").addEventListener("click", () => trAnswer("up"));
+  $("trFlat").addEventListener("click", () => trAnswer("flat"));
+  $("trDown").addEventListener("click", () => trAnswer("down"));
+  trClearDraw();
+  if (TRAINER.hintOn) trClearHint();
+  $("trTf").textContent = "Загрузка…";
+  try {
+    const j = await (await fetch("/api/trainer/round?level=" + trLevel)).json();
+    if (!j.ok) { $("trTf").textContent = j.error || "Ошибка"; return; }
+    TRAINER.round = j; TRAINER.future = j.future; TRAINER.answered = false;
+    $("trTf").textContent = "ТФ: " + j.interval + " · следующие " + j.horizon + " свечей скрыты";
+    TRAINER.series.setData(j.visible);
+    TRAINER.chart.timeScale().fitContent();
+  } catch (e) { $("trTf").textContent = "Ошибка сети"; }
+}
+
+function trAnswer(dir) {
+  if (TRAINER.answered || !TRAINER.round) return;
+  TRAINER.answered = true;
+  const actual = TRAINER.round.outcome.direction;
+  const correct = dir === actual;
+  // дорисовываем будущее
+  const full = TRAINER.round.visible.concat(TRAINER.future);
+  TRAINER.series.setData(full);
+  TRAINER.chart.timeScale().fitContent();
+  // маркеры: точка предсказания + исход
+  const lastVis = TRAINER.round.visible[TRAINER.round.visible.length - 1];
+  const aColor = actual === "up" ? "#22c55e" : actual === "down" ? "#ef4444" : "#94a3b8";
+  const aShape = actual === "up" ? "arrowUp" : actual === "down" ? "arrowDown" : "circle";
+  TRAINER.series.setMarkers([
+    { time: lastVis.time, position: "inBar", color: "#a855f7", shape: "circle", text: "ты тут" },
+    { time: TRAINER.future[TRAINER.future.length - 1].time, position: actual === "down" ? "belowBar" : "aboveBar",
+      color: aColor, shape: aShape,
+      text: (TRAINER.round.outcome.change_pct > 0 ? "+" : "") + TRAINER.round.outcome.change_pct + "%" },
+  ]);
+  // счёт + лучшая серия
+  const s = trGetScore();
+  s.total = (s.total || 0) + 1;
+  if (correct) { s.correct = (s.correct || 0) + 1; s.streak = (s.streak || 0) + 1; }
+  else { s.streak = 0; }
+  const prevBest = s.best_streak || 0;
+  if (s.streak > prevBest) s.best_streak = s.streak;
+  trSaveScore(s); trRenderScore(); trRenderBadges();
+  const unlocked = trCheckAchievement(prevBest, s.best_streak || 0);
+  // подсказки «почему»
+  const h = TRAINER.round.hints || {};
+  let hintsHtml = "";
+  if (h.trend) {
+    const tr = h.trend === "up" ? "вверх 📈" : h.trend === "down" ? "вниз 📉" : "боковик ↔";
+    const rsiTxt = h.rsi != null ? `RSI ${h.rsi} (${h.rsi >= 70 ? "перекуплен" : h.rsi <= 30 ? "перепродан" : "норма"})` : "";
+    const b3 = h.bull3 != null ? `последние 3 свечи: ${h.bull3} зелёных` : "";
+    hintsHtml = `<div class="tr-res-hints">🔎 На что смотреть: тренд по EMA — <b>${tr}</b>; ${rsiTxt}; ${b3}.</div>`;
+  }
+  // результат
+  const ch = TRAINER.round.outcome.change_pct;
+  $("trainerActions").innerHTML = '<button type="button" class="btn-primary tr-next" id="trNext">Следующий график →</button>';
+  $("trNext").addEventListener("click", () => trLoadRound());
+  const r = $("trainerResult");
+  r.className = "trainer-result " + (correct ? "good" : "bad");
+  const RU = { up: "ВВЕРХ 📈", down: "ВНИЗ 📉", flat: "ВБОК ↔" };
+  const PICK = { up: "Вверх", down: "Вниз", flat: "Вбок" };
+  const aCls = actual === "up" ? "up" : actual === "down" ? "down" : "";
+  r.innerHTML =
+    `<div class="tr-res-h">${correct ? "✅ Верно!" : "❌ Мимо"}${correct && s.streak >= 2 ? ` · серия ${s.streak} 🔥` : ""}</div>` +
+    `<div class="tr-res-d">Цена пошла <b class="${aCls}">${RU[actual]}</b> на ${ch > 0 ? "+" : ""}${ch}% за ${TRAINER.round.horizon} свечей. Ты выбрал «${PICK[dir]}».</div>` +
+    hintsHtml +
+    `<div class="tr-res-tip">${correct ? "Отлично читаешь график — держи серию." : "Совет: оцени тренд (EMA/наклон), импульс и уровни. Один график — не приговор, важна статистика на дистанции."}</div>` +
+    (unlocked ? `<div class="tr-res-ach">🏆 Достижение: ${unlocked}!</div>` : "");
+}
+
+// ── Достижения за серии ─────────────────────────────────────────────
+const TR_ACH = [
+  { n: 3, label: "🥉 Серия 3", key: "s3" },
+  { n: 5, label: "🥈 Серия 5", key: "s5" },
+  { n: 10, label: "🥇 Серия 10", key: "s10" },
+  { n: 20, label: "🏆 Серия 20", key: "s20" },
+  { n: 50, label: "💎 Серия 50", key: "s50" },
+];
+function trCheckAchievement(prevBest, best) {
+  // вернуть label, если новая планка достигнута только что
+  for (const a of TR_ACH) {
+    if (prevBest < a.n && best >= a.n) return a.label;
+  }
+  return null;
+}
+function trRenderBadges() {
+  const el = $("trainerBadges");
+  if (!el) return;
+  const best = trGetScore().best_streak || 0;
+  el.innerHTML = `<span class="tr-badge-label">Лучшая серия: <b>${best} 🔥</b></span>` +
+    TR_ACH.map((a) => `<span class="tr-badge ${best >= a.n ? "got" : ""}" title="${a.label}">${a.label}</span>`).join("");
+}
+
+// ── Обучающие подсказки на графике: тренд (EMA) + уровни ────────────
+function _trEmaSeries(candles, n) {
+  const k = 2 / (n + 1);
+  let e = candles[0].close, out = [];
+  candles.forEach((c, i) => { e = i ? c.close * k + e * (1 - k) : c.close; out.push({ time: c.time, value: +e.toFixed(6) }); });
+  return out;
+}
+function trClearHint() {
+  TRAINER.hintOn = false;
+  if (TRAINER.ema20) { TRAINER.chart.removeSeries(TRAINER.ema20); TRAINER.ema20 = null; }
+  if (TRAINER.ema50) { TRAINER.chart.removeSeries(TRAINER.ema50); TRAINER.ema50 = null; }
+  (TRAINER.priceLines || []).forEach((pl) => { try { TRAINER.series.removePriceLine(pl); } catch (e) {} });
+  TRAINER.priceLines = [];
+  $("trHint")?.classList.remove("active");
+}
+function trToggleHint() {
+  if (!TRAINER.chart || !TRAINER.round) return;
+  if (TRAINER.hintOn) { trClearHint(); return; }
+  const vis = TRAINER.round.visible;
+  // Тренд: EMA20 (жёлтая) + EMA50 (голубая).
+  TRAINER.ema20 = TRAINER.chart.addLineSeries({ color: "#f59e0b", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  TRAINER.ema20.setData(_trEmaSeries(vis, 20));
+  TRAINER.ema50 = TRAINER.chart.addLineSeries({ color: "#38bdf8", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  TRAINER.ema50.setData(_trEmaSeries(vis, 50));
+  // Уровни: сопротивление = макс. high, поддержка = мин. low за последние ~60 свечей.
+  const look = vis.slice(-60);
+  const res = Math.max(...look.map((c) => c.high));
+  const sup = Math.min(...look.map((c) => c.low));
+  TRAINER.priceLines = [
+    TRAINER.series.createPriceLine({ price: res, color: "#fb7185", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: "сопротивление" }),
+    TRAINER.series.createPriceLine({ price: sup, color: "#34d399", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: "поддержка" }),
+  ];
+  TRAINER.hintOn = true;
+  $("trHint")?.classList.add("active");
+}
+
+// ── Рисование поверх графика (для анализа) ──────────────────────────
+let _trDrawing = false, _trDrawOn = false, _trLast = null;
+function trResizeCanvas() {
+  const cv = $("trainerDraw"), wrap = $("trainerChart");
+  if (!cv || !wrap) return;
+  const w = wrap.clientWidth || (wrap.parentElement && wrap.parentElement.clientWidth) || 800;
+  cv.width = w; cv.height = wrap.clientHeight || 380;
+  if (TRAINER.chart) TRAINER.chart.applyOptions({ width: w });
+}
+function trClearDraw() {
+  const cv = $("trainerDraw");
+  if (cv) { const ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height); }
+}
+function trToggleDraw() {
+  _trDrawOn = !_trDrawOn;
+  const cv = $("trainerDraw");
+  cv.style.pointerEvents = _trDrawOn ? "auto" : "none";
+  cv.style.cursor = _trDrawOn ? "crosshair" : "default";
+  const btn = $("trDraw");
+  btn.classList.toggle("active", _trDrawOn);
+  btn.textContent = _trDrawOn ? "✏️ Рисование ВКЛ" : "✏️ Рисовать";
+  if (_trDrawOn) trResizeCanvas();  // подгоняем буфер под текущий размер графика
+}
+function _trPos(e) {
+  const cv = $("trainerDraw"); const rect = cv.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+}
+function trBindDraw() {
+  const cv = $("trainerDraw");
+  if (!cv || cv._bound) return; cv._bound = true;
+  const ctx = cv.getContext("2d");
+  const start = (e) => { if (!_trDrawOn) return; _trDrawing = true; _trLast = _trPos(e); e.preventDefault(); };
+  const move = (e) => {
+    if (!_trDrawing || !_trDrawOn) return;
+    const p = _trPos(e);
+    ctx.strokeStyle = "#a855f7"; ctx.lineWidth = 2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(_trLast.x, _trLast.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    _trLast = p; e.preventDefault();
+  };
+  const end = () => { _trDrawing = false; };
+  cv.addEventListener("mousedown", start); cv.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  cv.addEventListener("touchstart", start, { passive: false }); cv.addEventListener("touchmove", move, { passive: false });
+  cv.addEventListener("touchend", end);
+}
+// ── Мини-уроки (основы анализа для новичков) ────────────────────────
+const TR_LESSONS = [
+  { i: "📈", t: "Тренд", d: "Направление движения. <b>Восходящий</b> — каждый максимум и минимум выше предыдущего; <b>нисходящий</b> — ниже; <b>боковик</b> — цена топчется. Линии EMA20/50 помогают увидеть: цена выше растущих линий = тренд вверх. Главное правило новичка — <b>торгуй по тренду</b>, а не против." },
+  { i: "🟩", t: "Свечи", d: "Каждая свеча — период. <b>Зелёная</b> — закрытие выше открытия (рост), <b>красная</b> — падение. Тело = разница открытие/закрытие, тени (фитили) = максимумы/минимумы. Длинное тело = сила движения; длинные тени = отвержение цены (борьба покупателей и продавцов)." },
+  { i: "📊", t: "Поддержка и сопротивление", d: "<b>Поддержка</b> — уровень, где цена не раз разворачивалась вверх (покупатели сильнее). <b>Сопротивление</b> — где разворот вниз. От уровня часто отскок; <b>пробой</b> уровня с объёмом = сигнал продолжения. Вход у уровня даёт близкий стоп = хороший риск." },
+  { i: "🌡", t: "RSI (импульс)", d: "Индикатор 0–100: насколько перегрето движение. <b>&gt;70</b> — перекуплен (риск отката вниз), <b>&lt;30</b> — перепродан (риск отскока вверх), <b>40–60</b> — норма. RSI не сигнал сам по себе — смотри вместе с трендом и уровнями." },
+  { i: "⚖", t: "Стоп, тейк и R:R", d: "<b>Стоп-лосс</b> — цена, где признаёшь ошибку и выходишь (за уровнем). <b>Тейк-профит</b> — цель. <b>R:R</b> — отношение: рискуешь 1 ради 2 (1:2). При R:R 1:2 даже <b>40% удачных сделок прибыльны</b>. Без стопа не входи никогда." },
+  { i: "🎯", t: "Как тренироваться", d: "В тренажёре: оцени <b>треnд</b> (куда наклон), есть ли рядом <b>уровень</b>, не перегрет ли <b>RSI</b> — и выбери Вверх/Вбок/Вниз. Жми «💡 Подсказка», чтобы увидеть тренд и уровни на графике. Важна не одна сделка, а <b>статистика на дистанции</b> — копи серию." },
+];
+function openLessons() {
+  $("lessonsBody").innerHTML = TR_LESSONS.map((l) =>
+    `<div class="lesson-card"><div class="lesson-ic">${l.i}</div><div class="lesson-tx"><b>${l.t}</b><p>${l.d}</p></div></div>`
+  ).join("") + '<p class="modal-note">Это база. Лучший способ научиться — практика в тренажёре: читай график, предсказывай, смотри разбор.</p>';
+  $("lessonsOverlay").classList.remove("hidden");
+}
+$("trLessonsBtn")?.addEventListener("click", openLessons);
+$("lessonsClose")?.addEventListener("click", () => $("lessonsOverlay")?.classList.add("hidden"));
+$("lessonsOverlay")?.addEventListener("click", (e) => { if (e.target === $("lessonsOverlay")) $("lessonsOverlay").classList.add("hidden"); });
+
+$("trHint")?.addEventListener("click", trToggleHint);
+$("trDraw")?.addEventListener("click", trToggleDraw);
+$("trClear")?.addEventListener("click", trClearDraw);
+$("trDraw") && trBindDraw();
+document.querySelectorAll("#trLevels button").forEach((b) =>
+  b.addEventListener("click", () => {
+    trLevel = b.dataset.level;
+    document.querySelectorAll("#trLevels button").forEach((x) => x.classList.toggle("active", x === b));
+    trLoadRound();
+  })
+);
+
+// ── Рисование на основном графике: инструменты TradingView-стиля (drawing.js) ─
+$("mcDraw")?.addEventListener("click", () => {
+  if (!window.ChartDraw) return;
+  const on = window.ChartDraw.toggle();
+  const btn = $("mcDraw");
+  if (btn) {
+    btn.classList.toggle("active", on);
+    btn.textContent = on ? "✏️ Рисование ✓" : "✏️ Рисование";
+  }
 });

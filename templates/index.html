@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/terminal.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/refresh-pro.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/theme-refresh.css?v={{ asset_version }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,14 +16,14 @@
 </head>
 <body class="terminal-body">
   <div class="app">
-    <header class="topbar">
-      <div class="logo">
+    <nav class="side-nav" id="mainNav" aria-label="Навигация">
+      <div class="side-brand">
         <span class="logo-icon" aria-hidden="true">
-          <svg class="tis-logo" viewBox="0 0 64 64" width="36" height="36">
+          <svg class="tis-logo" viewBox="0 0 64 64" width="34" height="34">
             <defs>
               <linearGradient id="tisG" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0" stop-color="#cfe0ff"/>
-                <stop offset="1" stop-color="#3b82f6"/>
+                <stop offset="1" stop-color="#6d6dfb"/>
               </linearGradient>
             </defs>
             <path d="M32 4 L56 12 V30 C56 46 45 56 32 60 C19 56 8 46 8 30 V12 Z" fill="none" stroke="url(#tisG)" stroke-width="3"/>
@@ -38,6 +39,25 @@
           <p>TIS · аналитика рынков</p>
         </div>
       </div>
+      <div class="nav-group nav-markets">
+        <span class="nav-label">Рынок</span>
+        <button type="button" class="nav-tab active" data-view="market" data-market="crypto"><span class="nav-ic">₿</span><span>Крипта</span></button>
+        <button type="button" class="nav-tab" data-view="market" data-market="stock"><span class="nav-ic">🏛️</span><span>Акции</span></button>
+        <button type="button" class="nav-tab" data-view="market" data-market="forex"><span class="nav-ic">💱</span><span>Валюта</span></button>
+      </div>
+      <div class="nav-group nav-views">
+        <span class="nav-label">Разделы</span>
+        <button type="button" class="nav-tab" data-view="movers"><span class="nav-ic">🌐</span><span>Обзор рынка</span></button>
+        <button type="button" class="nav-tab" data-view="screener"><span class="nav-ic">📊</span><span>Скринер</span></button>
+        <button type="button" class="nav-tab" data-view="portfolio"><span class="nav-ic">💼</span><span>Портфель</span></button>
+        <button type="button" class="nav-tab" data-view="news"><span class="nav-ic">📰</span><span>Новости</span></button>
+        <button type="button" class="nav-tab" data-view="journal"><span class="nav-ic">📒</span><span>Журнал</span></button>
+        <button type="button" class="nav-tab" data-view="control"><span class="nav-ic">🎛️</span><span>Центр</span></button>
+        <button type="button" class="nav-tab" data-view="trainer"><span class="nav-ic">🎓</span><span>Тренажёр</span></button>
+      </div>
+    </nav>
+    <div class="app-main">
+    <header class="topbar">
       <div class="topbar-center">
         <label class="search-field" for="customPair">
           <span class="search-icon" aria-hidden="true">⌕</span>
@@ -49,7 +69,9 @@
       <div class="topbar-actions">
         <button type="button" class="brand-link brand-link-accent" id="linkGuide" title="Краткий гайд по сервису">📘 Гайд</button>
         <button type="button" class="brand-link brand-link-accent" id="linkAiKey" title="Подключить свой AI-ключ">🔑 AI-ключ</button>
+        <button type="button" class="brand-link brand-link-accent" id="linkBybitKey" title="Подключить ключ Bybit (только просмотр баланса/позиций)">🔑 Bybit</button>
         <button type="button" class="brand-link brand-link-dividends hidden" id="linkDividends" title="Калькулятор дивидендов">💰 Дивиденды</button>
+        <button type="button" class="brand-link brand-link-dividends hidden" id="linkQuality" title="Качество бизнеса по Баффету + крупные держатели">🛡️ Качество</button>
         <button type="button" class="btn-support-top" id="linkSupport" title="Поддержать проект">❤️ Поддержать</button>
         <div class="mode-toggle" id="modeToggle" title="Уровень детализации">
           <button type="button" data-mode="simple" class="active">Простой</button>
@@ -82,20 +104,6 @@
     </div>
     <div class="error hidden error-toast" id="error"></div>
 
-    <nav class="main-nav" id="mainNav">
-      <div class="nav-group nav-markets">
-        <button type="button" class="nav-tab active" data-view="market" data-market="crypto">Крипта</button>
-        <button type="button" class="nav-tab" data-view="market" data-market="stock">Акции</button>
-        <button type="button" class="nav-tab" data-view="market" data-market="forex">Валюта</button>
-      </div>
-      <div class="nav-group nav-views">
-        <button type="button" class="nav-tab" data-view="movers">Обзор рынка</button>
-        <button type="button" class="nav-tab" data-view="screener">Скринер</button>
-        <button type="button" class="nav-tab" data-view="portfolio">Портфель</button>
-        <button type="button" class="nav-tab" data-view="news">Новости</button>
-        <button type="button" class="nav-tab" data-view="journal">Журнал</button>
-      </div>
-    </nav>
 
     <div class="app-view active" id="view-market">
       <div class="instrument-strip">
@@ -120,8 +128,10 @@
             <div class="entry-menu hidden" id="entryMenu"></div>
           </div>
           <button type="button" class="btn-entrypoints" id="btnImbalance" title="Имбаланс (Fair Value Gap) — незаполненные разрывы цены">▦ Имбаланс</button>
+          <button type="button" class="btn-entrypoints" id="btnSmc" title="Smart Money: ордер-блоки, снятие ликвидности, premium/discount">🧠 SMC</button>
           <button type="button" class="btn-entrypoints" id="btnWatch" title="Добавить в список наблюдения">☆ В список</button>
           <button type="button" class="btn-colors" id="btnColors" title="Настроить цвета линий входа">🎨 Цвета</button>
+          <button type="button" class="btn-entrypoints" id="mcDraw" title="Инструменты рисования: трендлинии, фибо, уровни, зоны">✏️ Рисование</button>
           <div class="interval-group" id="tvIntervals">
             <button type="button" class="btn-interval" data-interval="5">5m</button>
             <button type="button" class="btn-interval" data-interval="15">15m</button>
@@ -136,6 +146,8 @@
         <div class="chart-viewport">
           <div id="lwChartPane" class="lw-chart-pane">
             <div id="chartContainer"></div>
+            <canvas id="tradePlanCanvas" class="trade-plan-canvas"></canvas>
+            <canvas id="mcDrawCanvas" class="mc-draw-canvas"></canvas>
           </div>
         </div>
         <details class="tv-details" id="tvDetails">
@@ -176,6 +188,33 @@
               </div>
             </div>
             <p class="verdict-reason" id="verdictReason">Нажмите «Анализ», чтобы получить понятную рекомендацию.</p>
+          </section>
+
+          <section class="trade-plan hidden" id="tradePlanCard">
+            <div class="tp-state" id="tpState"><span class="tp-light"></span><span id="tpStateText">—</span></div>
+            <div class="tp-grid">
+              <div class="tp-cell tp-c-entry"><span class="tp-k">Вход</span><strong id="tpEntry">—</strong><small id="tpEntryDist"></small></div>
+              <div class="tp-cell tp-c-stop"><span class="tp-k">Стоп</span><strong id="tpStop">—</strong><small id="tpStopDist"></small></div>
+              <div class="tp-cell tp-c-take"><span class="tp-k">Цель</span><strong id="tpTake">—</strong><small id="tpTakeDist"></small></div>
+              <div class="tp-cell tp-c-rr"><span class="tp-k">R:R</span><strong id="tpRR">—</strong></div>
+            </div>
+            <p class="tp-why" id="tpWhy"></p>
+            <div class="tp-rule hidden" id="tpRule"></div>
+          </section>
+
+          <div class="overview-actions" id="overviewActions">
+            <button type="button" class="ov-action" id="btnScenario">🎯 <span>Сценарий входа</span><small id="btnScenarioSub">вход · стоп · тейк · плечо</small></button>
+            <button type="button" class="ov-action" id="btnRiskCalc">🧮 <span>Калькулятор риска</span><small>плечо и размер под ваш риск</small></button>
+            <button type="button" class="ov-action" id="btnProfile">📋 <span>Мои правила</span><small>сигналы под вашу стратегию</small></button>
+            <button type="button" class="ov-action ov-action-wide" id="btnBacktest">📊 <span>Бэктест стратегии</span><small>винрейт и прибыль на истории</small></button>
+          </div>
+
+          <section class="bybit-sent-card hidden" id="bybitSentCard">
+            <div class="bs-head">
+              <h3>🐂🐻 Сентимент Bybit</h3>
+              <small>Позиционирование толпы и давление стакана · публичные данные</small>
+            </div>
+            <div class="bs-body" id="bybitSentBody"></div>
           </section>
 
           <section class="persona-card" id="personaCard">
@@ -274,6 +313,17 @@
 
         <div id="tab-analysis" class="tab-panel">
           <main class="results" id="results">
+            <section class="panel aianalyst-panel" id="aiAnalystPanel">
+              <div class="aia-head">
+                <h2>🤖 AI-аналитик</h2>
+                <small id="aiAnalystHint">Заключение ИИ по нашему анализу · нужен AI-ключ. «Без ИИ» — то же заключение от движка, если AI недоступен.</small>
+              </div>
+              <div class="aia-actions">
+                <button type="button" class="btn-secondary" id="btnAiSimple" data-level="simple">⚡ Простой</button>
+                <button type="button" class="btn-primary" id="btnAiFull" data-level="full">🧠 Полный</button>
+                <button type="button" class="btn-secondary" id="btnAiLocal" title="Заключение от движка без ИИ — работает всегда, без ключа">📋 Без ИИ</button>
+              </div>
+            </section>
             <section class="panel deep-panel" id="deepPanel">
               <h2>🔬 Глубокий анализ</h2>
               <p class="deep-summary" id="deepSummary">—</p>
@@ -563,10 +613,13 @@
           <div class="journal-actions">
             <button type="button" class="btn-primary" id="btnJournalAdd">+ Записать сигнал</button>
             <button type="button" class="btn-secondary" id="btnJournalRefresh" title="Пересчитать исходы">↻</button>
+            <button type="button" class="btn-secondary" id="btnJournalImport" title="Загрузить журнал из .json (заменит текущий)">📥 Импорт</button>
+            <button type="button" class="btn-secondary" id="btnJournalExport" title="Скачать журнал в .json (бэкап)">📤 Экспорт</button>
             <button type="button" class="btn-secondary btn-journal-clear" id="btnJournalClear" title="Удалить все записи журнала">🗑 Очистить</button>
+            <input type="file" id="journalImportFile" accept="application/json,.json" hidden>
           </div>
         </div>
-        <p class="journal-note">Фиксируем сигнал и автоматически проверяем по истории цены, что сработало первым — тейк или стоп. Так копится реальный винрейт вместо эвристики.</p>
+        <p class="journal-note">Фиксируем сигнал и автоматически проверяем по истории цены, что сработало первым — тейк или стоп. После прохода +1R стоп переносится в безубыток (как в реальной торговле): откат к входу засчитывается как «Безубыток» (0R), а не убыток. Винрейт считается без безубытков.</p>
         <div class="journal-stats" id="journalStats"></div>
         <div class="journal-list" id="journalList">
           <p class="news-empty">Пока нет записей. Откройте инструмент, нажмите «Анализ» и «Записать сигнал».</p>
@@ -574,10 +627,100 @@
       </section>
     </div>
 
+    <div class="app-view hidden" id="view-trainer">
+      <section class="panel trainer-panel">
+        <div class="trainer-head">
+          <div>
+            <h2>🎓 Тренажёр чтения графика <button type="button" class="btn-secondary tr-lessons-btn" id="trLessonsBtn">📚 Уроки</button></h2>
+            <p class="trainer-sub">Куда пойдёт цена дальше? Проанализируй график и выбери направление. Инструмент скрыт — только чистое чтение свечей.</p>
+          </div>
+          <div class="trainer-score" id="trainerScore">
+            <span class="ts-item"><b id="tsCorrect">0</b><small>верно</small></span>
+            <span class="ts-item"><b id="tsTotal">0</b><small>всего</small></span>
+            <span class="ts-item"><b id="tsRate">—</b><small>точность</small></span>
+            <span class="ts-item"><b id="tsStreak">0</b><small>серия 🔥</small></span>
+          </div>
+        </div>
+        <div class="trainer-toolbar">
+          <div class="seg tr-levels" id="trLevels">
+            <button type="button" data-level="easy">Лёгкий</button>
+            <button type="button" data-level="medium" class="active">Средний</button>
+            <button type="button" data-level="hard">Сложный</button>
+          </div>
+          <span class="tr-tf" id="trTf">—</span>
+          <span class="tr-spacer"></span>
+          <button type="button" class="btn-secondary" id="trHint" title="Подсветить тренд и уровни на графике">💡 Подсказка</button>
+          <button type="button" class="btn-secondary" id="trDraw" title="Рисовать линии для анализа">✏️ Рисовать</button>
+          <button type="button" class="btn-secondary" id="trClear" title="Стереть рисунок">🧹 Стереть</button>
+        </div>
+        <div class="trainer-badges" id="trainerBadges"></div>
+        <div class="trainer-chart-wrap">
+          <div id="trainerChart"></div>
+          <canvas id="trainerDraw" class="trainer-draw"></canvas>
+        </div>
+        <div class="trainer-actions" id="trainerActions">
+          <button type="button" class="tr-predict up" id="trUp">📈 Вверх</button>
+          <button type="button" class="tr-predict down" id="trDown">📉 Вниз</button>
+        </div>
+        <div class="trainer-result hidden" id="trainerResult"></div>
+      </section>
+    </div>
+
+    <div class="app-view hidden" id="view-control">
+      <section class="panel control-panel">
+        <div class="control-head">
+          <h2>🎛️ Центр управления</h2>
+          <p class="control-sub">Инструменты анализа и настройки в одном месте</p>
+        </div>
+        <div class="control-grid">
+          <button type="button" class="ctrl-card" data-ctrl="scanner">
+            <span class="ctrl-ic">🔔</span>
+            <span class="ctrl-text"><strong>Сканер сигналов</strong><small>Бот находит готовые сетапы по стратегии · алерты · вы торгуете сами</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="paperbot">
+            <span class="ctrl-ic">🧪</span>
+            <span class="ctrl-text"><strong>Бумажный бот (онлайн)</strong><small>Живёт на сайте 24/7, торгует виртуально · смотри эффективность вживую</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="bot">
+            <span class="ctrl-ic">🤖</span>
+            <span class="ctrl-text"><strong>Торговый бот</strong><small>Скрипт для самостоятельного запуска · бумажный режим по умолчанию</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="journal">
+            <span class="ctrl-ic">📝</span>
+            <span class="ctrl-text"><strong>Записать сигнал</strong><small>Зафиксировать вход/стоп/тейк в журнал — винрейт по реальной истории</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="dividends">
+            <span class="ctrl-ic">💰</span>
+            <span class="ctrl-text"><strong>Калькулятор дивидендов</strong><small>Доход и доходность по акции (для акций — откройте бумагу)</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="colors">
+            <span class="ctrl-ic">🎨</span>
+            <span class="ctrl-text"><strong>Цвета линий входа</strong><small>Настроить цвета лонг/шорт/приблизит. зон на графике</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="aikey">
+            <span class="ctrl-ic">🔑</span>
+            <span class="ctrl-text"><strong>AI-ключ</strong><small>Подключить свой бесплатный ключ для AI-аналитика и персон</small></span>
+          </button>
+          <button type="button" class="ctrl-card" data-ctrl="bybit">
+            <span class="ctrl-ic">🟡</span>
+            <span class="ctrl-text"><strong>Аккаунт Bybit</strong><small>Ключ read-only: баланс и открытые позиции (без торговли)</small></span>
+          </button>
+          <button type="button" class="ctrl-card ctrl-support" data-ctrl="support">
+            <span class="ctrl-ic">❤️</span>
+            <span class="ctrl-text"><strong>Поддержать проект</strong><small>СБП / донат — помогает развивать и держать сервис</small></span>
+          </button>
+        </div>
+      </section>
+    </div>
+
     <div class="app-view hidden" id="view-portfolio">
       <section class="panel portfolio-panel">
         <div class="pf-section">
-          <h2>⭐ Список наблюдения</h2>
+          <div class="pf-head">
+            <h2>⭐ Список наблюдения</h2>
+            <button type="button" class="btn-secondary" id="wlScanRules" title="Найти в списке сетапы под ваши правила">🎯 Сетапы по правилам</button>
+          </div>
+          <div class="wl-scan hidden" id="wlScanResult"></div>
           <div class="watchlist" id="watchlist">
             <p class="news-empty">Пусто. Откройте инструмент и нажмите «☆ В список» над графиком.</p>
           </div>
@@ -612,6 +755,7 @@
         <a class="footer-link" href="https://t.me/TradingInfoStats" target="_blank" rel="noopener" title="Telegram-канал @TradingInfoStats">✈ Telegram</a>
       </nav>
     </footer>
+    </div>
   </div>
 
   <div class="modal-overlay hidden" id="modalOverlay">
@@ -631,6 +775,261 @@
         <button type="button" class="modal-close" id="aiKeyClose" aria-label="Закрыть">✕</button>
       </div>
       <div class="modal-body" id="aiKeyBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="bybitKeyOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🔑 Аккаунт Bybit (только просмотр)</h2>
+        <button type="button" class="modal-close" id="bybitKeyClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">
+          Ключ и секрет хранятся <b>только в этом браузере</b> (localStorage) и на диск не пишутся.
+          Используются <b>только для просмотра</b> баланса и открытых позиций (read-only).
+          Сервис <b>не торгует и не выводит средства</b>. Создавайте на Bybit ключ
+          <b>с правами только на чтение</b> (Read-Only).
+        </p>
+        <div class="div-form">
+          <label class="div-field">
+            <span>API Key</span>
+            <input type="text" id="bybitKey" autocomplete="off" spellcheck="false" placeholder="Bybit API key">
+          </label>
+          <label class="div-field">
+            <span>API Secret</span>
+            <input type="password" id="bybitSecret" autocomplete="off" spellcheck="false" placeholder="Bybit API secret">
+          </label>
+        </div>
+        <div class="bybit-actions">
+          <button type="button" class="btn-primary" id="bybitFetch">Показать счёт</button>
+          <button type="button" class="btn-secondary" id="bybitClear">Удалить ключ</button>
+        </div>
+        <div class="bybit-result" id="bybitResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="lessonsOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📚 Мини-уроки: основы анализа</h2>
+        <button type="button" class="modal-close" id="lessonsClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="lessonsBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="paperBotOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🧪 Бумажный бот (онлайн)</h2>
+        <button type="button" class="modal-close" id="paperBotClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="paperBotBody">
+        <p class="modal-note">Загрузка состояния бота…</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="botInfoOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🤖 Торговый бот</h2>
+        <button type="button" class="modal-close" id="botInfoClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">⚠ Бот — это отдельный скрипт, который запускаете <b>вы у себя</b>, со <b>своими</b> ключами. Сайт его не запускает и ключи не хранит. Торговля с плечом — высокий риск. Не финансовый совет.</p>
+        <div class="bot-cfg">
+          <label class="div-field"><span>Инструмент</span><input type="text" id="botSymbol" placeholder="SOLUSDT"></label>
+          <label class="div-field"><span>Таймфрейм</span>
+            <select id="botInterval"><option value="5">5м</option><option value="15">15м</option><option value="60" selected>1ч</option><option value="240">4ч</option><option value="D">1д</option></select>
+          </label>
+          <label class="div-field"><span>Режим</span>
+            <select id="botMode"><option value="paper" selected>Бумажный (без сделок)</option><option value="testnet">Testnet (тест. деньги)</option><option value="mainnet">Mainnet (реальные ⚠)</option></select>
+          </label>
+          <label class="div-field"><span>Риск на сделку, %</span><input type="number" id="botRisk" value="1" min="0.1" max="10" step="0.1"></label>
+          <label class="div-field"><span>Плечо, не более</span><input type="number" id="botLev" value="10" min="1" max="50" step="1"></label>
+          <label class="div-field"><span>R:R (тейк/риск)</span><input type="number" id="botRR" value="2" min="1" max="5" step="0.5"></label>
+        </div>
+        <div class="bot-filters">
+          <span class="bt-ctl-label">Фильтры:</span>
+          <label class="bt-flt"><input type="checkbox" id="botEma200" checked> EMA200</label>
+          <label class="bt-flt"><input type="checkbox" id="botAdx"> ADX</label>
+          <label class="bt-flt"><input type="checkbox" id="botMacd"> MACD</label>
+        </div>
+        <div class="bot-dl">
+          <button type="button" class="btn-primary" id="botDownloadCfg">📥 Скачать bot_config.json</button>
+        </div>
+        <div class="bot-run" id="botRun"></div>
+        <p class="modal-note">Скачай <code>bot_config.json</code> и положи рядом с <code>bots/tis_bybit_bot.py</code>. Бот подхватит настройки. Ключи — только в переменных окружения (<code>BYBIT_API_KEY/SECRET</code>, права Read+Trade, БЕЗ вывода). Бот сам подбирает плечо так, чтобы стоп был раньше ликвидации; средства не выводит.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="scannerOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🔔 Сканер сигналов</h2>
+        <button type="button" class="modal-close" id="scannerClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="scan-controls">
+          <div class="seg scan-markets" id="scanMarkets">
+            <button type="button" class="active" data-market="crypto">Крипта</button>
+            <button type="button" data-market="stock">Акции</button>
+            <button type="button" data-market="forex">Валюта</button>
+          </div>
+          <button type="button" class="btn-primary" id="scanRun">Сканировать</button>
+          <label class="scan-toggle"><input type="checkbox" id="scanAuto"> Авто каждые 5 мин</label>
+          <label class="scan-toggle"><input type="checkbox" id="scanNotify"> Уведомления</label>
+        </div>
+        <div class="scan-results" id="scanResults">
+          <p class="modal-note">Нажмите «Сканировать» — бот найдёт инструменты с готовым сигналом (вход/стоп/тейк). Сделки вы открываете сами.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="backtestOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📊 Бэктест стратегии</h2>
+        <button type="button" class="modal-close" id="backtestClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="bt-controls">
+          <span class="bt-ctl-label">Период:</span>
+          <div class="seg" id="btInterval">
+            <button type="button" data-int="1h">1ч · ~1.5 мес</button>
+            <button type="button" data-int="4h">4ч · ~5 мес</button>
+            <button type="button" data-int="1d" class="active">1д · ~3 года</button>
+          </div>
+          <button type="button" class="btn-secondary" id="btScanBtn" title="Прогнать стратегию по многим инструментам">📋 Сравнить все</button>
+        </div>
+        <div class="bt-filters" id="btFilters">
+          <span class="bt-ctl-label">Фильтры:</span>
+          <label class="bt-flt"><input type="checkbox" id="btEma200" checked> EMA200 (по тренду)</label>
+          <label class="bt-flt"><input type="checkbox" id="btAdx"> ADX (сила тренда)</label>
+          <label class="bt-flt"><input type="checkbox" id="btMacd"> MACD (импульс)</label>
+        </div>
+        <div id="backtestBody"><p class="modal-note">Откройте инструмент и нажмите «Анализ».</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="qualityOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🛡️ Инвест-качество (по Баффету)</h2>
+        <button type="button" class="modal-close" id="qualityClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body" id="qualityBody">
+        <p class="modal-note">Откройте акцию и нажмите «Анализ».</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="scenarioOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🎯 Сценарий входа</h2>
+        <button type="button" class="modal-close" id="scenarioClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <section class="scenario-card" id="scenarioCard">
+          <div class="scenario-head">
+            <h3 id="scenarioTitle">Что будет, если войти?</h3>
+            <span class="scenario-agree" id="scenarioAgree">—</span>
+          </div>
+          <div class="scenario-side" id="scSide">
+            <button type="button" data-side="long" class="active">ЛОНГ 📈</button>
+            <button type="button" data-side="short">ШОРТ 📉</button>
+          </div>
+          <p class="scenario-lead" id="scenarioLead">—</p>
+          <div class="scenario-controls">
+            <label class="sc-ctl">
+              <span class="sc-ctl-lbl">Вход <button type="button" class="sc-reset" id="scEntryReset" title="Вернуть текущую цену">↺ к рынку</button></span>
+              <input type="number" id="scEntry" step="any" inputmode="decimal" />
+              <small class="sc-hint" id="scEntryHint"></small>
+            </label>
+            <label class="sc-ctl">
+              <span class="sc-ctl-lbl">Сумма, USDT</span>
+              <input type="number" id="scMargin" value="100" min="1" step="any" inputmode="decimal" />
+              <span class="sc-presets" id="scMarginPresets">
+                <button type="button" data-v="50">50</button>
+                <button type="button" data-v="100">100</button>
+                <button type="button" data-v="500">500</button>
+                <button type="button" data-v="1000">1000</button>
+              </span>
+            </label>
+            <label class="sc-ctl sc-ctl-lev">
+              <span class="sc-ctl-lbl">Плечо <b id="scLevVal">10×</b></span>
+              <input type="range" id="scLev" min="1" max="50" value="10" step="1" />
+              <span class="sc-presets" id="scLevPresets">
+                <button type="button" data-v="1">x1</button>
+                <button type="button" data-v="3">x3</button>
+                <button type="button" data-v="5">x5</button>
+                <button type="button" data-v="10">x10</button>
+                <button type="button" data-v="20">x20</button>
+                <button type="button" data-v="50">x50</button>
+              </span>
+            </label>
+          </div>
+          <div class="scenario-track" id="scTrack"></div>
+          <div class="scenario-outcomes" id="scOutcomes">
+            <div class="sc-out sc-win">
+              <div class="sc-out-top"><span class="sc-out-ico">✅</span><span class="sc-out-cap">Цена дойдёт до тейка</span></div>
+              <div class="sc-out-price" id="scTpPrice">—</div>
+              <div class="sc-out-pnl up" id="scTpPnl">—</div>
+            </div>
+            <div class="sc-out sc-lose">
+              <div class="sc-out-top"><span class="sc-out-ico">⛔</span><span class="sc-out-cap">Цена дойдёт до стопа</span></div>
+              <div class="sc-out-price" id="scSlPrice">—</div>
+              <div class="sc-out-pnl down" id="scSlPnl">—</div>
+            </div>
+          </div>
+          <div class="scenario-bar" id="scBar" title="Соотношение риск/прибыль">
+            <div class="sc-bar-risk" id="scBarRisk"></div>
+            <div class="sc-bar-reward" id="scBarReward"></div>
+          </div>
+          <div class="scenario-meta" id="scMeta"></div>
+          <button type="button" class="scenario-journal-btn" id="scJournalBtn">📓 Записать этот сценарий в журнал</button>
+          <p class="scenario-note">⚠ Это не гарантия. «Согласие рынка» — оценка согласованности сигналов, а не вероятность прибыли.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="riskCalcOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>🧮 Калькулятор риска</h2>
+        <button type="button" class="modal-close" id="riskCalcClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">Считает безопасное плечо и размер позиции под ваш риск. Стоп/тейк берутся из текущего анализа инструмента.</p>
+        <div class="rc-side" id="rcSide">
+          <button type="button" data-side="long" class="active">ЛОНГ 📈</button>
+          <button type="button" data-side="short">ШОРТ 📉</button>
+        </div>
+        <div class="div-form">
+          <label class="div-field"><span>Депозит, USDT</span><input type="number" id="rcDeposit" value="1000" min="1" step="any" inputmode="decimal"></label>
+          <label class="div-field"><span>Риск на сделку, %</span><input type="number" id="rcRisk" value="2" min="0.1" max="100" step="0.1" inputmode="decimal"></label>
+        </div>
+        <div class="rc-results" id="rcResults"></div>
+        <p class="modal-note" id="rcNote">Введите депозит и риск — расчёт появится автоматически.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="aiAnalystOverlay">
+    <div class="modal wide" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="aiAnalystModalTitle">🤖 AI-анализ</h2>
+        <button type="button" class="modal-close" id="aiAnalystClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body"><div class="aia-result" id="aiAnalystResult"></div></div>
     </div>
   </div>
 
@@ -702,9 +1101,56 @@
     </div>
   </div>
 
+  <div class="modal-overlay hidden" id="profileOverlay">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2>📋 Мои правила торговли</h2>
+        <button type="button" class="modal-close" id="profileClose" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-note">Сигналы и план сделки проверяются на соответствие вашим правилам. Хранится в браузере; влияет на пометку «по правилам» и на AI-аналитика.</p>
+        <div class="prof-grid">
+          <label class="prof-field"><span>Стиль</span>
+            <select id="profStyle">
+              <option value="any">Любой</option>
+              <option value="trend">Трендовый</option>
+              <option value="smc">Smart Money (SMC)</option>
+              <option value="scalp">Скальпинг</option>
+              <option value="swing">Свинг</option>
+            </select>
+          </label>
+          <label class="prof-field"><span>Направления</span>
+            <select id="profSides">
+              <option value="both">Лонг и шорт</option>
+              <option value="long">Только лонг</option>
+              <option value="short">Только шорт</option>
+            </select>
+          </label>
+          <label class="prof-field"><span>Мин. балл (0–100)</span>
+            <input type="number" id="profMinScore" min="0" max="100" step="1" value="65">
+          </label>
+          <label class="prof-field"><span>Мин. R:R</span>
+            <input type="number" id="profMinRR" min="0" max="10" step="0.1" value="2">
+          </label>
+          <label class="prof-field"><span>Риск на сделку, %</span>
+            <input type="number" id="profRisk" min="0.1" max="100" step="0.1" value="1">
+          </label>
+        </div>
+        <label class="prof-check"><input type="checkbox" id="profHtf" checked> Входить только по тренду старших ТФ</label>
+        <label class="prof-check"><input type="checkbox" id="profSmc"> Требовать подтверждение SMC</label>
+        <label class="prof-check"><input type="checkbox" id="profNoFlat" checked> Не входить во флэте (слабый тренд)</label>
+        <div class="colors-actions">
+          <button type="button" class="btn-primary" id="profileSave">Сохранить</button>
+          <button type="button" class="btn-secondary" id="profileReset">Сбросить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>window.INSTRUMENT_CATALOG = {{ instrument_catalog|safe }};</script>
   <script src="/static/i18n.js?v={{ asset_version }}"></script>
   <script src="/static/tradingview.js?v={{ asset_version }}"></script>
+  <script src="/static/drawing.js?v={{ asset_version }}"></script>
   <script src="/static/chart.js?v={{ asset_version }}"></script>
   <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>

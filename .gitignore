@@ -16,6 +16,8 @@ Thumbs.db
 *.swo
 dist/
 build/
+release/
+marketing/
 *.egg-info/
 .coverage
 htmlcov/
@@ -24,3 +26,12 @@ htmlcov/
 assets/
 signals.json
 signals.json.tmp
+
+# Сгенерированные артефакты research-инструмента (не данные репозитория)
+research/insider_trades.csv
+research/insider_winrate_summary.csv
+research/insider_report.html
+paper_bot.json
+bots/trades.csv
+signals_journal.json
+signals_scan.csv
