@@ -3,9 +3,20 @@
 `index.html` — 6 готовых вертикальных кадров **1080×1920 (9:16)** в фирменном стиле TIS.
 
 ## Как экспортировать в картинки
-1. Открой `index.html` в Chrome.
-2. **Скриншот одного кадра:** DevTools (F12) → выбери элемент `<section class="slide">` → ПКМ → **Capture node screenshot**. Получишь PNG ровно 1080×1920.
-3. **Все сразу:** DevTools → эмуляция устройства (Ctrl+Shift+M) → задай размер `1080 × 1920` → листай якорями `#s1 … #s6` и делай скриншоты.
+**Автоматом (рекомендуется)** — все 6 кадров PNG разом:
+```
+py -m pip install playwright
+py -m playwright install chromium   # один раз
+py tools/export_slides.py
+```
+→ кадры появятся в `marketing/tiktok/frames/` (2160×3840, чёткие @2x). Готово для CapCut.
+
+**Вручную:** открой `index.html` в Chrome → DevTools (F12) → выбери `<section class="slide">` → ПКМ → **Capture node screenshot** (получишь PNG 1080×1920). Или Ctrl+Shift+M (эмуляция `1080×1920`) и листай `#s1 … #s6`.
+
+## Собрать видео из кадров (CapCut)
+1. Импортируй 6 PNG из `frames/`, по 2–2.5 c на кадр.
+2. Переходы (slide/zoom), трендовый звук, текст-хук из `captions.md` на первые 2 c.
+3. Экспорт 1080×1920, 30 fps. Готово для TikTok/Reels/Shorts.
 
 ## Как сделать видео
 - Запиши экран, листая кадры (`#s1`→`#s6`), 1.5–2.5 c на кадр.
