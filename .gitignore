@@ -18,6 +18,7 @@ dist/
 build/
 release/
 marketing/tiktok/frames/
+marketing/tiktok/frames_en/
 *.egg-info/
 .coverage
 htmlcov/

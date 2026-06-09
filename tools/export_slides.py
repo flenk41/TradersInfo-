@@ -17,8 +17,11 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HTML = os.path.join(ROOT, "marketing", "tiktok", "index.html")
-OUT = os.path.join(ROOT, "marketing", "tiktok", "frames")
+# Необязательные аргументы: путь к html и папка вывода (для RU/EN версий).
+#   py tools/export_slides.py                                  → RU
+#   py tools/export_slides.py marketing/tiktok/index_en.html marketing/tiktok/frames_en
+HTML = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(ROOT, "marketing", "tiktok", "index.html")
+OUT = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else os.path.join(ROOT, "marketing", "tiktok", "frames")
 
 
 def main() -> int:
